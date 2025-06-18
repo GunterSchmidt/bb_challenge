@@ -1,0 +1,26 @@
+[package]
+name = "bb_challenge"
+version = "0.1.0"
+edition = "2021"
+# default-run = "../busy_beaver"
+
+[dependencies]
+num_cpus = "1.16"
+num-format = "0.4"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+# criterion2 = "1.1.1"
+
+[features]
+# default = ["bb_counter_stats"]
+# default = ["bb_debug"]
+# default = ["bb_use_result_large"]
+bb_debug = []
+bb_counter_stats = []
+# bb_use_result_large = []
+
+[[bench]]
+name = "bench_bb_challenge"
+path = "benches/benchmarks-criterion.rs"
+harness = false
