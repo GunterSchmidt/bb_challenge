@@ -1,6 +1,13 @@
-use crate::{StepType, GENERATOR_BATCH_SIZE_RECOMMENDATION, TAPE_SIZE_LIMIT_DEFAULT};
+use crate::StepType;
 
+/// Default step limit if not changed in working machine.
+pub const STEP_LIMIT_DEFAULT: StepType = 50_000_000;
+pub const GENERATOR_BATCH_SIZE_RECOMMENDATION_FULL: usize = 500_000;
+pub const GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED: usize = 1_000_000;
+/// Default tape size limit if not changed in working machine.
+const TAPE_SIZE_LIMIT_DEFAULT: usize = 20000;
 const RECORD_MACHINES_MAX_STEPS_DEFAULT: u16 = 10;
+const CPU_UTILIZATION_DEFAULT: usize = 80;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Config {
@@ -9,9 +16,11 @@ pub struct Config {
     pub step_limit: StepType,
     pub tape_size_limit: usize,
     pub generate_limit: u64,
-    pub generator_batch_size_request: usize,
+    pub generator_batch_size_request_full: usize,
+    pub generator_batch_size_request_reduced: usize,
     pub record_machines_max_steps: u16,
     pub record_machines_undecided: u32,
+    pub cpu_utilization: usize,
 }
 
 impl Config {
@@ -20,18 +29,22 @@ impl Config {
         step_limit: StepType,
         tape_size_limit: usize,
         generate_limit: u64,
-        generator_batch_size_request: usize,
+        generator_batch_size_request_full: usize,
+        generator_batch_size_request_reduced: usize,
         record_machines_max_steps: u16,
         record_machines_undecided: u32,
+        cpu_utilization: usize,
     ) -> Self {
         Self {
             n_states,
             step_limit,
             tape_size_limit,
             generate_limit,
-            generator_batch_size_request,
+            generator_batch_size_request_full,
+            generator_batch_size_request_reduced,
             record_machines_max_steps,
             record_machines_undecided,
+            cpu_utilization,
         }
     }
 
@@ -47,9 +60,11 @@ impl Config {
             // TODO depending on n_states
             tape_size_limit: TAPE_SIZE_LIMIT_DEFAULT,
             generate_limit: Self::generate_limit_default(n_states),
-            generator_batch_size_request: GENERATOR_BATCH_SIZE_RECOMMENDATION,
+            generator_batch_size_request_full: GENERATOR_BATCH_SIZE_RECOMMENDATION_FULL,
+            generator_batch_size_request_reduced: GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED,
             record_machines_max_steps: RECORD_MACHINES_MAX_STEPS_DEFAULT,
             record_machines_undecided: 0,
+            cpu_utilization: CPU_UTILIZATION_DEFAULT,
         }
     }
 
@@ -68,7 +83,7 @@ impl Config {
         match n_states {
             1 | 2 => 10_000,
             3 => 5_000_000,
-            4 => 350_000_000,
+            4 => 200_000_000,
             // TODO higher limit, to find 47.xxx.xxx
             5 => 350_000_000,
             _ => panic!("Not build for this."),
@@ -80,26 +95,30 @@ impl Config {
     }
 }
 
+#[derive(Default)]
 pub struct ConfigBuilder {
     n_states: usize,
     step_limit: Option<StepType>,
     tape_size_limit: Option<usize>,
     generate_limit: Option<u64>,
-    generator_batch_size_request: Option<usize>,
+    generator_batch_size_request_full: Option<usize>,
+    generator_batch_size_request_reduced: Option<usize>,
     record_machines_max_steps: Option<u16>,
     record_machines_undecided: Option<u32>,
+    cpu_utilization: Option<usize>,
 }
 
 impl ConfigBuilder {
     fn new(n_states: usize) -> Self {
         Self {
             n_states,
-            step_limit: None,
-            tape_size_limit: None,
-            generate_limit: None,
-            generator_batch_size_request: None,
-            record_machines_max_steps: None,
-            record_machines_undecided: None,
+            ..Default::default() // step_limit: None,
+                                 // tape_size_limit: None,
+                                 // generate_limit: None,
+                                 // generator_batch_size_request: None,
+                                 // record_machines_max_steps: None,
+                                 // record_machines_undecided: None,
+                                 // cpu_utilization,
         }
     }
 
@@ -118,8 +137,19 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn generator_batch_size_request(mut self, generator_batch_size_request: usize) -> Self {
-        self.generator_batch_size_request = Some(generator_batch_size_request);
+    pub fn generator_batch_size_request_full(
+        mut self,
+        generator_batch_size_request_full: usize,
+    ) -> Self {
+        self.generator_batch_size_request_full = Some(generator_batch_size_request_full);
+        self
+    }
+
+    pub fn generator_batch_size_request_reduced(
+        mut self,
+        generator_batch_size_request_reduced: usize,
+    ) -> Self {
+        self.generator_batch_size_request_reduced = Some(generator_batch_size_request_reduced);
         self
     }
 
@@ -133,6 +163,11 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn cpu_utilization(mut self, cpu_utilization: usize) -> Self {
+        self.cpu_utilization = Some(cpu_utilization);
+        self
+    }
+
     pub fn build(self) -> Config {
         Config {
             n_states: self.n_states,
@@ -143,13 +178,17 @@ impl ConfigBuilder {
             generate_limit: self
                 .generate_limit
                 .unwrap_or_else(|| Config::generate_limit_default(self.n_states)),
-            generator_batch_size_request: self
-                .generator_batch_size_request
-                .unwrap_or(GENERATOR_BATCH_SIZE_RECOMMENDATION),
+            generator_batch_size_request_full: self
+                .generator_batch_size_request_full
+                .unwrap_or(GENERATOR_BATCH_SIZE_RECOMMENDATION_FULL),
+            generator_batch_size_request_reduced: self
+                .generator_batch_size_request_reduced
+                .unwrap_or(GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED),
             record_machines_max_steps: self
                 .record_machines_max_steps
                 .unwrap_or(RECORD_MACHINES_MAX_STEPS_DEFAULT),
             record_machines_undecided: self.record_machines_undecided.unwrap_or(0),
+            cpu_utilization: self.cpu_utilization.unwrap_or(CPU_UTILIZATION_DEFAULT),
         }
     }
 }

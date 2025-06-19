@@ -8,6 +8,7 @@ static REPORT_PROGRESS_STANDARD: ReportProgressStandard = ReportProgressStandard
 
 /// Simple methods to track time and report something after a while
 pub struct Reporter<'a> {
+    pub start_calc: Instant,
     last_progress_time: Instant,
     report_progress_after: Duration,
     last_detail_time: Instant,
@@ -23,6 +24,7 @@ impl<'a> Reporter<'a> {
         report_progress: &'a impl ReportProgress,
     ) -> Self {
         Self {
+            start_calc: std::time::Instant::now(),
             report_progress_after: Duration::new(0, report_progress_every_ms * 1_000_000),
             report_detail_after: Duration::new(report_detail_every_s, 0),
             report_progress: report_progress,
@@ -33,6 +35,7 @@ impl<'a> Reporter<'a> {
 
     pub fn default_with_custom_reporter(report_progress: &'a impl ReportProgress) -> Self {
         Self {
+            start_calc: std::time::Instant::now(),
             report_progress_after: Duration::new(2, 0),
             report_detail_after: Duration::new(30, 0),
             report_progress: report_progress,
@@ -43,15 +46,18 @@ impl<'a> Reporter<'a> {
 
     /// This should be called when self.is_due_progress returns true. \
     /// Calling this every time would be inefficient as the parameters would be passed needlessly most of the time.
-    pub fn report(&mut self, processed: u64, total: u64, result: &ResultDecider) {
-        // if self.is_due_progress() {
-        self.report_progress.report_progress(processed, total);
+    pub fn report(&mut self, processed: u64, total: u64, result: &ResultDecider) -> String {
+        let mut s = self
+            .report_progress
+            .report_progress(processed, total, self.start_calc);
         self.reset_last_report_progress_time();
+
         if self.is_due_detail() {
             self.report_progress.report_detail(result);
             self.reset_last_report_detail_time();
         }
-        // }
+
+        s
     }
 
     /// After info was reported, the time needs to be reset for due calculation.
@@ -104,6 +110,7 @@ impl<'a> Reporter<'a> {
 impl<'a> Default for Reporter<'a> {
     fn default() -> Self {
         Self {
+            start_calc: std::time::Instant::now(),
             last_progress_time: std::time::Instant::now(),
             report_progress_after: Duration::new(2, 0),
             last_detail_time: std::time::Instant::now(),
@@ -114,7 +121,8 @@ impl<'a> Default for Reporter<'a> {
 }
 
 pub trait ReportProgress {
-    fn report_progress(&self, processed: u64, total: u64);
+    fn report_progress(&self, processed: u64, total: u64, start: Instant) -> String;
+    // TODO as String
     fn report_detail(&self, result: &ResultDecider);
     // fn test(&self, result: &ResultDecider, generator: &X);
 }
@@ -122,32 +130,44 @@ pub trait ReportProgress {
 #[derive(Default)]
 pub struct ReportProgressStandard;
 
-impl ReportProgressStandard {
-    pub fn new() -> Self {
-        ReportProgressStandard
-    }
-}
-
 impl ReportProgress for ReportProgressStandard {
-    fn report_progress(&self, processed: u64, total: u64) {
+    fn report_progress(&self, processed: u64, total: u64, start: Instant) -> String {
         let locale = crate::utils::user_locale();
         // let mio = (processed as f64 / 100_000.0).round() / 10.0;
         let percent = (processed as f64 / total as f64 * 1000.0).round() / 10.0;
-        println!(
-            "Working: {} ({percent:.1}%)",
-            processed.to_formatted_string(&locale)
-        );
-        // let mio = (processed as f64 / 100_000.0).round() / 10.0;
-        // let percent = (processed as f64 / total as f64 * 1000.0).round() / 10.0;
-        // println!("Working: {processed} = {} million, {percent}%", mio);
-        // reporter.reset_last_report_progress_time();
-        // if reporter.is_due_detail() {
-        //     Self::report_detail(reporter, result, generator);
-        // }
+        // estimate time to run
+        let dur_total = start.elapsed().as_secs_f64();
+        let p_per_sec = processed as f64 / dur_total;
+        let remaining = (total - processed) as f64 / p_per_sec;
+        // let est_end = Instant::now() + Duration::from_secs_f64(remaining);
+        format!(
+            "Working: {} / {} ({percent:.1}%), left {}, runtime {}", // , end at {:?}",
+            processed.to_formatted_string(&locale),
+            total.to_formatted_string(&locale),
+            fmt_duration(remaining),
+            fmt_duration(dur_total),
+            // est_end,
+        )
     }
 
     fn report_detail(&self, result: &ResultDecider) {
         println!("\nCurrent result\n{}", result);
         // reporter.reset_last_report_detail_time();
     }
+}
+
+fn fmt_duration(duration_sec: f64) -> String {
+    let remaining;
+    let remaining_type;
+    if duration_sec > 7200.0 {
+        remaining = duration_sec / 3600.0;
+        remaining_type = "hours";
+    } else if duration_sec > 120.0 {
+        remaining = duration_sec / 60.0;
+        remaining_type = "min";
+    } else {
+        remaining = duration_sec;
+        remaining_type = "sec"
+    }
+    format!("{remaining:.1} {remaining_type}")
 }

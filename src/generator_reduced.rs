@@ -14,6 +14,8 @@ use crate::{
     MAX_STATES,
 };
 
+const BATCH_SIZE_REQUEST_SINGLE_THREAD: usize = 1_000_000;
+
 /// This generator creates all combinations of transition sets (Turing machine) which match certain criteria for the given n_states,
 /// where halt is limited to one transition ('---'). This results far less then the (4n+1)^2n combinations. \
 /// The normal routine is to generate a machine, run it through the deciders, having a lot of machines already filtered out by the
@@ -34,7 +36,7 @@ pub struct GeneratorReduced {
     // id_start_batch: u64,
     id_batch_last: u64,
     /// The number of states used for this generator.
-    n_states: usize,
+    // n_states: usize,
     /// The total number of machines to be generated.
     n_machines: u64,
     /// The reduced actual batch size (number of Turing machines generated in each call).
@@ -56,6 +58,7 @@ pub struct GeneratorReduced {
     field_no: usize,
     pre_decider_count_batch: PreDeciderCount,
     // pre_decider_count_total: PreDeciderCount,
+    config: Config,
 }
 
 impl GeneratorReduced {
@@ -77,13 +80,14 @@ impl GeneratorReduced {
         } else {
             n_machines
         };
-        let batch_size = Self::calc_batch_size(config.generator_batch_size_request, n_states);
+        let batch_size =
+            Self::calc_batch_size(config.generator_batch_size_request_reduced, n_states);
         let num_batches = ((limit + batch_size as u64 - 1) / batch_size as u64) as usize;
 
         Self {
             id_next: 0,
             id_batch_last: 0,
-            n_states,
+            // n_states,
             n_machines,
             batch_size,
             num_batches,
@@ -96,6 +100,7 @@ impl GeneratorReduced {
             field_no: 4,
             pre_decider_count_batch: Default::default(),
             // pre_decider_count_total: Default::default(),
+            config: *config,
         }
     }
 
@@ -111,7 +116,7 @@ impl GeneratorReduced {
         // fields 2 and 3 will be 0 as this is guaranteed by the batch size (status A always fully permutated)
         // calculating the remaining fields
         // let mut remain = (batch_no as u64 - 1) * self.batch_size as u64;
-        let permutations = (4 * self.n_states + 1) as u64;
+        let permutations = (4 * self.n_states() + 1) as u64;
         let mut remain = self.id_next / (permutations * permutations);
         let mut i = 4;
         loop {
@@ -135,7 +140,7 @@ impl GeneratorReduced {
     // }
 
     pub fn pre_decider(&self) -> PreDeciderReason {
-        let tr_used = self.transition_table.transitions_used(self.n_states);
+        let tr_used = self.transition_table.transitions_used(self.n_states());
         if count_hold_transitions(tr_used) != 1 {
             return PreDeciderReason::NotExactlyOneHoldCondition;
         }
@@ -145,7 +150,7 @@ impl GeneratorReduced {
         if check_only_zero_writes(tr_used) {
             return PreDeciderReason::WritesOnlyZero;
         }
-        if check_not_all_states_used(&self.transition_table, self.n_states) {
+        if check_not_all_states_used(&self.transition_table, self.n_states()) {
             return PreDeciderReason::NotAllStatesUsed;
         }
         if check_simple_start_loop(&self.transition_table) {
@@ -160,14 +165,14 @@ impl Generator for GeneratorReduced {
     /// Create new generator for random batch no. \
     /// Avoids some recalculations for e.g. batch_size, but is like new.
     fn new_from_generator(&self) -> Self {
-        let mut transition_table = TransitionTableSymbol2::new_default(self.n_states);
+        let mut transition_table = TransitionTableSymbol2::new_default(self.n_states());
         // set all in set to the first variant
-        transition_table.transitions[2..2 + self.n_states * 2].fill(self.tr_permutations[0]);
+        transition_table.transitions[2..2 + self.n_states() * 2].fill(self.tr_permutations[0]);
 
         Self {
             id_next: 0,
             id_batch_last: 0,
-            n_states: self.n_states,
+            // n_states: self.n_states,
             n_machines: self.n_machines,
             batch_size: self.batch_size,
             limit: self.limit,
@@ -180,6 +185,7 @@ impl Generator for GeneratorReduced {
             field_no: 4,
             pre_decider_count_batch: Default::default(),
             // pre_decider_count_total: Default::default(),
+            config: self.config,
         }
     }
 
@@ -342,7 +348,7 @@ impl Generator for GeneratorReduced {
     }
 
     fn n_states(&self) -> usize {
-        self.n_states
+        self.config.n_states()
     }
 
     /// The total number of machines for the number of n_states.
@@ -361,6 +367,24 @@ impl Generator for GeneratorReduced {
 
     fn pre_decider_count(&self) -> PreDeciderCount {
         self.pre_decider_count_batch
+    }
+
+    fn config(&self) -> &Config {
+        &self.config
+    }
+
+    fn check_generator_batch_size_request_single_thread(&mut self) {
+        if self.config.generator_batch_size_request_full != BATCH_SIZE_REQUEST_SINGLE_THREAD {
+            self.config.generator_batch_size_request_full = BATCH_SIZE_REQUEST_SINGLE_THREAD;
+            let batch_size =
+                Self::calc_batch_size(BATCH_SIZE_REQUEST_SINGLE_THREAD, self.n_states());
+            self.num_batches = ((self.limit + batch_size as u64 - 1) / batch_size as u64) as usize;
+            self.batch_size = batch_size;
+        }
+    }
+
+    fn num_eliminated(&self) -> u64 {
+        self.pre_decider_count().total()
     }
 }
 
@@ -381,7 +405,7 @@ mod tests {
     #[test]
     fn test_generator_reduced_batch_logic() {
         let config = Config::builder(4)
-            .generator_batch_size_request(10_000)
+            .generator_batch_size_request_full(10_000)
             .generate_limit(10_000_000)
             .build();
         let mut mr = Machine::default();
@@ -495,7 +519,7 @@ mod tests {
         let config = Config::new_default(n_states);
         let generator = GeneratorReduced::new(&config);
         let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-        let result = decider::run_decider_generator_threaded(decider, generator, 100);
+        let result = decider::run_decider_generator_threaded(decider, generator);
         println!("{}", result);
         println!("{}", result.machines_max_steps_to_string(10));
         println!("{}", result.machines_undecided_to_string(5));

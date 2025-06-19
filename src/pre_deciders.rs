@@ -8,6 +8,8 @@ use crate::{
 
 // TODO same checks, e.g. only right, when not all states are used
 // TODO Hypthesis: Longest contains self referencing element, e.g. BB5 MAX B1, D1
+// TODO pre decider states: state B: only 1 of the two can have a state higher than C. In case one points to state A or B, then max C is allowed.
+// TODO For state C: only 1 of the two can have a state higher than D. In case one points to state A, B or C, then max D is allowed for the other.
 /// Runs quick deciders, which only check the transitions without following their write order. \
 /// E.g.: Is there exactly one hold condition?
 /// Returns MachineStatus::NoDecision if no special case could be identified.

@@ -621,6 +621,13 @@ impl TryFrom<TransitionTableGeneric> for TransitionTableSymbol2 {
         if dim.n_symbols != 2 {
             return Err("This transition format is only for transitions with symbols 0 and 1.");
         }
+        // TODO allow 10 states
+        if dim.n_states > MAX_STATES {
+            return Err("This transition format is limited to MAX_STATES states.");
+        }
+        if dim.n_states > 7 {
+            return Err("This transition format is limited to 7 states.");
+        }
         let mut transitions = TRANSITION_TABLE_SYM2_DEFAULT;
         for (i, t) in table
             .transition_table

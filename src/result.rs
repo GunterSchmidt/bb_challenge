@@ -12,39 +12,40 @@ use crate::{
     StepType,
 };
 
-// #[cfg(feature = "bb_use_result_large")]
-// pub type ResultType = ResultLarge;
-// #[cfg(not(feature = "bb_use_result_large"))]
-// pub type ResultType = ResultSmall;
+const NUM_LONG_LEN: usize = 18;
+const NUM_SHORT_LEN: usize = 14;
+const LEVEL_1_CHAR: char = '\u{2022}';
 
-// TODO Decide if the fields should not be pub
 #[derive(Debug, Default)]
 pub struct ResultDecider {
-    // Result Small
     /// Number of machines which have been tested by the deciders (not pre-deciders) or have been eliminated during
     /// generation. This needs to be the num_turing_machines if not limited.
-    pub num_evaluated: u64,
+    num_checked_total: u64,
+    /// Number of machines which have run through deciders. This included the Pre-Decider if not eliminated in the generator.
+    num_evaluated: u64,
     /// Tested machines which come to a hold.
     /// This does not include machines which have not been tested, e.g. because they cannot produce the maximal steps.
-    pub num_hold: u64,
+    num_hold: u64,
     /// Eliminated machines which cannot reach the maximum steps (may or may not hold).
-    pub num_not_max: u64,
+    num_not_max: u64,
     /// Tested machines which did not come to a result.
-    pub num_undecided: u64,
-    pub pre_decider_count: PreDeciderCount,
-    pub endless_count: EndlessCount,
+    num_undecided: u64,
+    /// Breakdown of eliminated machines
+    pre_decider_count: PreDeciderCount,
+    /// Breakdown of endless running machines
+    endless_count: EndlessCount,
 
     /// Number of states used for the Turing machines.
-    pub n_states: usize,
+    n_states: usize,
     /// Number of possible Turing machines (max seven states for u64 size limit).
-    pub num_turing_machines: u64,
+    num_turing_machines: u64,
 
-    pub num_not_max_too_many_hold_transitions: u64,
+    num_not_max_too_many_hold_transitions: u64,
     /// Eliminated machines which cannot reach the maximum steps because not all states were used.
-    pub num_not_max_not_all_states_used: u64,
+    num_not_max_not_all_states_used: u64,
 
     // steps
-    pub steps_max: StepMaxResult,
+    steps_max: StepMaxResult,
     // pub steps_max: StepType,
     // pub num_machines_for_steps_max: u16,
     // machine_max_steps: Option<MachineInfo>,
@@ -137,6 +138,7 @@ impl ResultDecider {
 
     /// Add one single result to these totals
     pub fn add(&mut self, machine: &Machine, status: &MachineStatus) {
+        // self.num_checked_total += 1;
         self.num_evaluated += 1;
         match status {
             MachineStatus::DecidedHolds(steps) => {
@@ -217,6 +219,7 @@ impl ResultDecider {
     }
 
     pub fn add_result(&mut self, result: &ResultDecider) {
+        self.num_checked_total += result.num_checked_total;
         self.num_evaluated += result.num_evaluated;
         self.num_hold += result.num_hold;
         // self.num_endless += result.num_endless;
@@ -226,7 +229,7 @@ impl ResultDecider {
         self.steps_max.add_self(&result.steps_max);
 
         self.pre_decider_count.add_self(&result.pre_decider_count);
-        self.pre_decider_count.num_checked = self.pre_decider_count.total() + self.num_evaluated;
+        // self.pre_decider_count.num_checked = self.pre_decider_count.total() + self.num_evaluated;
         self.endless_count.add_self(&result.endless_count);
 
         self.num_not_max_not_all_states_used += result.num_not_max_not_all_states_used;
@@ -256,6 +259,10 @@ impl ResultDecider {
 
     pub fn add_pre_decider_count(&mut self, count: &PreDeciderCount) {
         self.pre_decider_count.add_self(count);
+    }
+
+    pub fn add_total(&mut self, value: u64) {
+        self.num_checked_total += value;
     }
 
     pub fn steps_max(&self) -> StepType {
@@ -359,7 +366,12 @@ impl ResultDecider {
     }
 
     pub fn num_checked_total(&self) -> u64 {
-        self.pre_decider_count.total() + self.num_evaluated
+        if self.num_checked_total != 0 {
+            self.num_checked_total
+        } else {
+            self.num_evaluated
+        }
+        // self.pre_decider_count.total() + self.num_evaluated
     }
 
     pub fn num_endless(&self) -> u64 {
@@ -369,24 +381,43 @@ impl ResultDecider {
 
 impl Display for ResultDecider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // update predecider
+        // self.pre_decider_count.num_checked = self.pre_decider_count.total() + self.num_evaluated;
+
         // let locale = SystemLocale::default().unwrap();
         let locale = user_locale();
         let mut buf = Buffer::default();
 
         buf.write_formatted(&self.num_turing_machines, &locale);
-        let mut s = format!("Turing machines:    {:>15}\n", buf.as_str());
+        let mut s = format!("Turing machines:    {:>NUM_LONG_LEN$}\n", buf.as_str());
+        if self.num_checked_total() != self.num_evaluated {
+            buf.write_formatted(&self.num_checked_total, &locale);
+            s.push_str(format!("Total checked:      {:>NUM_LONG_LEN$}\n", buf.as_str()).as_str());
+        }
         buf.write_formatted(&self.num_evaluated, &locale);
-        s.push_str(format!("Total checked:      {:>15}\n", buf.as_str()).as_str());
+        s.push_str(format!("  Total evaluated:    {:>NUM_LONG_LEN$}\n", buf.as_str()).as_str());
         buf.write_formatted(&self.num_undecided, &locale);
-        s.push_str(format!("  Undecided:        {:>15}\n", buf.as_str()).as_str());
+        s.push_str(
+            format!(
+                "  {LEVEL_1_CHAR} Undecided:        {:>NUM_LONG_LEN$}\n",
+                buf.as_str()
+            )
+            .as_str(),
+        );
         buf.write_formatted(&self.num_hold, &locale);
-        s.push_str(format!("  Decided Holds:    {:>15}\n", buf.as_str()).as_str());
+        s.push_str(
+            format!(
+                "  {LEVEL_1_CHAR} Decided Holds:    {:>NUM_LONG_LEN$}\n",
+                buf.as_str()
+            )
+            .as_str(),
+        );
         // buf.write_formatted(&self.num_not_max_too_many_hold_transitions, &locale);
-        // s.push_str(format!("  Two+ Hold Trans.: {:>15}\n", buf.as_str()).as_str());
+        // s.push_str(format!("  Two+ Hold Trans.: {:>NUM_LEN$}\n", buf.as_str()).as_str());
         // buf.write_formatted(&self.num_not_max_not_all_states_used, &locale);
         // s.push_str(format!("  Not All States used:{:>13}\n", buf.as_str()).as_str());
         // buf.write_formatted(&self.num_endless, &locale);
-        // s.push_str(format!("  Decided Endless:  {:>15}\n", buf.as_str()).as_str());
+        // s.push_str(format!("  Decided Endless:  {:>NUM_LEN$}\n", buf.as_str()).as_str());
         s.push_str(format!("{}", self.endless_count).as_str());
         s.push_str(format!("{}", self.pre_decider_count).as_str());
         s.push_str(format!("{}", self.steps_max).as_str());
@@ -520,9 +551,15 @@ impl Display for EndlessCount {
         let mut s = String::new();
 
         buf.write_formatted(&self.num_endless_total(), &locale);
-        s.push_str(format!("  Decided Endless:  {:>15}\n", buf.as_str()).as_str());
+        s.push_str(
+            format!(
+                "  {LEVEL_1_CHAR} Decided Endless:  {:>NUM_LONG_LEN$}\n",
+                buf.as_str()
+            )
+            .as_str(),
+        );
         // buf.write_formatted(&self.num_no_hold_transition, &locale);
-        // s.push_str(format!("   No Hold Transition: {:>14}\n", buf.as_str()).as_str());
+        // s.push_str(format!("   No Hold Transition: {:>NUM_SHORT_LEN$}\n", buf.as_str()).as_str());
         // // s.push_str(
         // //     format!(
         // //         "   2+ Hold Transitions:{:10}\n",
@@ -531,21 +568,39 @@ impl Display for EndlessCount {
         // //     .as_str(),
         // // );
         // buf.write_formatted(&self.num_start_recursive, &locale);
-        // s.push_str(format!("   Start Recursive:    {:>14}\n", buf.as_str()).as_str());
+        // s.push_str(format!("   Start Recursive:    {:>NUM_SHORT_LEN$}\n", buf.as_str()).as_str());
         // buf.write_formatted(&self.num_only_one_direction, &locale);
-        // s.push_str(format!("   Only One Direction: {:>14}\n", buf.as_str()).as_str());
+        // s.push_str(format!("   Only One Direction: {:>NUM_SHORT_LEN$}\n", buf.as_str()).as_str());
         // buf.write_formatted(&self.num_writes_only_zeros, &locale);
-        // s.push_str(format!("   Writes Only Zero:   {:>14}\n", buf.as_str()).as_str());
+        // s.push_str(format!("   Writes Only Zero:   {:>NUM_SHORT_LEN$}\n", buf.as_str()).as_str());
         // buf.write_formatted(&self.num_expanding_sinus, &locale);
-        // s.push_str(format!("   Expanding Sinus:    {:>14}\n", buf.as_str()).as_str());
+        // s.push_str(format!("   Expanding Sinus:    {:>NUM_SHORT_LEN$}\n", buf.as_str()).as_str());
         // buf.write_formatted(&self.num_expanding_loop, &locale);
-        // s.push_str(format!("   Expanding Loop:     {:>14}\n", buf.as_str()).as_str());
+        // s.push_str(format!("   Expanding Loop:     {:>NUM_SHORT_LEN$}\n", buf.as_str()).as_str());
         // buf.write_formatted(&self.num_simple_start_loop, &locale);
-        // s.push_str(format!("   Simple Start Loop:  {:>14}\n", buf.as_str()).as_str());
+        // s.push_str(format!("   Simple Start Loop:  {:>NUM_SHORT_LEN$}\n", buf.as_str()).as_str());
         buf.write_formatted(&self.num_loop, &locale);
-        s.push_str(format!("   Loop:               {:>14}\n", buf.as_str()).as_str());
-        s.push_str(format!("   - Longest Loop:     {:>14}\n", self.longest_loop).as_str());
-        s.push_str(format!("   - Detect Step Max:  {:>14}\n", self.loop_detect_step_max).as_str());
+        s.push_str(
+            format!(
+                "     Loop:                  {:>NUM_SHORT_LEN$}\n",
+                buf.as_str()
+            )
+            .as_str(),
+        );
+        s.push_str(
+            format!(
+                "     - Longest Loop:        {:>NUM_SHORT_LEN$}\n",
+                self.longest_loop
+            )
+            .as_str(),
+        );
+        s.push_str(
+            format!(
+                "     - Detect Step Max:     {:>NUM_SHORT_LEN$}\n",
+                self.loop_detect_step_max
+            )
+            .as_str(),
+        );
 
         write!(f, "{}", s)
     }
@@ -553,8 +608,8 @@ impl Display for EndlessCount {
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PreDeciderCount {
-    // reference for percent calculation
-    pub num_checked: u64,
+    // reference for percent calculation, holds the total number checked (not only pre-decider)
+    pub num_checked_total_for_display: u64,
     pub num_not_all_states_used: u64,
     pub num_not_exactly_one_hold_condition: u64,
     pub num_not_generated: u64,
@@ -595,30 +650,84 @@ impl Display for PreDeciderCount {
 
         let total = self.total();
         buf.write_formatted(&total, &locale);
-        s.push_str(format!("  Eliminated Pre-Decider: {:>15}", buf.as_str()).as_str());
+        s.push_str(
+            format!(
+                "  {LEVEL_1_CHAR} Eliminated Pre-Decider: {:>NUM_LONG_LEN$}",
+                buf.as_str()
+            )
+            .as_str(),
+        );
         if total > 0 {
-            if self.num_checked != 0 {
-                let p = (total * 10000 / self.num_checked) as f64 / 100.0;
-                s.push_str(format!(" ({p}%)").as_str());
+            if self.num_checked_total_for_display != 0 {
+                let p =
+                    ((total * 10000 / self.num_checked_total_for_display) as f64).round() / 100.0;
+                s.push_str(format!("   ({p:.1}%)").as_str());
             }
-            buf.write_formatted(&self.num_not_generated, &locale);
-            s.push_str(format!("\n   Not Generated:           {:>15}", buf.as_str()).as_str());
-            if self.num_checked != 0 && self.num_not_generated > 0 {
-                let p = (self.num_not_generated * 10000 / self.num_checked) as f64 / 100.0;
-                s.push_str(format!(" ({p}%)").as_str());
+            if self.num_not_generated != 0 {
+                buf.write_formatted(&self.num_not_generated, &locale);
+                s.push_str(
+                    format!(
+                        "\n    - Not Generated:           {:>NUM_LONG_LEN$}",
+                        buf.as_str()
+                    )
+                    .as_str(),
+                );
+            }
+            if self.num_checked_total_for_display != 0 && self.num_not_generated > 0 {
+                let p = ((self.num_not_generated * 10000 / self.num_checked_total_for_display)
+                    as f64)
+                    .round()
+                    / 100.0;
+                s.push_str(format!(" ({p:.1}%)").as_str());
             }
             buf.write_formatted(&self.num_not_exactly_one_hold_condition, &locale);
-            s.push_str(format!("\n   Not One Hold Condition:   {:>14}\n", buf.as_str()).as_str());
+            s.push_str(
+                format!(
+                    "\n    - Not One Hold Condition:      {:>NUM_SHORT_LEN$}\n",
+                    buf.as_str()
+                )
+                .as_str(),
+            );
             buf.write_formatted(&self.num_only_one_direction, &locale);
-            s.push_str(format!("   Only One Direction:       {:>14}\n", buf.as_str()).as_str());
+            s.push_str(
+                format!(
+                    "    - Only One Direction:          {:>NUM_SHORT_LEN$}\n",
+                    buf.as_str()
+                )
+                .as_str(),
+            );
             buf.write_formatted(&self.num_writes_only_zero, &locale);
-            s.push_str(format!("   Writes Only Zero:         {:>14}\n", buf.as_str()).as_str());
+            s.push_str(
+                format!(
+                    "    - Writes Only Zero:            {:>NUM_SHORT_LEN$}\n",
+                    buf.as_str()
+                )
+                .as_str(),
+            );
             buf.write_formatted(&self.num_not_all_states_used, &locale);
-            s.push_str(format!("   Not All States Used:      {:>14}\n", buf.as_str()).as_str());
+            s.push_str(
+                format!(
+                    "    - Not All States Used:         {:>NUM_SHORT_LEN$}\n",
+                    buf.as_str()
+                )
+                .as_str(),
+            );
             buf.write_formatted(&self.num_simple_start_loop, &locale);
-            s.push_str(format!("   Simple Start Loop:        {:>14}\n", buf.as_str()).as_str());
+            s.push_str(
+                format!(
+                    "    - Simple Start Loop:           {:>NUM_SHORT_LEN$}\n",
+                    buf.as_str()
+                )
+                .as_str(),
+            );
             buf.write_formatted(&self.num_start_recursive, &locale);
-            s.push_str(format!("   Start Recursive:          {:>14}\n", buf.as_str()).as_str());
+            s.push_str(
+                format!(
+                    "    - Start Recursive:             {:>NUM_SHORT_LEN$}\n",
+                    buf.as_str()
+                )
+                .as_str(),
+            );
         } else {
             s.push('\n');
         }
@@ -817,25 +926,9 @@ impl Display for StepMaxResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // let locale = SystemLocale::default().unwrap();
         let locale = user_locale();
-        // let mut buf = Buffer::default();
-        // let mut s = String::new();
-
-        // buf.write_formatted(&self.steps_max, &locale);
-        // s.push_str(
-        //     format!(
-        //         "  Max Steps:           {:>14} (Number of machines: {})\n",
-        //         buf.as_str(),
-        //         self.num_machines_steps_max
-        //     )
-        //     .as_str(),
-        // );
-        // if let Some(machine) = self.machine_max_steps() {
-        //     s.push_str(format!("Most Steps: {}\n", machine).as_str());
-        // }
-
         write!(
             f,
-            "  Max Steps:           {:>14} (Number of machines: {})\n",
+            "  Max Steps:      {:>10} (Number of machines: {})\n",
             self.steps_max.to_formatted_string(&locale),
             self.num_machines_steps_max,
         )?;
@@ -846,7 +939,6 @@ impl Display for StepMaxResult {
             v.sort();
             // format right aligned
             let len = v.last().unwrap().id().to_formatted_string(&locale).len();
-            dbg!(len);
             // let v = self.machines_max_steps.as_ref().unwrap();
             for m in v.iter().take(4) {
                 write!(

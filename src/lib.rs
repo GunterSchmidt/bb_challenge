@@ -24,23 +24,22 @@ pub mod tape_utils;
 pub mod test;
 pub mod transition_generic;
 pub mod transition_symbol2;
-// pub mod transition_v3;
 pub mod utils;
 
-/// Number of states the program can handle. Used for array definitions.
+/// Number of states the program can handle. Used for array definitions. Max is 7, as this is the limit for u64.
+// TODO change u64 type to UBB to allow max 10.
 pub const MAX_STATES: usize = 5;
+/// Number of states the TransitionGeneral should be able to handle.
+/// TODO test and describe limits
+pub const MAX_STATES_GENERIC: usize = 10;
+pub const MAX_SYMBOLS_GENERIC: usize = 10;
 
 /// Number type used for step counters.
-// TODO unclear usage, smaller may be better for storage, larger if more than 2.4 billion steps are required
+/// Smaller may be better for storage, larger if more than 2.4 billion steps are required.
 pub type StepType = u32;
+/// Number type for the machine id and other values related to MAX_STATES.
+pub type UBB = u64;
 
-/// Default step limit if not changed in working machine.
-pub const STEP_LIMIT_DEFAULT: StepType = 50_000_000;
-/// Default tape size limit if not changed in working machine.
-pub const TAPE_SIZE_LIMIT_DEFAULT: usize = 20000;
-
-/// Recommended batch size
-pub const GENERATOR_BATCH_SIZE_RECOMMENDATION: usize = 500_000;
 const TAPE_SIZE_INIT_CELL_BLOCKS: usize = 8;
 /// Initial size tape long, min is 256. Must be a multiple of 32.
 const TAPE_SIZE_INIT_CELLS: usize = TAPE_SIZE_INIT_CELL_BLOCKS * 32;

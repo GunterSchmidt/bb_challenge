@@ -16,20 +16,82 @@ use bb_challenge::{
     result::result_max_steps_known,
     status::MachineStatus,
     sub_decider::SubDeciderDummy,
-    StepType, GENERATOR_BATCH_SIZE_RECOMMENDATION,
+    StepType,
 };
 
 const WARM_UP_TIME_MS: u64 = 500;
 const MEASUREMENT_TIME_MS: u64 = 2000;
-const GENERATOR_BATCH_SIZE_REQUEST: usize = GENERATOR_BATCH_SIZE_RECOMMENDATION;
+const GENERATOR_BATCH_SIZE_REQUEST_FULL: usize = 500_000;
+const GENERATOR_BATCH_SIZE_REQUEST_REDUCED: usize = 1_000_000;
+const GENERATOR_LIMIT: u64 = 50_000_000;
 
 criterion_group!(
     benches,
-    benchmark_tape_type,
+    // benchmark_tape_type,
     // benchmark_generator,
-    // benchmark_decider_gen_bb3,
+    benchmark_decider_gen_bb3,
+    benchmark_decider_gen_bb4,
 );
 criterion_main!(benches);
+
+fn benchmark_generator(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Bench Generator Create Only");
+
+    group.warm_up_time(Duration::from_millis(WARM_UP_TIME_MS));
+    // group.measurement_time(Duration::from_millis(MEASUREMENT_TIME_MS));
+    group.sample_size(10);
+
+    group.bench_function("Generator full", |b| b.iter(|| bench_generate_full()));
+    group.bench_function("Generator reduced", |b| b.iter(|| bench_generate_reduced()));
+
+    group.finish();
+}
+
+fn benchmark_decider_gen_bb3(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Bench Decider Loop BB3");
+
+    group.warm_up_time(Duration::from_millis(WARM_UP_TIME_MS));
+    // group.measurement_time(Duration::from_millis(MEASUREMENT_TIME_MS));
+    group.sample_size(10);
+
+    group.bench_function("Decider P (Generator Full) BB3", |b| {
+        b.iter(|| bench_decider_generator_full(3))
+    });
+    group.bench_function("Decider P (Generator Reduced) BB3", |b| {
+        b.iter(|| bench_decider_generator_reduced_p(3))
+    });
+    group.bench_function("Decider (Generator Full) Threaded BB3", |b| {
+        b.iter(|| bench_decider_generator_full_threaded(3))
+    });
+    group.bench_function("Decider (Generator Reduced) Threaded BB3", |b| {
+        b.iter(|| bench_decider_generator_reduced_threaded(3))
+    });
+
+    group.finish();
+}
+
+fn benchmark_decider_gen_bb4(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Bench Decider Loop BB4");
+
+    group.warm_up_time(Duration::from_millis(WARM_UP_TIME_MS));
+    // group.measurement_time(Duration::from_millis(MEASUREMENT_TIME_MS));
+    group.sample_size(10);
+
+    // group.bench_function("Decider P (Generator Full) BB4", |b| {
+    //     b.iter(|| bench_decider_generator_full(4))
+    // });
+    // group.bench_function("Decider P (Generator Reduced) BB4", |b| {
+    //     b.iter(|| bench_decider_generator_reduced_p(4))
+    // });
+    group.bench_function("Decider (Generator Full) Threaded BB4", |b| {
+        b.iter(|| bench_decider_generator_full_threaded(4))
+    });
+    group.bench_function("Decider (Generator Reduced) Threaded BB4", |b| {
+        b.iter(|| bench_decider_generator_reduced_threaded(4))
+    });
+
+    group.finish();
+}
 
 fn benchmark_tape_type(c: &mut Criterion) {
     // let input = aoc_file_reader::read_file(FILENAME_PART_1);
@@ -92,56 +154,6 @@ fn benchmark_tape_type(c: &mut Criterion) {
     //     group.bench_function("u64 then u128 hold BB5 max", |b| {
     //         b.iter(|| bench_decider_hold_u64_u128_applies_not_bb5_max(&machine_bb5_max))
     //     });
-
-    group.finish();
-}
-
-fn benchmark_generator(c: &mut Criterion) {
-    const GENERATOR_LIMIT: u64 = 50_000_000;
-
-    let mut group = c.benchmark_group("Bench Generator Create Only");
-
-    group.warm_up_time(Duration::from_millis(WARM_UP_TIME_MS));
-    // group.measurement_time(Duration::from_millis(MEASUREMENT_TIME_MS));
-    group.sample_size(10);
-
-    group.bench_function("Generator full", |b| {
-        b.iter(|| bench_generate_full(GENERATOR_LIMIT))
-    });
-    group.bench_function("Generator reduced", |b| {
-        b.iter(|| bench_generate_reduced(GENERATOR_LIMIT))
-    });
-
-    group.finish();
-}
-
-fn benchmark_decider_gen_bb3(c: &mut Criterion) {
-    const GENERATOR_LIMIT: u64 = 5_000_000;
-
-    let mut group = c.benchmark_group("Bench Decider (Generator Full)");
-
-    group.warm_up_time(Duration::from_millis(WARM_UP_TIME_MS));
-    // group.measurement_time(Duration::from_millis(MEASUREMENT_TIME_MS));
-    group.sample_size(10);
-
-    // group.bench_function("Decider (Generator Full) BB3", |b| {
-    //     b.iter(|| bench_decider_generator_full(3))
-    // });
-    group.bench_function("Decider P (Generator Full) BB3", |b| {
-        b.iter(|| bench_decider_generator_full(3))
-    });
-    // group.bench_function("Decider (Generator Reduced) BB3", |b| {
-    //     b.iter(|| bench_decider_generator_reduced(3))
-    // });
-    group.bench_function("Decider P (Generator Reduced) BB3", |b| {
-        b.iter(|| bench_decider_generator_reduced_p(3))
-    });
-    group.bench_function("Decider (Generator Full) Threaded BB3", |b| {
-        b.iter(|| bench_decider_generator_full_threaded(3))
-    });
-    group.bench_function("Decider (Generator Reduced) Threaded BB3", |b| {
-        b.iter(|| bench_decider_generator_reduced_threaded(3))
-    });
 
     group.finish();
 }
@@ -229,9 +241,8 @@ fn bench_decider_hold_u128_applies_not_bb5_max(machine: &Machine) {
 //     assert_eq!(check_result, MachineStatus::UndecidedFastTapeBoundReached);
 // }
 
-fn bench_generate_full(generate_limit: u64) {
-    let config = Config::builder(5).generate_limit(generate_limit).build();
-    let mut generator = GeneratorFull::new(&config);
+fn bench_generate_full() {
+    let mut generator = GeneratorFull::new(&config_bench(5));
     loop {
         let (_permutations, is_last_batch) = generator.generate_permutation_batch_next();
         if is_last_batch {
@@ -240,9 +251,8 @@ fn bench_generate_full(generate_limit: u64) {
     }
 }
 
-fn bench_generate_reduced(generate_limit: u64) {
-    let config = Config::builder(5).generate_limit(generate_limit).build();
-    let mut generator = GeneratorReduced::new(&config);
+fn bench_generate_reduced() {
+    let mut generator = GeneratorReduced::new(&config_bench(5));
     loop {
         let (_permutations, is_last_batch) = generator.generate_permutation_batch_next();
         if is_last_batch {
@@ -252,21 +262,23 @@ fn bench_generate_reduced(generate_limit: u64) {
 }
 
 fn bench_decider_generator_full(n_states: usize) {
-    let config = Config::new_default(n_states);
-    let generator = GeneratorFull::new(&config);
+    let generator = GeneratorFull::new(&config_bench(n_states));
     let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
     let result = run_decider_generator_single_thread(decider, generator);
     // println!("{}", result);
-    assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    if n_states <= 3 {
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
 }
 
 fn bench_decider_generator_full_threaded(n_states: usize) {
-    let config = Config::new_default(n_states);
-    let generator = GeneratorFull::new(&config);
+    let generator = GeneratorFull::new(&config_bench(n_states));
     let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-    let result = decider::run_decider_generator_threaded(decider, generator, 100);
+    let result = decider::run_decider_generator_threaded(decider, generator);
     // println!("{}", result);
-    assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    if n_states <= 3 {
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
 }
 
 // fn bench_decider_generator_reduced(n_states: usize) {
@@ -281,19 +293,30 @@ fn bench_decider_generator_full_threaded(n_states: usize) {
 // }
 
 fn bench_decider_generator_reduced_p(n_states: usize) {
-    let config = Config::new_default(n_states);
-    let generator = GeneratorReduced::new(&config);
+    let generator = GeneratorReduced::new(&config_bench(n_states));
     let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
     let result = run_decider_generator_single_thread(decider, generator);
     // println!("{}", result);
-    assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    if n_states <= 3 {
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
 }
 
 fn bench_decider_generator_reduced_threaded(n_states: usize) {
-    let config = Config::new_default(n_states);
-    let generator = GeneratorReduced::new(&config);
+    let generator = GeneratorReduced::new(&config_bench(n_states));
     let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-    let result = decider::run_decider_generator_threaded(decider, generator, 100);
+    let result = decider::run_decider_generator_threaded(decider, generator);
     // println!("{}", result);
-    assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    if n_states <= 3 {
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
+}
+
+fn config_bench(n_states: usize) -> Config {
+    Config::builder(n_states)
+        .generator_batch_size_request_full(GENERATOR_BATCH_SIZE_REQUEST_FULL)
+        .generator_batch_size_request_reduced(GENERATOR_BATCH_SIZE_REQUEST_REDUCED)
+        .generate_limit(GENERATOR_LIMIT)
+        .cpu_utilization(100)
+        .build()
 }

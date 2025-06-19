@@ -1,4 +1,5 @@
 use crate::{
+    config::Config,
     machine::Machine,
     result::PreDeciderCount,
     transition_symbol2::{TransitionSymbol2, TRANSITION_SYM2_HOLD},
@@ -35,6 +36,12 @@ pub trait Generator {
 
     fn pre_decider_count(&self) -> PreDeciderCount;
 
+    fn num_eliminated(&self) -> u64;
+
+    fn config(&self) -> &Config;
+
+    fn check_generator_batch_size_request_single_thread(&mut self);
+
     /// The batch size for the packages of Turing machines generated in each call. \
     /// The size is reduced to the nearest multiple of permutations for one state, which
     /// is the number of transition variants squared.
@@ -51,6 +58,17 @@ pub trait Generator {
         (max_batch_size / divider) * divider
     }
 }
+
+// impl Display for Generator {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(
+//             f,
+//             "limit: {}, batch size: {}",
+//             self.limit(),
+//             self.batch_size()
+//         )
+//     }
+// }
 
 /// This creates all transition permutations for one field, e.g. \
 /// 0RA, 1RA, 0LA, 1LA, --- for BB1 \

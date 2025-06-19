@@ -1,23 +1,25 @@
 use std::fmt::Display;
 
-use crate::MAX_STATES;
+use crate::{MAX_STATES_GENERIC, MAX_SYMBOLS_GENERIC};
 
-pub const MAX_SYMBOLS: usize = 6;
 pub const A: StateType = 1;
 pub const B: StateType = 2;
 pub const C: StateType = 3;
 pub const D: StateType = 4;
 pub const E: StateType = 5;
 pub const F: StateType = 6;
+pub const G: StateType = 7;
+pub const H: StateType = 8;
+pub const I: StateType = 9;
+pub const J: StateType = 10;
 
 /// tape cell storage size, can be any i/u available, e.g. u8, i32, with u16 seems fastest
 /// CellType and MoveType affect Transition size, be carefull u16 makes nice 4 byte struct
 pub type CellType = u16;
 pub type MoveType = i8;
 pub type StateType = u8;
-pub type TransitionGenericArray = [[TransitionGeneric; MAX_SYMBOLS]; MAX_STATES + 1];
-// pub type TransitionGenericArray1D = [TransitionGeneric; (MAX_STATES + 1) * 2];
-// pub type TransitionGenericArray2D = [[TransitionGeneric; 2]; MAX_STATES + 1];
+pub type TransitionGenericArray =
+    [[TransitionGeneric; MAX_SYMBOLS_GENERIC]; MAX_STATES_GENERIC + 1];
 
 /// Default Unused for all transition fields. \
 /// As this is an array a marker is required to identify the end of the used data, if n_states is not provided.
@@ -26,22 +28,23 @@ pub const TRANSITION_TABLE_GENERIC_DEFAULT: TransitionGenericArray = [[Transitio
     symbol_write: SYMBOL_UNUSED,
     direction: 0,
     state_next: 0,
-}; MAX_SYMBOLS];
-    MAX_STATES + 1];
+}; MAX_SYMBOLS_GENERIC];
+    MAX_STATES_GENERIC + 1];
 // pub const TRANSITION_ARRAY_1D_DEFAULT: TransitionGenericArray1D = [TransitionGeneric {
 //     write_symbol: SYMBOL_UNUSED,
 //     direction: 0,
 //     state_next: 0,
-// }; (MAX_STATES + 1) * 2];
+// }; (MAX_STATES_GENERIC + 1) * 2];
 // pub const TRANSITION_ARRAY_2D_UNUSED: TransitionGenericArray2D = [[TransitionGeneric {
 //     write_symbol: 9,
 //     direction: 0,
 //     state_next: 0,
-// }; 2]; MAX_STATES + 1];
+// }; 2]; MAX_STATES_GENERIC + 1];
 pub const SYMBOL_UNDEFINED: CellType = u8::MAX as CellType;
 pub const SYMBOL_UNUSED: CellType = u8::MAX as CellType - 1;
 pub const DIR_RIGHT: MoveType = 1;
 pub const DIR_LEFT: MoveType = -1;
+pub const DIR_UNDEFINED: MoveType = 0;
 pub const STATE_HOLD: u8 = 0;
 pub const TRANSITION_HOLD: TransitionGeneric = TransitionGeneric {
     symbol_write: SYMBOL_UNDEFINED,
@@ -106,9 +109,9 @@ impl TransitionGeneric {
             b'1'..b'9' => transition[2] - b'0',
             b'A'..b'Y' => transition[2] - b'A' + 1,
             // b'-' | b'Z' => 0,
-            _ => 0,
+            _ => STATE_HOLD,
         };
-        assert!(state_next <= MAX_STATES as u8);
+        assert!(state_next <= MAX_STATES_GENERIC as u8);
 
         Self {
             symbol_write: write_symbol,
@@ -143,7 +146,7 @@ impl TryFrom<&str> for TransitionGeneric {
 /// Displays the transition in Standard TM Text Format.
 impl Display for TransitionGeneric {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.symbol_write == 9 || (self.state_next == 0 && self.symbol_write == 2) {
+        if self.is_unused() || (self.state_next == STATE_HOLD && self.direction == DIR_UNDEFINED) {
             return write!(f, "---");
         }
         let write_symbol = match self.symbol_write {
@@ -180,7 +183,18 @@ impl TransitionTableGeneric {
     pub fn from_standard_tm_text_format(transitions_text: &str) -> Result<Self, &'static str> {
         let mut transitions = TRANSITION_TABLE_GENERIC_DEFAULT;
         let transition_tuples: Vec<&str> = transitions_text.split('_').collect();
+        if transition_tuples.len() > MAX_STATES_GENERIC {
+            // println!("{:?}", transition_tuples);
+            // println!("{}", transition_tuples.len());
+            return Err("The number of table states exceeds the states set in MAX_STATES_GENERIC!");
+        }
         let len_line = transition_tuples.first().unwrap().as_bytes().len();
+        if len_line / 3 > MAX_SYMBOLS_GENERIC {
+            return Err(
+                "The number of table symbols exceeds the symbols set in MAX_SYMBOLS_GENERIC!",
+            );
+        }
+        let mut max_symbol = 0;
         for (line, tuple) in transition_tuples.iter().enumerate() {
             // Check format
             if tuple.as_bytes().len() != len_line {
@@ -189,12 +203,30 @@ impl TransitionTableGeneric {
             for (symbol, start) in (0..len_line).step_by(3).enumerate() {
                 let transition = tuple.as_bytes()[start..start + 3].try_into().unwrap();
                 transitions[line + 1][symbol] = TransitionGeneric::new(transition);
+                if transitions[line + 1][symbol].symbol_write > max_symbol
+                    && transitions[line + 1][symbol].symbol_write < SYMBOL_UNDEFINED
+                {
+                    max_symbol = transitions[line + 1][symbol].symbol_write;
+                }
             }
         }
 
-        Ok(Self {
+        // check if all references are available, e.g. 8LB requires als a table size 8.
+        let t = Self {
             transition_table: transitions,
-        })
+        };
+        let dim = t.dimensions_slow();
+        if dim.n_symbols != max_symbol as usize + 1 {
+            // This is not failsafe, as only line one is checked for completeness.
+            // Should check all fields for unused, but seems overdone.
+            eprintln!(
+                "The max symbol used is {max_symbol}, but the table has symbol size {}.",
+                dim.n_symbols
+            );
+            return Err("The max symbol used and the table symbol size do not match!");
+        }
+
+        Ok(t)
     }
 
     pub fn to_standard_tm_text_format(&self) -> String {
@@ -223,14 +255,14 @@ impl TransitionTableGeneric {
     /// Returns the number of (states, symbols) used.
     /// Returns the highest used symbol, e.g. 1 for machines writing only 0 and 1.
     pub fn dimensions_slow(&self) -> MachineDimensions {
-        let mut max_symbols = MAX_SYMBOLS;
+        let mut max_symbols = MAX_SYMBOLS_GENERIC;
         for (symbol, transition) in self.transition_table[1].iter().enumerate() {
             if transition.is_unused() {
                 max_symbols = symbol;
                 break;
             }
         }
-        let mut n_states = MAX_STATES;
+        let mut n_states = MAX_STATES_GENERIC;
         for (line, transition_line) in self.transition_table.iter().skip(1).enumerate() {
             if transition_line[0].is_unused() {
                 n_states = line;
@@ -366,5 +398,43 @@ mod tests {
         println!("{}", tm_format);
         assert_eq!(check_value, transition_b0);
         assert_eq!(text, tm_format);
+    }
+
+    #[test]
+    fn test_machine_10x2_green() {
+        // 10x2-Green
+        let text = "1LB1RZ_0LC1LC_0LD0LC_1LE1RA_0LF0LE_1LG1RD_0LH0LG_1LI1RF_0LJ0LI_1RJ1RH";
+        let table = TransitionTableGeneric::from_standard_tm_text_format(text).unwrap();
+        let check_value = TransitionGeneric::try_from("1RJ").unwrap();
+        let transition_j0 = table.transition_for_state_symbol(J, 0);
+        println!("{}", table);
+        let tm_format = table.to_standard_tm_text_format();
+        println!("{}", tm_format);
+        assert_eq!(check_value, transition_j0);
+        assert_eq!(text, tm_format);
+
+        // let ts = TransitionTableSymbol2::try_from(table);
+        // println!("\nConvert to Transition Symbol2: {:?}", ts);
+    }
+
+    #[test]
+    fn test_machine_10x10_random() {
+        let text = "8LB1RZ0LC1LC0LD9LC1LE1RA0LF0LE_4LG1RD0LH0LG6LI1RF0LJ0LI1RJ1RH\
+        _8LB1RZ0LC1LC0LD9LC1LE1RA0LF0LE_4LG1RD0LH0LG6LI1RF0LJ0LI1RJ1RH\
+        _8LB1RZ0LC1LC0LD9LC1LE1RA0LF0LE_4LG1RD0LH0LG6LI1RF0LJ0LI1RJ1RH\
+        _8LB1RZ0LC1LC0LD9LC1LE1RA0LF0LE_4LG1RD0LH0LG6LI1RF0LJ0LI1RJ1RH\
+        _8LB1RZ0LC1LC0LD9LC1LE1RA0LF0LE_4LG1RD0LH0LG6LI1RF0LJ0LI1RJ1RH\
+        ";
+        let table = TransitionTableGeneric::from_standard_tm_text_format(text).unwrap();
+        let check_value = TransitionGeneric::try_from("1RJ").unwrap();
+        let transition_j8 = table.transition_for_state_symbol(J, 8);
+        println!("{}", table);
+        let tm_format = table.to_standard_tm_text_format();
+        println!("{}", tm_format);
+        assert_eq!(check_value, transition_j8);
+        assert_eq!(text, tm_format);
+
+        // let ts = TransitionTableSymbol2::try_from(table);
+        // println!("\n as Transition Symbol2: {:?}", ts);
     }
 }

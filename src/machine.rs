@@ -1,3 +1,4 @@
+//! A single Turing Machine.
 use std::{fmt::Display, io};
 
 use crate::{
@@ -18,8 +19,8 @@ use crate::{
 /// Direction, L, R (undefined without effect)  
 /// Next Status: A, B, C, D, E (BB5)  
 ///
-/// For each transition, this results in 2 (symbols) * 2 (directions) * 5 (status) + 1 (undefined) = 21 possibilites.  
-/// There are 5 (current status) * 2 (current symbol) = 10 fields, so to the power of 10.  
+/// For each transition, this results in 2 (symbols) * 2 (directions) * 5 (states) + 1 (undefined) = 21 possibilites.  
+/// In the transition table there are 5 (current state) * 2 (current symbol) = 10 fields, so to the power of 10.  
 /// General formula (4*s+1)^2*s (s = number of status)  
 /// Results for  
 /// BB=1: 25
