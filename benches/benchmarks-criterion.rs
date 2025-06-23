@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use std::{path::Component, time::Duration};
+use std::time::Duration;
 
 use bb_challenge::{
     config::Config,
@@ -11,7 +11,7 @@ use bb_challenge::{
         run_decider_generator_single_thread_deprecated, Decider,
     },
     decider_hold_u128_long::DeciderHoldU128Long,
-    decider_loop_v4::{DeciderLoopV4, STEP_LIMIT_DECIDER_LOOP},
+    decider_loop_v4::DeciderLoopV4,
     generator::Generator,
     generator_full::GeneratorFull,
     generator_reduced::GeneratorReduced,
@@ -62,7 +62,7 @@ fn benchmark_decider_gen_bb3(c: &mut Criterion) {
         b.iter(|| bench_decider_generator_full(&config))
     });
     group.bench_function(
-        "Decider P (Data Provider Generator Full) BB3 Deprecated",
+        "Decider (Data Provider Generator Full) BB3 Deprecated",
         |b| b.iter(|| bench_decider_data_provider_gen_full_deprecated(&config)),
     );
     group.bench_function("Decider (Data Provider Generator Full) BB3", |b| {
@@ -77,7 +77,7 @@ fn benchmark_decider_gen_bb3(c: &mut Criterion) {
         "Decider (Data Provider Generator Reduced) BB3 Deprecated",
         |b| b.iter(|| bench_decider_data_provider_gen_reduced_deprecated(&config)),
     );
-    group.bench_function("Decider P (Data Provider Generator Reduced) BB3", |b| {
+    group.bench_function("Decider (Data Provider Generator Reduced) BB3", |b| {
         b.iter(|| bench_decider_data_provider_gen_reduced(&config))
     });
 
@@ -321,7 +321,7 @@ fn bench_generate_reduced() {
 
 fn bench_decider_generator_full(config: &Config) {
     let generator = GeneratorFull::new(config);
-    let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+    let decider = DeciderLoopV4::new(DeciderLoopV4::step_limit(config.n_states()));
     let result = run_decider_generator_single_thread_deprecated(decider, generator);
     // println!("{}", result);
     if config.n_states() <= 3 {
@@ -334,7 +334,7 @@ fn bench_decider_generator_full(config: &Config) {
 
 fn bench_decider_data_provider_gen_full_deprecated(config: &Config) {
     let data_provider = GeneratorFull::new(config);
-    let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+    let decider = DeciderLoopV4::new(DeciderLoopV4::step_limit(config.n_states()));
     let result = run_decider_data_provider_single_thread_deprecated(decider, data_provider);
     // println!("{}", result);
     let n_states = config.n_states();
@@ -345,7 +345,7 @@ fn bench_decider_data_provider_gen_full_deprecated(config: &Config) {
 
 fn bench_decider_data_provider_gen_reduced_deprecated(config: &Config) {
     let data_provider = GeneratorReduced::new(config);
-    let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+    let decider = DeciderLoopV4::new(DeciderLoopV4::step_limit(config.n_states()));
     let result = run_decider_data_provider_single_thread_deprecated(decider, data_provider);
     // println!("{}", result);
     let n_states = config.n_states();
@@ -406,7 +406,7 @@ fn bench_decider_data_provider_gen_reduced_threaded(config: &Config) {
 
 fn bench_decider_generator_full_threaded(n_states: usize) {
     let generator = GeneratorFull::new(&config_bench(n_states));
-    let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+    let decider = DeciderLoopV4::new(DeciderLoopV4::step_limit(n_states));
     let result = decider::run_decider_generator_threaded(decider, generator);
     // println!("{}", result);
     if n_states <= 3 {
@@ -427,7 +427,7 @@ fn bench_decider_generator_full_threaded(n_states: usize) {
 
 fn bench_decider_generator_reduced(n_states: usize) {
     let generator = GeneratorReduced::new(&config_bench(n_states));
-    let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+    let decider = DeciderLoopV4::new(DeciderLoopV4::step_limit(n_states));
     let result = run_decider_generator_single_thread_deprecated(decider, generator);
     // println!("{}", result);
     if n_states <= 3 {
@@ -437,7 +437,7 @@ fn bench_decider_generator_reduced(n_states: usize) {
 
 fn bench_decider_generator_reduced_threaded(n_states: usize) {
     let generator = GeneratorReduced::new(&config_bench(n_states));
-    let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+    let decider = DeciderLoopV4::new(DeciderLoopV4::step_limit(n_states));
     let result = decider::run_decider_generator_threaded(decider, generator);
     // println!("{}", result);
     if n_states <= 3 {
