@@ -5,8 +5,10 @@
 #[cfg(all(debug_assertions, feature = "bb_debug"))]
 use crate::tape_utils::U64Ext;
 use crate::{
-    decider::Decider,
+    config::Config,
+    decider::{self, Decider},
     machine::Machine,
+    result::BatchResult,
     status::{EndlessReason, MachineStatus, UndecidedReason},
     transition_symbol2::{DirectionType, TransitionSymbol2, TransitionType},
     StepType, MAX_STATES,
@@ -23,6 +25,9 @@ const POS_HALF: TapeType = 1 << MIDDLE_BIT;
 // const POS_HALF_TEST: u64 = 0b1000_0000_0000_0000_0000_0000_0000_0000;
 
 pub const STEP_LIMIT_DECIDER_LOOP: StepType = 510; // STEP_LIMIT;
+pub const MAX_INIT_CAPACITY: usize = 10_000;
+
+// TODO self_ref for loop
 
 #[derive(Debug)]
 pub struct DeciderLoopV4 {
@@ -30,24 +35,48 @@ pub struct DeciderLoopV4 {
     /// stores the step ids for each State-Symbol combination (basically e.g. all from A0 steps)
     // TODO check if storage as u16 is faster
     maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)],
+    /// Step limit for this decider. Should not exceed 2000 // TODO why
     step_limit: usize,
+    // TODO tape_size
 }
 
 impl DeciderLoopV4 {
     pub fn new(step_limit: StepType) -> Self {
         // TODO reasoning for size, 510 was for BB5
-        let step_limit = step_limit.min(2000) as usize;
+        let cap = (step_limit as usize).min(MAX_INIT_CAPACITY);
+        let step_limit = step_limit as usize;
         Self {
-            steps: Vec::with_capacity(step_limit),
-            maps_1d: core::array::from_fn(|_| Vec::with_capacity(step_limit / 4)),
+            steps: Vec::with_capacity(cap),
+            maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
             step_limit,
+        }
+    }
+
+    fn new_from_self(&self) -> DeciderLoopV4 {
+        let cap = self.step_limit.min(MAX_INIT_CAPACITY);
+        DeciderLoopV4 {
+            steps: Vec::with_capacity(cap),
+            maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
+            step_limit: self.step_limit,
+        }
+    }
+
+    // TODO fine tune and other states
+    pub fn step_limit(n_states: usize) -> StepType {
+        match n_states {
+            1 => 100,
+            2 => 100,
+            3 => 100,
+            4 => 300,
+            5 => 510,
+            _ => panic!("result_max_steps: Not build for this."),
         }
     }
 }
 
 impl Decider for DeciderLoopV4 {
     fn new_decider(&self) -> Self {
-        Self::new(self.step_limit as StepType)
+        Self::new_from_self(&self)
     }
 
     // tape_long_bits in machine?
@@ -375,6 +404,15 @@ impl Decider for DeciderLoopV4 {
                 }
             }
         }
+    }
+
+    fn decider_run_batch(
+        machines: &[Machine],
+        run_predecider: bool,
+        config: &Config,
+    ) -> Option<BatchResult> {
+        let decider = Self::new(Self::step_limit(config.n_states()));
+        decider::decider_generic_run_batch(decider, machines, run_predecider, config)
     }
 
     fn name(&self) -> String {

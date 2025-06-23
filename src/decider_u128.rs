@@ -3,7 +3,7 @@ use std::fmt::Display;
 use crate::{
     config::Config,
     machine::Machine,
-    pre_deciders::run_pre_deciders,
+    pre_decider::run_pre_decider,
     status::{MachineStatus, UndecidedReason},
     tape_utils::{U128Ext, MIDDLE_BIT_U128, POS_HALF_U128, TAPE_SIZE_BIT_U128},
     transition_symbol2::TransitionSymbol2,
@@ -37,7 +37,7 @@ impl<'a> DeciderU128<'a> {
             machine,
             status: MachineStatus::NoDecision,
             check_pre_deciders: true,
-            step_limit: config.step_limit,
+            step_limit: config.step_limit(),
         }
     }
 
@@ -65,7 +65,7 @@ impl<'a> DeciderU128<'a> {
     /// Returns the MachineStatus:Hold with steps if steps were found within limits of tape and max steps.  
     pub fn run_check_hold(&mut self) -> MachineStatus {
         if self.check_pre_deciders {
-            let result = run_pre_deciders(self.machine.transition_table());
+            let result = run_pre_decider(self.machine.transition_table());
             if result != MachineStatus::NoDecision {
                 return result;
             }

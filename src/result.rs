@@ -4,6 +4,7 @@ use std::{fmt::Display, time::Duration};
 #[cfg(feature = "bb_counter_stats")]
 use crate::status::COUNTER_ARRAY_SIZE;
 use crate::{
+    config::Config,
     generator,
     machine::Machine,
     machine_info::MachineInfo,
@@ -15,6 +16,46 @@ use crate::{
 const NUM_LONG_LEN: usize = 18;
 const NUM_SHORT_LEN: usize = 14;
 const LEVEL_1_CHAR: char = '\u{2022}';
+const NUM_MAX_MACHINES_TO_DISPLAY_IN_RESULT: usize = 10;
+const NUM_UNDECIDED_MACHINES_TO_DISPLAY_IN_RESULT: usize = 10;
+
+// TODO result print undecided
+
+#[non_exhaustive]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+// TODO allow error?
+pub enum EndReason {
+    AllMachinesChecked,
+    // This is a temporary state indicating the last batch needs to be evaluated, but gives a stop indication.
+    IsLastBatch,
+    MachineLimitReached(u64),
+    // This is usually an unexpected end when the total is not reached.
+    NoMoreData,
+    UndecidedLimitReached(usize),
+    #[default]
+    Undefined,
+    // not ended yet
+    Working,
+}
+
+impl Display for EndReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EndReason::AllMachinesChecked => write!(f, "All machines checked"),
+            EndReason::MachineLimitReached(limit) => {
+                write!(f, "Limit of {} machines reached", limit)
+            }
+            EndReason::UndecidedLimitReached(limit) => {
+                write!(f, "Limit of {} undecided machines reached", limit)
+            }
+            EndReason::Undefined => write!(f, "No end reason given"),
+            EndReason::IsLastBatch => write!(f, "Last batch indication. Should be internal only"),
+            EndReason::NoMoreData => write!(f, "No more data found"),
+            EndReason::Working => write!(f, "working..."),
+        }
+        // write(f, "{s}")
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct ResultDecider {
@@ -53,12 +94,13 @@ pub struct ResultDecider {
     // record_machines_max_steps: u16,
     // machines_max_steps: Option<Vec<MachineInfo>>,
     /// Store all machines Undecided up to this limit.
-    record_machines_undecided: u32,
+    limit_machines_undecided: usize,
     // machine_undecided: Option<MachineInfo>,
     machines_undecided: Option<Vec<MachineInfo>>,
+    pub end_reason: EndReason,
 
     // for statistical purposes and performance tests
-    pub duration: DurationGenerator,
+    pub duration: DurationDataProvider,
     /// Optional name of the test or any other info.
     pub name: String,
 
@@ -78,7 +120,36 @@ pub struct ResultDecider {
 impl ResultDecider {
     /// Result with starting steps_max to avoid unnecessary updates on machine with max steps. \
     /// Use init_steps_max(n_states).
-    pub fn new(n_states: usize, init_steps_max: StepType) -> Self {
+    pub fn new(config: &Config) -> Self {
+        ResultDecider {
+            n_states: config.n_states(),
+            num_turing_machines: generator::num_turing_machine_permutations_u64(config.n_states()),
+            // #[cfg(feature = "bb_use_result_large")]
+            // is_result_large: true,
+            steps_max: StepMaxResult::new(
+                config.init_steps_max(),
+                config.limit_machines_max_steps(),
+            ),
+            limit_machines_undecided: config.limit_machines_undecided(),
+            ..Default::default()
+        }
+    }
+
+    pub fn new_init_steps_max(init_steps_max: StepType, config: &Config) -> Self {
+        ResultDecider {
+            n_states: config.n_states(),
+            num_turing_machines: generator::num_turing_machine_permutations_u64(config.n_states()),
+            // #[cfg(feature = "bb_use_result_large")]
+            // is_result_large: true,
+            steps_max: StepMaxResult::new(init_steps_max, config.limit_machines_max_steps()),
+            limit_machines_undecided: config.limit_machines_undecided(),
+            ..Default::default()
+        }
+    }
+
+    /// Result with starting steps_max to avoid unnecessary updates on machine with max steps. \
+    /// Use init_steps_max(n_states).
+    pub fn new_deprecated(n_states: usize, init_steps_max: StepType) -> Self {
         ResultDecider {
             n_states,
             num_turing_machines: generator::num_turing_machine_permutations_u64(n_states),
@@ -90,17 +161,17 @@ impl ResultDecider {
     }
 
     // providing known steps_max avoids some updates
-    pub fn new_batch(batch_info: &ResultBatchInfo) -> Self {
+    pub fn new_batch_deprecated(batch_info: &ResultBatchInfo) -> Self {
         ResultDecider {
             n_states: batch_info.n_states,
             num_turing_machines: generator::num_turing_machine_permutations_u64(
                 batch_info.n_states,
             ),
             steps_max: StepMaxResult::new(
-                batch_info.steps_max,
+                batch_info.steps_max_init,
                 batch_info.limit_machines_max_steps,
             ),
-            record_machines_undecided: batch_info.limit_machines_undecided,
+            limit_machines_undecided: batch_info.limit_machines_undecided,
             // #[cfg(feature = "bb_use_result_large")]
             // is_result_large: true,
             ..Default::default()
@@ -110,9 +181,9 @@ impl ResultDecider {
     pub fn batch_info(&self) -> ResultBatchInfo {
         ResultBatchInfo {
             n_states: self.n_states,
-            steps_max: self.steps_max(),
-            limit_machines_max_steps: self.steps_max.record_machines_max_steps,
-            limit_machines_undecided: self.record_machines_undecided,
+            steps_max_init: self.steps_max(),
+            limit_machines_max_steps: self.steps_max.limit_machines_max_steps,
+            limit_machines_undecided: self.limit_machines_undecided,
         }
     }
 
@@ -125,19 +196,25 @@ impl ResultDecider {
         }
     }
 
-    pub fn set_record_machines_max_steps(&mut self, limit: u16) {
+    pub fn set_record_machines_max_steps(&mut self, limit: usize) {
         self.steps_max.set_record_machines_max_steps(limit);
     }
 
-    pub fn set_record_machines_undecided(&mut self, limit: u32) {
-        self.record_machines_undecided = limit;
+    pub fn limit_machines_undecided(&self) -> usize {
+        self.limit_machines_undecided
+    }
+
+    pub fn set_limit_machines_undecided(&mut self, limit: usize) {
+        self.limit_machines_undecided = limit;
         if limit == 0 {
             self.machines_undecided = None;
         }
     }
 
     /// Add one single result to these totals
-    pub fn add(&mut self, machine: &Machine, status: &MachineStatus) {
+    /// Returns false if <limit_machines_undecided> Undecided Machines have been stored
+    /// which allows the caller to stop further processing.  
+    pub fn add(&mut self, machine: &Machine, status: &MachineStatus) -> bool {
         // self.num_checked_total += 1;
         self.num_evaluated += 1;
         match status {
@@ -194,31 +271,38 @@ impl ResultDecider {
                 self.endless_count.add_endless_reason(endless_reason);
             }
             MachineStatus::Undecided(_, _, _) => {
-                if self.record_machines_undecided > 0
-                    && self.num_undecided < self.record_machines_undecided as u64
-                {
-                    if let Some(machines) = self.machines_undecided.as_mut() {
-                        machines.push(MachineInfo::from_machine(machine, status));
+                if self.limit_machines_undecided > 0 {
+                    if self.num_undecided < self.limit_machines_undecided as u64 {
+                        if let Some(machines) = self.machines_undecided.as_mut() {
+                            machines.push(MachineInfo::from_machine(machine, status));
+                        } else {
+                            self.machines_undecided =
+                                Some(vec![MachineInfo::from_machine(machine, status)]);
+                        }
                     } else {
-                        self.machines_undecided =
-                            Some(vec![MachineInfo::from_machine(machine, status)]);
+                        return false;
                     }
                 }
                 self.num_undecided += 1;
             }
             MachineStatus::DecidedNotMaxTooManyHoldTransitions => {
-                self.num_not_max_too_many_hold_transitions += 1
+                self.num_not_max_too_many_hold_transitions += 1;
             }
             MachineStatus::DecidedNotMaxNotAllStatesUsed => {
-                self.num_not_max_not_all_states_used += 1
+                self.num_not_max_not_all_states_used += 1;
             }
             MachineStatus::NoDecision => {
-                panic!("State NoDecision must not be the final state. Change it to Undecided.")
+                panic!("State NoDecision must not be the final state. Change it to Undecided.");
             }
         }
+
+        true
     }
 
-    pub fn add_result(&mut self, result: &ResultDecider) {
+    /// Add another result to this result. \
+    /// Returns false if <limit_machines_undecided> Undecided Machines have been stored
+    /// which allows the caller to stop further processing.  
+    pub fn add_result(&mut self, result: &ResultDecider) -> bool {
         self.num_checked_total += result.num_checked_total;
         self.num_evaluated += result.num_evaluated;
         self.num_hold += result.num_hold;
@@ -235,19 +319,6 @@ impl ResultDecider {
         self.num_not_max_not_all_states_used += result.num_not_max_not_all_states_used;
         self.num_not_max_too_many_hold_transitions += result.num_not_max_too_many_hold_transitions;
 
-        // add undecided machines
-        if self.num_undecided < self.record_machines_undecided as u64 {
-            if let Some(new_machines) = result.machines_undecided.as_ref() {
-                if let Some(machines) = self.machines_undecided.as_mut() {
-                    let max = new_machines
-                        .len()
-                        .min(self.record_machines_undecided as usize - machines.len());
-                    machines.extend_from_slice(&new_machines[0..max]);
-                } else {
-                    self.machines_undecided = result.machines_undecided.clone();
-                }
-            }
-        }
         // update array stats
         #[cfg(feature = "bb_counter_stats")]
         for i in 0..COUNTER_ARRAY_SIZE {
@@ -255,6 +326,29 @@ impl ResultDecider {
             self.loop_size_stats[i] += result.loop_size_stats[i];
             self.loop_steps_stats[i] += result.loop_steps_stats[i];
         }
+
+        // add undecided machines
+        if self.limit_machines_undecided > 0 {
+            if self.num_undecided < self.limit_machines_undecided as u64 {
+                if let Some(new_machines) = result.machines_undecided.as_ref() {
+                    if let Some(machines) = self.machines_undecided.as_mut() {
+                        let max = new_machines
+                            .len()
+                            .min(self.limit_machines_undecided as usize - machines.len());
+                        machines.extend_from_slice(&new_machines[0..max]);
+                    } else {
+                        self.machines_undecided = result.machines_undecided.clone();
+                    }
+                    if self.num_undecided >= self.limit_machines_undecided as u64 {
+                        return false;
+                    }
+                }
+            } else {
+                return false;
+            }
+        }
+
+        true
     }
 
     pub fn add_pre_decider_count(&mut self, count: &PreDeciderCount) {
@@ -277,6 +371,11 @@ impl ResultDecider {
     /// Returns all recorded machines with max steps.
     pub fn machines_max_steps(&self) -> Option<&Vec<MachineInfo>> {
         self.steps_max.machines_max_steps()
+    }
+
+    /// Returns all recorded machines with max steps, sorted by id.
+    pub fn machines_max_steps_sorted(&self) -> Option<Vec<MachineInfo>> {
+        self.steps_max.machines_max_steps_sorted()
     }
 
     // pub fn machines_max_steps_to_string(&self, max_machines: usize) -> String {
@@ -306,6 +405,18 @@ impl ResultDecider {
         self.machines_undecided.as_ref()
     }
 
+    /// Returns all recorded machines with max steps, sorted by id.
+    pub fn machines_undecided_sorted(&self) -> Option<Vec<MachineInfo>> {
+        if let Some(machines) = self.machines_undecided.as_ref() {
+            let mut v = machines.to_vec();
+            v.sort();
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    // TODO move undecided in own struct and replace this with Display. Merge from result Display.
     pub fn machines_undecided_to_string(&self, max_machines: usize) -> String {
         if let Some(machines) = &self.machines_undecided {
             let last = machines.len().min(max_machines);
@@ -333,13 +444,14 @@ impl ResultDecider {
     }
 
     pub fn to_string_extended(&self) -> String {
+        // TODO replace s with write!
         let mut s = String::new();
-        // list some undecided machines
-        if let Some(undecided) = self.machines_undecided.as_ref() {
-            for u in undecided.iter().take(10) {
-                s.push_str(format!("{}\n", u).as_str());
-            }
-        }
+        // // list some undecided machines
+        // if let Some(undecided) = self.machines_undecided.as_ref() {
+        //     for u in undecided.iter().take(10) {
+        //         s.push_str(format!("{}\n", u).as_str());
+        //     }
+        // }
 
         // add normal result
         s.push_str(format!("\n{}", self).as_str());
@@ -357,7 +469,7 @@ impl ResultDecider {
             self.n_states,
             self.name,
             self.num_evaluated.to_formatted_string(&locale),
-            duration_as_ms_rounded(self.duration.duration_generator),
+            duration_as_ms_rounded(self.duration.duration_data_provider),
             duration_as_ms_rounded(self.duration.duration_decider),
             duration_as_ms_rounded(self.duration.duration_total),
         ).as_str());
@@ -377,6 +489,52 @@ impl ResultDecider {
     pub fn num_endless(&self) -> u64 {
         self.endless_count.num_endless_total()
     }
+
+    pub fn num_evaluated(&self) -> u64 {
+        self.num_evaluated
+    }
+
+    pub fn num_hold(&self) -> u64 {
+        self.num_hold
+    }
+
+    pub fn num_not_max(&self) -> u64 {
+        self.num_not_max
+    }
+
+    pub fn num_undecided(&self) -> u64 {
+        self.num_undecided
+    }
+
+    pub fn num_undecided_free(&self) -> usize {
+        if self.limit_machines_undecided == 0
+            || self.num_undecided >= self.limit_machines_undecided as u64
+        {
+            0
+        } else {
+            self.limit_machines_undecided - self.num_undecided as usize
+        }
+    }
+
+    pub fn pre_decider_count(&self) -> PreDeciderCount {
+        self.pre_decider_count
+    }
+
+    pub fn endless_count(&self) -> &EndlessCount {
+        &self.endless_count
+    }
+
+    pub fn n_states(&self) -> usize {
+        self.n_states
+    }
+
+    pub fn num_turing_machines(&self) -> u64 {
+        self.num_turing_machines
+    }
+
+    pub fn num_not_max_too_many_hold_transitions(&self) -> u64 {
+        self.num_not_max_too_many_hold_transitions
+    }
 }
 
 impl Display for ResultDecider {
@@ -384,12 +542,14 @@ impl Display for ResultDecider {
         // update predecider
         // self.pre_decider_count.num_checked = self.pre_decider_count.total() + self.num_evaluated;
 
-        // let locale = SystemLocale::default().unwrap();
         let locale = user_locale();
         let mut buf = Buffer::default();
+        // TODO Could be replaced with write()?
+        let mut s = String::new();
 
+        writeln!(f, "Result: {}", self.end_reason)?;
         buf.write_formatted(&self.num_turing_machines, &locale);
-        let mut s = format!("Turing machines:    {:>NUM_LONG_LEN$}\n", buf.as_str());
+        s.push_str(format!("Turing machines:    {:>NUM_LONG_LEN$}\n", buf.as_str()).as_str());
         if self.num_checked_total() != self.num_evaluated {
             buf.write_formatted(&self.num_checked_total, &locale);
             s.push_str(format!("Total checked:      {:>NUM_LONG_LEN$}\n", buf.as_str()).as_str());
@@ -421,6 +581,33 @@ impl Display for ResultDecider {
         s.push_str(format!("{}", self.endless_count).as_str());
         s.push_str(format!("{}", self.pre_decider_count).as_str());
         s.push_str(format!("{}", self.steps_max).as_str());
+        write!(f, "{}", s)?;
+
+        if let Some(machines) = self.machines_undecided.as_ref() {
+            writeln!(
+                f,
+                "  Undecided:             (Number of machines: {})",
+                self.num_undecided,
+            )?;
+            // print first undecided machines
+            // get first machines, but need to sort first for batches may come in other order
+            let mut v = machines.to_vec();
+            v.sort();
+            // format right aligned
+            let len = v.last().unwrap().id().to_formatted_string(&locale).len();
+            for m in v.iter().take(NUM_UNDECIDED_MACHINES_TO_DISPLAY_IN_RESULT) {
+                writeln!(
+                    f,
+                    "   Machine No. {:>len$}: {}, {}",
+                    m.id().to_formatted_string(&locale),
+                    m.to_standard_tm_text_format(),
+                    m.status()
+                )?;
+            }
+        };
+
+        // counter stats if enabled
+        // TODO test enabled
         #[cfg(feature = "bb_counter_stats")]
         {
             let steps: StepType = self.hold_steps_stats.iter().sum();
@@ -448,15 +635,15 @@ impl Display for ResultDecider {
                 .as_str(),
             );
         }
-        write!(f, "{}", s)
+        Ok(())
     }
 }
 
 pub struct ResultBatchInfo {
     pub n_states: usize,
-    pub steps_max: StepType,
-    pub limit_machines_max_steps: u16,
-    pub limit_machines_undecided: u32,
+    pub steps_max_init: StepType,
+    pub limit_machines_max_steps: usize,
+    pub limit_machines_undecided: usize,
 }
 
 #[derive(Debug, Default)]
@@ -630,7 +817,7 @@ impl PreDeciderCount {
         self.num_writes_only_zero += other.num_writes_only_zero;
     }
 
-    pub fn total(&self) -> u64 {
+    pub fn num_total(&self) -> u64 {
         self.num_not_all_states_used
             + self.num_not_exactly_one_hold_condition
             + self.num_not_generated
@@ -648,7 +835,7 @@ impl Display for PreDeciderCount {
         let mut buf = Buffer::default();
         let mut s = String::new();
 
-        let total = self.total();
+        let total = self.num_total();
         buf.write_formatted(&total, &locale);
         s.push_str(
             format!(
@@ -737,8 +924,8 @@ impl Display for PreDeciderCount {
 
 /// Duration of the generator tasks.
 #[derive(Debug, Default)]
-pub struct DurationGenerator {
-    pub duration_generator: Duration,
+pub struct DurationDataProvider {
+    pub duration_data_provider: Duration,
     /// Duration of the decider tasks.
     pub duration_decider: Duration,
     /// Duration total which includes the task creation and waiting time.
@@ -748,18 +935,24 @@ pub struct DurationGenerator {
 #[derive(Debug, Default)]
 pub struct StepMaxResult {
     pub steps_max: StepType,
-    pub num_machines_steps_max: u16,
+    pub num_machines_steps_max: usize,
     machine_max_steps: Option<MachineInfo>,
     machines_max_steps: Option<Vec<MachineInfo>>,
     /// Store all machines with max steps up to this limit.
-    record_machines_max_steps: u16,
+    limit_machines_max_steps: usize,
 }
 
 impl StepMaxResult {
-    pub fn new(steps_max_init: StepType, record_machines_max_steps: u16) -> Self {
+    pub fn new(steps_max_init: StepType, limit_machines_max_steps: usize) -> Self {
         Self {
+            // // Machines with only one step are not recorded, there are too many
+            // steps_max: if steps_max_init > 2 {
+            //     steps_max_init
+            // } else {
+            //     2
+            // },
             steps_max: steps_max_init,
-            record_machines_max_steps,
+            limit_machines_max_steps,
             ..Default::default()
         }
     }
@@ -768,11 +961,11 @@ impl StepMaxResult {
         if other.steps_max >= self.steps_max {
             if other.steps_max == self.steps_max {
                 self.num_machines_steps_max += other.num_machines_steps_max;
-                if self.record_machines_max_steps > 0
-                    && self.record_machines_max_steps as usize > self.len_machines_max_steps()
+                if self.limit_machines_max_steps > 0
+                    && self.limit_machines_max_steps as usize > self.len_machines_max_steps()
                 {
                     let max_len =
-                        self.record_machines_max_steps as usize - self.len_machines_max_steps();
+                        self.limit_machines_max_steps as usize - self.len_machines_max_steps();
                     if max_len > 0 {
                         if let Some(machines) = other.machines_max_steps.as_ref() {
                             if self.machines_max_steps.is_none() {
@@ -791,7 +984,7 @@ impl StepMaxResult {
                 // new max
                 self.steps_max = other.steps_max;
                 self.num_machines_steps_max = other.num_machines_steps_max;
-                if self.record_machines_max_steps == 0 {
+                if self.limit_machines_max_steps == 0 {
                     if other.machine_max_steps.is_some() {
                         self.machine_max_steps = other.machine_max_steps;
                     }
@@ -807,8 +1000,8 @@ impl StepMaxResult {
         if steps >= self.steps_max {
             if steps == self.steps_max {
                 // store additional max step machine only if requested
-                if self.record_machines_max_steps > 0
-                    && self.num_machines_steps_max < self.record_machines_max_steps
+                if self.limit_machines_max_steps > 0
+                    && self.num_machines_steps_max < self.limit_machines_max_steps
                 {
                     if self.machines_max_steps.is_none() {
                         self.machines_max_steps = Some(Vec::with_capacity(4));
@@ -832,7 +1025,7 @@ impl StepMaxResult {
                 // }
                 self.steps_max = steps;
                 self.num_machines_steps_max = 1;
-                if self.record_machines_max_steps > 0 {
+                if self.limit_machines_max_steps > 0 {
                     if self.machines_max_steps.is_none() {
                         self.machines_max_steps = Some(Vec::with_capacity(8));
                     } else {
@@ -857,7 +1050,7 @@ impl StepMaxResult {
 
     /// Returns the first machine with max steps.
     pub fn machine_max_steps(&self) -> Option<MachineInfo> {
-        if self.record_machines_max_steps == 0 {
+        if self.limit_machines_max_steps == 0 {
             if let Some(m) = self.machine_max_steps.as_ref() {
                 return Some(*m);
             }
@@ -870,6 +1063,17 @@ impl StepMaxResult {
     /// Returns all recorded machines with max steps.
     pub fn machines_max_steps(&self) -> Option<&Vec<MachineInfo>> {
         self.machines_max_steps.as_ref()
+    }
+
+    /// Returns all recorded machines with max steps, sorted by id.
+    pub fn machines_max_steps_sorted(&self) -> Option<Vec<MachineInfo>> {
+        if let Some(machines) = self.machines_max_steps.as_ref() {
+            let mut v = machines.to_vec();
+            v.sort();
+            Some(v)
+        } else {
+            None
+        }
     }
 
     pub fn machines_max_steps_to_string(&self, return_max_machines: usize) -> String {
@@ -905,12 +1109,12 @@ impl StepMaxResult {
         }
     }
 
-    pub fn set_record_machines_max_steps(&mut self, limit: u16) {
+    pub fn set_record_machines_max_steps(&mut self, limit: usize) {
         if limit <= 1 {
             self.machines_max_steps = None;
-            self.record_machines_max_steps = 0;
+            self.limit_machines_max_steps = 0;
         } else {
-            self.record_machines_max_steps = limit;
+            self.limit_machines_max_steps = limit;
         }
     }
 
@@ -924,7 +1128,6 @@ impl StepMaxResult {
 
 impl Display for StepMaxResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // let locale = SystemLocale::default().unwrap();
         let locale = user_locale();
         write!(
             f,
@@ -932,23 +1135,8 @@ impl Display for StepMaxResult {
             self.steps_max.to_formatted_string(&locale),
             self.num_machines_steps_max,
         )?;
-        // print max 4 max step machines
-        if self.num_machines_steps_max > 1 && self.machines_max_steps.is_some() {
-            // get first 4 machines, but need to sort first for batches may come in other order
-            let mut v = self.machines_max_steps.as_ref().unwrap().to_vec();
-            v.sort();
-            // format right aligned
-            let len = v.last().unwrap().id().to_formatted_string(&locale).len();
-            // let v = self.machines_max_steps.as_ref().unwrap();
-            for m in v.iter().take(4) {
-                write!(
-                    f,
-                    "   Machine No. {:>len$}: {}\n",
-                    m.id().to_formatted_string(&locale),
-                    m.to_standard_tm_text_format()
-                )?;
-            }
-        } else {
+        // print first max step machines
+        if self.num_machines_steps_max == 1 {
             if let Some(m) = self.machine_max_steps() {
                 write!(
                     f,
@@ -957,9 +1145,46 @@ impl Display for StepMaxResult {
                     m.to_standard_tm_text_format()
                 )?;
             };
+            return Ok(());
+        }
+        if let Some(machines) = self.machines_max_steps_sorted() {
+            // format right aligned
+            let len = machines
+                .last()
+                .unwrap()
+                .id()
+                .to_formatted_string(&locale)
+                .len();
+            for m in machines.iter().take(NUM_MAX_MACHINES_TO_DISPLAY_IN_RESULT) {
+                write!(
+                    f,
+                    "   Machine No. {:>len$}: {}\n",
+                    m.id().to_formatted_string(&locale),
+                    m.to_standard_tm_text_format()
+                )?;
+            }
         }
         Ok(())
     }
+}
+
+pub struct MachinesUndecided {
+    pub machines: Vec<Machine>,
+    pub states: Vec<MachineStatus>,
+}
+
+impl MachinesUndecided {
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            machines: Vec::with_capacity(capacity),
+            states: Vec::with_capacity(capacity),
+        }
+    }
+}
+
+pub struct BatchResult {
+    pub result_decided: ResultDecider,
+    pub machines_undecided: MachinesUndecided,
 }
 
 pub fn result_max_steps_known(n_states: usize) -> StepType {

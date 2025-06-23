@@ -1,4 +1,5 @@
 use crate::StepType;
+use hashbrown::HashMap;
 
 /// Default step limit if not changed in working machine.
 pub const STEP_LIMIT_DEFAULT: StepType = 50_000_000;
@@ -6,47 +7,56 @@ pub const GENERATOR_BATCH_SIZE_RECOMMENDATION_FULL: usize = 500_000;
 pub const GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED: usize = 1_000_000;
 /// Default tape size limit if not changed in working machine.
 const TAPE_SIZE_LIMIT_DEFAULT: usize = 20000;
-const RECORD_MACHINES_MAX_STEPS_DEFAULT: u16 = 10;
+const RECORD_MACHINES_MAX_STEPS_DEFAULT: usize = 10;
 const CPU_UTILIZATION_DEFAULT: usize = 80;
 
-#[derive(Debug, Clone, Copy)]
+/// This sets the configuration for the decider run. \
+/// Use new_default(n_states) or the builder to create a Config.
+#[derive(Debug, Clone)]
 pub struct Config {
     n_states: usize,
     // not StepType as comparison is against len?
-    pub step_limit: StepType,
-    pub tape_size_limit: usize,
-    pub generate_limit: u64,
-    pub generator_batch_size_request_full: usize,
-    pub generator_batch_size_request_reduced: usize,
-    pub record_machines_max_steps: u16,
-    pub record_machines_undecided: u32,
-    pub cpu_utilization: usize,
+    step_limit: StepType,
+    // This can be updated as previous batch runs max can be used as init value.
+    init_steps_max: StepType,
+    tape_size_limit: usize,
+    generate_limit: u64,
+    generator_batch_size_request_full: usize,
+    generator_batch_size_request_reduced: usize,
+    // TODO remove, there are not many machines, possibly by replace record = true, but does it make a performance difference?
+    limit_machines_max_steps: usize,
+    limit_machines_undecided: usize,
+    /// CPU utilization in percent, e.g. 75 -> 6 of 8 cores used. 0-150 allowed.
+    cpu_utilization_percent: usize,
+    pub config_key_value: HashMap<String, String>,
 }
 
 impl Config {
-    pub fn new(
-        n_states: usize,
-        step_limit: StepType,
-        tape_size_limit: usize,
-        generate_limit: u64,
-        generator_batch_size_request_full: usize,
-        generator_batch_size_request_reduced: usize,
-        record_machines_max_steps: u16,
-        record_machines_undecided: u32,
-        cpu_utilization: usize,
-    ) -> Self {
-        Self {
-            n_states,
-            step_limit,
-            tape_size_limit,
-            generate_limit,
-            generator_batch_size_request_full,
-            generator_batch_size_request_reduced,
-            record_machines_max_steps,
-            record_machines_undecided,
-            cpu_utilization,
-        }
-    }
+    // pub fn new(
+    //     n_states: usize,
+    //     step_limit: StepType,
+    //     init_steps_max: StepType,
+    //     tape_size_limit: usize,
+    //     generate_limit: u64,
+    //     generator_batch_size_request_full: usize,
+    //     generator_batch_size_request_reduced: usize,
+    //     record_machines_max_steps: usize,
+    //     record_machines_undecided: usize,
+    //     cpu_utilization: usize,
+    // ) -> Self {
+    //     Self {
+    //         n_states,
+    //         step_limit,
+    //         init_steps_max,
+    //         tape_size_limit,
+    //         generate_limit,
+    //         generator_batch_size_request_full,
+    //         generator_batch_size_request_reduced,
+    //         record_machines_max_steps,
+    //         record_machines_undecided,
+    //         cpu_utilization,
+    //     }
+    // }
 
     pub fn builder(n_states: usize) -> ConfigBuilder {
         ConfigBuilder::new(n_states)
@@ -57,14 +67,16 @@ impl Config {
         Self {
             n_states,
             step_limit,
+            init_steps_max: if n_states == 1 { 0 } else { 2 },
             // TODO depending on n_states
             tape_size_limit: TAPE_SIZE_LIMIT_DEFAULT,
             generate_limit: Self::generate_limit_default(n_states),
             generator_batch_size_request_full: GENERATOR_BATCH_SIZE_RECOMMENDATION_FULL,
             generator_batch_size_request_reduced: GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED,
-            record_machines_max_steps: RECORD_MACHINES_MAX_STEPS_DEFAULT,
-            record_machines_undecided: 0,
-            cpu_utilization: CPU_UTILIZATION_DEFAULT,
+            limit_machines_max_steps: RECORD_MACHINES_MAX_STEPS_DEFAULT,
+            limit_machines_undecided: 0,
+            cpu_utilization_percent: CPU_UTILIZATION_DEFAULT,
+            config_key_value: HashMap::new(),
         }
     }
 
@@ -90,11 +102,64 @@ impl Config {
         }
     }
 
+    pub fn cpu_utilization_percent(&self) -> usize {
+        self.cpu_utilization_percent
+    }
+
+    pub fn generate_limit(&self) -> u64 {
+        self.generate_limit
+    }
+
+    pub fn generator_batch_size_request_full(&self) -> usize {
+        self.generator_batch_size_request_full
+    }
+
+    pub fn generator_batch_size_request_reduced(&self) -> usize {
+        self.generator_batch_size_request_reduced
+    }
+
+    pub fn init_steps_max(&self) -> u32 {
+        self.init_steps_max
+    }
+
+    // increases the value if new_max is larger
+    pub fn increase_init_step_max(&mut self, new_max: StepType) {
+        if new_max > self.init_steps_max {
+            self.init_steps_max = new_max;
+        }
+    }
+
     pub fn n_states(&self) -> usize {
         self.n_states
     }
+
+    pub fn limit_machines_max_steps(&self) -> usize {
+        self.limit_machines_max_steps
+    }
+
+    pub fn limit_machines_undecided(&self) -> usize {
+        self.limit_machines_undecided
+    }
+
+    pub fn set_limit_machines_undecided(&mut self, limit: usize) {
+        self.limit_machines_undecided = limit;
+    }
+
+    pub fn step_limit(&self) -> u32 {
+        self.step_limit
+    }
+
+    pub fn tape_size_limit(&self) -> usize {
+        self.tape_size_limit
+    }
 }
 
+// pub struct ConfigKeyValue {
+//     key: String,
+//     value: String,
+// }
+
+// TODO init_steps_max: StepType
 #[derive(Default)]
 pub struct ConfigBuilder {
     n_states: usize,
@@ -103,22 +168,17 @@ pub struct ConfigBuilder {
     generate_limit: Option<u64>,
     generator_batch_size_request_full: Option<usize>,
     generator_batch_size_request_reduced: Option<usize>,
-    record_machines_max_steps: Option<u16>,
-    record_machines_undecided: Option<u32>,
-    cpu_utilization: Option<usize>,
+    record_machines_max_steps: Option<usize>,
+    record_machines_undecided: Option<usize>,
+    cpu_utilization_percent: Option<usize>,
+    config_key_value: Option<HashMap<String, String>>,
 }
 
 impl ConfigBuilder {
     fn new(n_states: usize) -> Self {
         Self {
             n_states,
-            ..Default::default() // step_limit: None,
-                                 // tape_size_limit: None,
-                                 // generate_limit: None,
-                                 // generator_batch_size_request: None,
-                                 // record_machines_max_steps: None,
-                                 // record_machines_undecided: None,
-                                 // cpu_utilization,
+            ..Default::default() // All: None,
         }
     }
 
@@ -153,18 +213,18 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn record_machines_max_steps(mut self, record_machines_max_steps: u16) -> Self {
-        self.record_machines_max_steps = Some(record_machines_max_steps);
+    pub fn limit_machines_max_steps(mut self, value: usize) -> Self {
+        self.record_machines_max_steps = Some(value);
         self
     }
 
-    pub fn record_machines_undecided(mut self, record_machines_undecided: u32) -> Self {
-        self.record_machines_undecided = Some(record_machines_undecided);
+    pub fn limit_machines_undecided(mut self, value: usize) -> Self {
+        self.record_machines_undecided = Some(value);
         self
     }
 
-    pub fn cpu_utilization(mut self, cpu_utilization: usize) -> Self {
-        self.cpu_utilization = Some(cpu_utilization);
+    pub fn cpu_utilization(mut self, percent: usize) -> Self {
+        self.cpu_utilization_percent = Some(percent);
         self
     }
 
@@ -174,6 +234,7 @@ impl ConfigBuilder {
             step_limit: self
                 .step_limit
                 .unwrap_or_else(|| Config::decider_step_limit_default(self.n_states)),
+            init_steps_max: if self.n_states == 1 { 0 } else { 2 },
             tape_size_limit: self.tape_size_limit.unwrap_or(TAPE_SIZE_LIMIT_DEFAULT),
             generate_limit: self
                 .generate_limit
@@ -184,11 +245,14 @@ impl ConfigBuilder {
             generator_batch_size_request_reduced: self
                 .generator_batch_size_request_reduced
                 .unwrap_or(GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED),
-            record_machines_max_steps: self
+            limit_machines_max_steps: self
                 .record_machines_max_steps
                 .unwrap_or(RECORD_MACHINES_MAX_STEPS_DEFAULT),
-            record_machines_undecided: self.record_machines_undecided.unwrap_or(0),
-            cpu_utilization: self.cpu_utilization.unwrap_or(CPU_UTILIZATION_DEFAULT),
+            limit_machines_undecided: self.record_machines_undecided.unwrap_or(0),
+            cpu_utilization_percent: self
+                .cpu_utilization_percent
+                .unwrap_or(CPU_UTILIZATION_DEFAULT),
+            config_key_value: self.config_key_value.unwrap_or_default(),
         }
     }
 }

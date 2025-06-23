@@ -53,7 +53,7 @@ impl<'a> Reporter<'a> {
         self.reset_last_report_progress_time();
 
         if self.is_due_detail() {
-            self.report_progress.report_detail(result);
+            s.push_str(self.report_progress.report_detail(result).as_str());
             self.reset_last_report_detail_time();
         }
 
@@ -122,9 +122,7 @@ impl<'a> Default for Reporter<'a> {
 
 pub trait ReportProgress {
     fn report_progress(&self, processed: u64, total: u64, start: Instant) -> String;
-    // TODO as String
-    fn report_detail(&self, result: &ResultDecider);
-    // fn test(&self, result: &ResultDecider, generator: &X);
+    fn report_detail(&self, result: &ResultDecider) -> String;
 }
 
 #[derive(Default)]
@@ -133,26 +131,22 @@ pub struct ReportProgressStandard;
 impl ReportProgress for ReportProgressStandard {
     fn report_progress(&self, processed: u64, total: u64, start: Instant) -> String {
         let locale = crate::utils::user_locale();
-        // let mio = (processed as f64 / 100_000.0).round() / 10.0;
         let percent = (processed as f64 / total as f64 * 1000.0).round() / 10.0;
         // estimate time to run
         let dur_total = start.elapsed().as_secs_f64();
         let p_per_sec = processed as f64 / dur_total;
         let remaining = (total - processed) as f64 / p_per_sec;
-        // let est_end = Instant::now() + Duration::from_secs_f64(remaining);
         format!(
             "Working: {} / {} ({percent:.1}%), left {}, runtime {}", // , end at {:?}",
             processed.to_formatted_string(&locale),
             total.to_formatted_string(&locale),
             fmt_duration(remaining),
             fmt_duration(dur_total),
-            // est_end,
         )
     }
 
-    fn report_detail(&self, result: &ResultDecider) {
-        println!("\nCurrent result\n{}", result);
-        // reporter.reset_last_report_detail_time();
+    fn report_detail(&self, result: &ResultDecider) -> String {
+        format!("\nCurrent result\n{}", result)
     }
 }
 

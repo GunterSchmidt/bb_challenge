@@ -17,7 +17,6 @@ pub type DirectionType = i16;
 /// e.g. C1 is field 3*2+1 = 7.
 /// For performance reasons, this is an Array instead of a Vec.
 pub type TransitionSym2Array1D = [TransitionSymbol2; (MAX_STATES + 1) * 2];
-// TODO own struct for table
 pub const TRANSITION_TABLE_SYM2_DEFAULT: TransitionSym2Array1D = [TransitionSymbol2 {
     transition: TRANSITION_UNUSED,
     #[cfg(debug_assertions)]
@@ -28,6 +27,7 @@ pub const TRANSITION_SYM2_UNUSED: TransitionSymbol2 = TransitionSymbol2 {
     #[cfg(debug_assertions)]
     text: ['_', '_', '_'],
 };
+// This is the undefined hold ('---'), where no last symbol is written.
 pub const TRANSITION_SYM2_HOLD: TransitionSymbol2 = TransitionSymbol2 {
     transition: TRANSITION_HOLD,
     #[cfg(debug_assertions)]
@@ -52,28 +52,30 @@ pub const TRANSITIONS_FOR_A0: [TransitionSymbol2; 2] = [
     },
 ];
 
-const FILTER_SYMBOL: TransitionType = 0b0010_0001;
-const FILTER_SYMBOL_WITHOUT_UNDEFINED: TransitionType = 0b0000_0001;
-const FILTER_SYMBOL_UNDEFINED: TransitionType = 0b0010_0000;
+// const FILTER_SYMBOL: TransitionType = 0b0010_0001;
+const FILTER_SYMBOL_0_1: TransitionType = 0b0000_0001;
+// const FILTER_SYMBOL_UNDEFINED: TransitionType = 0b0010_0000;
 const FILTER_DIR: TransitionType = 0b1100_0000;
 pub(crate) const FILTER_STATE: TransitionType = 0b0001_1110;
 const FILTER_ARRAY_ID: TransitionType = 0b0001_1111;
 const FILTER_SELF_REF: TransitionType = 0b0000_0001_0000_0000;
 const FILTER_TABLE_SELF_REF: TransitionType = 0b1000_0000;
 const FILTER_TABLE_N_STATES: TransitionType = 0b0000_1111;
-pub const TRANSITION_HOLD: TransitionType = SYMBOL_UNDEFINED | DIRECTION_UNDEFINED;
+// TODO why?
+pub const TRANSITION_HOLD: TransitionType = DIRECTION_UNDEFINED; // | SYMBOL_UNDEFINED | STATE_HOLD;
 pub const TRANSITION_UNUSED: TransitionType = 0b0000_0000; // 0b1010_0001;
 pub const TRANSITION_0RA: TransitionType = 0b1100_0010;
 const SYMBOL_ZERO: TransitionType = 0b0000_0000;
 const SYMBOL_ONE: TransitionType = 0b0000_0001;
-const SYMBOL_UNDEFINED: TransitionType = 0b0010_0000;
+// const SYMBOL_UNDEFINED: TransitionType = 0b0010_0000;
 const DIRECTION_UNDEFINED: TransitionType = 0b1000_0000;
 const TO_RIGHT: TransitionType = 0b1100_0000;
 const TO_LEFT: TransitionType = 0b0100_0000;
 const STATE_HOLD: TransitionType = 0;
 
-// TODO all conversion in this crate
 // TODO doc
+// TODO change Undefined: Symbol only bit 0 (0 and 1), Direction holds undefined. Symbol and Direction are either both defined or undefined.
+// TODO state could be limited to 8 values, then two bits (4,5) would be free for other uses.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionSymbol2 {
     /// - symbol:     bits 0,5: write symbol, allows check with just 0b0000_0001 if undefined not relevant;
@@ -112,21 +114,24 @@ impl TransitionSymbol2 {
         // let symbol_char = transition_text[0];
         // let direction_char = transition_text[1];
         let state_char = transition_text[2];
+        // let mut is_undefined = false;
 
         // Symbol
         let mut transition_bits = match transition_text[0] {
             b'0' | 0 => 0,
             b'1' | 1 => SYMBOL_ONE,
-            b'-' => SYMBOL_UNDEFINED,
+            // No undefined here
+            b'-' => return Ok(TRANSITION_SYM2_HOLD), // SYMBOL_UNDEFINED,
             _ => return Err(TransitionError::InvalidSymbol(transition_text[0])),
         };
 
         match state_char {
             // Numeric 0 or char Z means Hold State
-            0 | b'Z' | b'-' => {
-                if transition_bits == SYMBOL_UNDEFINED {
-                    return Ok(TRANSITION_SYM2_HOLD);
-                }
+            // This does nothing, because it would be 0 which it already is.
+            0 | b'Z' => {
+                // if transition_bits == SYMBOL_UNDEFINED {
+                //     return Ok(TRANSITION_SYM2_HOLD);
+                // }
                 // transition_bits |= STATE_HOLD; // is 0 anyway
             }
             // Numeric states (number from array)
@@ -154,13 +159,17 @@ impl TransitionSymbol2 {
                 }
                 transition_bits |= (num_state as TransitionType) << 1;
             }
+            // '-' is an error as it cannot be undefined if symbol is not undefined also.
+            // If symbol is defined, 0 or 'Z' are expected as hold char.
             _ => return Err(TransitionError::InvalidStateChar(state_char)),
         }
 
+        // direction
         match transition_text[1] {
             b'L' | 1 => transition_bits |= TO_LEFT,
             b'R' | 0 => transition_bits |= TO_RIGHT,
-            b'-' => transition_bits |= DIRECTION_UNDEFINED, // Undefined direction for non-halt transitions
+            // b'-' => transition_bits |= DIRECTION_UNDEFINED, // Undefined direction for non-halt transitions
+            // '-' is an error as it cannot be undefined if symbol is not undefined also.
             _ => return Err(TransitionError::InvalidDirection(transition_text[1])),
         };
 
@@ -279,17 +288,17 @@ impl TransitionSymbol2 {
 
     /// returns only 0 or 1, not undefined
     pub fn symbol(&self) -> TransitionType {
-        self.transition & FILTER_SYMBOL_WITHOUT_UNDEFINED
+        self.transition & FILTER_SYMBOL_0_1
     }
 
-    /// returns 0, 1, or undefined
-    pub fn symbol_full(&self) -> TransitionType {
-        self.transition & FILTER_SYMBOL
-    }
+    // /// returns 0, 1, or undefined
+    // pub fn symbol_full(&self) -> TransitionType {
+    //     self.transition & FILTER_SYMBOL
+    // }
 
     /// returns only 0 or 1, not undefined
     pub fn symbol_usize(&self) -> usize {
-        (self.transition & FILTER_SYMBOL) as usize
+        (self.transition & FILTER_SYMBOL_0_1) as usize
     }
 
     pub fn has_next_state_a(&self) -> bool {
@@ -305,11 +314,12 @@ impl TransitionSymbol2 {
     }
 
     pub fn is_symbol_one(&self) -> bool {
-        self.transition & FILTER_SYMBOL_WITHOUT_UNDEFINED != 0
+        self.transition & FILTER_SYMBOL_0_1 != 0
     }
 
     pub fn is_symbol_undefined(&self) -> bool {
-        self.transition & FILTER_SYMBOL_UNDEFINED != 0
+        // Filter on direction is correct, as direction and symbol are always together defined or undefined.
+        self.transition & FILTER_DIR == 0
     }
 
     pub fn is_unused(&self) -> bool {
@@ -345,33 +355,35 @@ impl TryFrom<&str> for TransitionSymbol2 {
 
 impl From<&TransitionGeneric> for TransitionSymbol2 {
     fn from(tg: &TransitionGeneric) -> Self {
+        // quick check if undefined hold
         if tg.direction == 0 {
             return TRANSITION_SYM2_HOLD;
         }
+
         // symbol
         let mut t_new: i16 = match tg.symbol_write {
             0 => SYMBOL_ZERO,
             1 => SYMBOL_ONE,
-            _ => SYMBOL_UNDEFINED,
+            _ => panic!("Symbol incorrect, must not happen."),
         };
+
         // direction
-        // if tg.state_next as TransitionType == STATE_HOLD {
-        //     t_new |= DIRECTION_UNDEFINED
-        // } else {
         match tg.direction {
             -1 => t_new |= TO_LEFT,
             1 => t_new |= TO_RIGHT,
-            _ => t_new |= DIRECTION_UNDEFINED,
+            _ => panic!("Direction incorrect, must not happen."),
         };
-        // }
+
         // state
         if let 1..9 = tg.state_next {
             t_new |= (tg.state_next as i16) << 1;
-        }; // else 0 for hold
+        };
+        // else 0 for hold
 
         #[cfg(not(debug_assertions))]
         return Self { transition: t_new };
 
+        // add transition as chars to simplify debugging
         #[cfg(debug_assertions)]
         {
             let mut tx = Self {
@@ -394,18 +406,18 @@ impl Display for TransitionSymbol2 {
             TRANSITION_HOLD => write!(f, "---"),
             TRANSITION_UNUSED => write!(f, "   "),
             _ => {
-                let write_symbol = match self.transition & FILTER_SYMBOL {
+                let write_symbol = match self.transition & FILTER_SYMBOL_0_1 {
                     0 => '0',
                     SYMBOL_ONE => '1',
                     _ => '-',
                 };
-                let move_next = match self.transition & FILTER_DIR {
+                let direction = match self.transition & FILTER_DIR {
                     TO_LEFT => 'L',
                     TO_RIGHT => 'R',
-                    _ => '-',
+                    _ => return write!(f, "---"),
                 };
                 let next_state = self.state_to_char();
-                write!(f, "{write_symbol}{move_next}{next_state}")
+                write!(f, "{write_symbol}{direction}{next_state}")
             }
         }
     }

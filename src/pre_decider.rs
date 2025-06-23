@@ -1,4 +1,9 @@
-// #![allow(dead_code)]
+//! This crate contains the pre-decider functionality. This are all deciders which do not require a
+//! step-by-step approach but can solely decide on the given transition table. This is extremly quick
+//! and rules out >90% of the machines. \
+//! This is implemented in an even more efficient way in GeneratorReduced (which is should be used always).
+//! GeneratorFull generates all machines and then can be filtered by this pre-decider first. Just call
+//! run_pre_decider(&machine) for this.
 
 use crate::{
     status::{MachineStatus, PreDeciderReason},
@@ -6,14 +11,43 @@ use crate::{
     MAX_STATES,
 };
 
+/// This struct allows the predecider to be put in the decider chain. It is not required,
+/// run_pre_decider(&machine) can be used separately.
+pub struct PreDecider;
+
+// impl Decider for PreDecider {
+//     fn new_decider(&self) -> Self {
+//         PreDecider
+//     }
+//
+//     fn decide_machine(&mut self, machine: &crate::machine::Machine) -> MachineStatus {
+//         let r = run_pre_decider(machine.transition_table());
+//         if r == MachineStatus::NoDecision {
+//             return MachineStatus::Undecided(crate::status::UndecidedReason::Undefined, 0, 0);
+//         }
+//         r
+//     }
+//
+//     fn name(&self) -> String {
+//         "PreDecider".to_string()
+//     }
+// }
+
 // TODO same checks, e.g. only right, when not all states are used
 // TODO Hypthesis: Longest contains self referencing element, e.g. BB5 MAX B1, D1
 // TODO pre decider states: state B: only 1 of the two can have a state higher than C. In case one points to state A or B, then max C is allowed.
 // TODO For state C: only 1 of the two can have a state higher than D. In case one points to state A, B or C, then max D is allowed for the other.
-/// Runs quick deciders, which only check the transitions without following their write order. \
-/// E.g.: Is there exactly one hold condition?
+/// Runs quick deciders, which only check the transition table without a step-by-step execution. \
+/// Example: Is there exactly one hold condition? If no hold condition exists, it runs endlessly. If more than one hold
+/// condition exist, then this machine may hold sometime, but will not be the max machine for this many n_states.
+/// Only the machines which have a hold condition in A0 will return status hold with 1 step, all others will return
+/// an elimination decription. \
+/// The returned count on the description is not complete. That is because multiple deciders may apply
+/// and only the first one gets counted. For instance, a transition table may write only zeros, go only to right
+/// and have too many hold conditions. The deciders are ordered in a reasonable way depending on statistical relevance
+/// (the most likely check first, as this will make the check on the other deciders obsolete) and complexity (execution time).
 /// Returns MachineStatus::NoDecision if no special case could be identified.
-pub fn run_pre_deciders(table: &TransitionTableSymbol2) -> MachineStatus {
+pub fn run_pre_decider(table: &TransitionTableSymbol2) -> MachineStatus {
     // check loop quick bit
 
     // check if first element is hold
@@ -77,8 +111,9 @@ pub fn run_pre_deciders(table: &TransitionTableSymbol2) -> MachineStatus {
 
 // All checks return true if the check condition is met, in other words an error is returned.
 
-/// Checks if the first entry changes the state. If not it will  
-/// run endless as the same entry is used all the time.
+/// Checks if the first transition A0 changes the state. If not, it will  
+/// run endless as the same entry is used all the time. \
+/// This eliminates 0LA, 1LA, 0RA and 1RA as first entry.
 #[inline]
 pub fn check_first_status_recursive(table: &TransitionTableSymbol2) -> bool {
     table.transition_start().has_next_state_a()
@@ -206,7 +241,7 @@ mod tests {
         transitions.push(("1RD", "0RA"));
 
         let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = run_pre_deciders(&tc);
+        let check_result = run_pre_decider(&tc);
         assert_eq!(check_result, MachineStatus::NoDecision);
 
         // BB5 max
@@ -217,7 +252,7 @@ mod tests {
         transitions.push(("1RD", "0RA"));
 
         let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = run_pre_deciders(&tc);
+        let check_result = run_pre_decider(&tc);
         assert_eq!(check_result, MachineStatus::NoDecision);
     }
 

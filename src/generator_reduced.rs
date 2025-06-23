@@ -2,13 +2,15 @@
 
 use crate::{
     config::Config,
+    data_provider::{DataProvider, DataProviderResult},
+    data_provider_threaded::DataProviderThreaded,
     generator::{self, create_all_transition_permutations, Generator},
     machine::Machine,
-    pre_deciders::{
+    pre_decider::{
         check_not_all_states_used, check_only_one_direction, check_only_zero_writes,
         check_simple_start_loop, count_hold_transitions,
     },
-    result::PreDeciderCount,
+    result::{EndReason, PreDeciderCount},
     status::PreDeciderReason,
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITIONS_FOR_A0},
     MAX_STATES,
@@ -33,7 +35,7 @@ const BATCH_SIZE_REQUEST_SINGLE_THREAD: usize = 1_000_000;
 pub struct GeneratorReduced {
     /// Next id for the generated machine, starting with 0.
     id_next: u64,
-    // id_start_batch: u64,
+    // id_batch_start: u64,
     id_batch_last: u64,
     /// The number of states used for this generator.
     // n_states: usize,
@@ -75,17 +77,18 @@ impl GeneratorReduced {
         // set all in set to the first variant
         transition_table.transitions[2..2 + n_states * 2].fill(tr_permutations[0]);
         let n_machines = generator::num_turing_machine_permutations(n_states) as u64;
-        let limit = if config.generate_limit > 0 {
-            config.generate_limit.min(n_machines)
+        let limit = if config.generate_limit() > 0 {
+            config.generate_limit().min(n_machines)
         } else {
             n_machines
         };
         let batch_size =
-            Self::calc_batch_size(config.generator_batch_size_request_reduced, n_states);
+            Self::calc_batch_size(config.generator_batch_size_request_reduced(), n_states);
         let num_batches = ((limit + batch_size as u64 - 1) / batch_size as u64) as usize;
 
         Self {
             id_next: 0,
+            // id_batch_start: 0,
             id_batch_last: 0,
             // n_states,
             n_machines,
@@ -100,7 +103,7 @@ impl GeneratorReduced {
             field_no: 4,
             pre_decider_count_batch: Default::default(),
             // pre_decider_count_total: Default::default(),
-            config: *config,
+            config: config.clone(),
         }
     }
 
@@ -159,6 +162,10 @@ impl GeneratorReduced {
 
         PreDeciderReason::None
     }
+
+    fn id_batch_start(&self) -> u64 {
+        self.id_batch_last / self.batch_size as u64 * self.batch_size as u64
+    }
 }
 
 impl Generator for GeneratorReduced {
@@ -171,6 +178,7 @@ impl Generator for GeneratorReduced {
 
         Self {
             id_next: 0,
+            // id_batch_start: 0,
             id_batch_last: 0,
             // n_states: self.n_states,
             n_machines: self.n_machines,
@@ -185,7 +193,7 @@ impl Generator for GeneratorReduced {
             field_no: 4,
             pre_decider_count_batch: Default::default(),
             // pre_decider_count_total: Default::default(),
-            config: self.config,
+            config: self.config.clone(),
         }
     }
 
@@ -201,8 +209,9 @@ impl Generator for GeneratorReduced {
             return (Vec::new(), true);
         }
 
-        // self.id_start_batch = self.id_next;
-        self.id_batch_last = (self.id_next + self.batch_size as u64 - 1).min(self.limit);
+        // println!("Generator reduced: is_next = {}", self.id_next);
+        // self.id_batch_start = self.id_next;
+        self.id_batch_last = (self.id_next + self.batch_size as u64 - 1).min(self.limit - 1);
         self.pre_decider_count_batch = PreDeciderCount::default();
 
         let mut is_last_batch = false;
@@ -260,29 +269,24 @@ impl Generator for GeneratorReduced {
                     if id == self.limit {
                         // total maximum reached
                         self.id_next = id;
-                        self.pre_decider_count_batch.num_not_generated = (self.limit
-                            % self.batch_size as u64)
+                        // not generated = size of batch - generated permutations - eliminated permutations
+                        self.pre_decider_count_batch.num_not_generated = self.limit
+                            - self.id_batch_start()
                             - permutations.len() as u64
-                            - self.pre_decider_count_batch.total();
-                        // self.pre_decider_count_total
-                        //     .add_pre_decider_count(&self.pre_decider_count_batch);
+                            - self.pre_decider_count_batch.num_total();
                         return (permutations, true);
                     }
                 }
                 // adjust id back to normal count
                 id += ids_left_out;
-                if id > self.limit {
+                if id >= self.limit {
                     // total maximum reached
                     self.id_next = id;
-                    self.pre_decider_count_batch.num_not_generated = (self.limit
-                        % self.batch_size as u64)
+                    // not generated = size of batch - generated permutations - eliminated permutations
+                    self.pre_decider_count_batch.num_not_generated = self.limit
+                        - self.id_batch_start()
                         - permutations.len() as u64
-                        - self.pre_decider_count_batch.total();
-                    // self.pre_decider_count_total
-                    //     .add_pre_decider_count(&self.pre_decider_count_batch);
-
-                    // self.pre_decider_count.num_not_generated +=
-                    //     ids_not_generated_per_round - (v1* ... id - self.limit);
+                        - self.pre_decider_count_batch.num_total();
                     return (permutations, true);
                 }
             }
@@ -330,16 +334,12 @@ impl Generator for GeneratorReduced {
             }
         }
 
-        self.pre_decider_count_batch.num_not_generated =
-            (self.batch_size - permutations.len()) as u64 - self.pre_decider_count_batch.total();
+        self.pre_decider_count_batch.num_not_generated = (self.batch_size - permutations.len())
+            as u64
+            - self.pre_decider_count_batch.num_total();
         // self.pre_decider_count_total
         //     .add_pre_decider_count(&self.pre_decider_count_batch);
         (permutations, is_last_batch)
-    }
-
-    /// The reduced actual batch size (number of Turing machines generated in each call).
-    fn batch_size(&self) -> usize {
-        self.batch_size
     }
 
     /// The given limit of machines to generate or (if smaller) the maximum number of machines for the number of states.
@@ -347,35 +347,13 @@ impl Generator for GeneratorReduced {
         self.limit
     }
 
-    fn n_states(&self) -> usize {
-        self.config.n_states()
-    }
-
-    /// The total number of machines for the number of n_states.
-    fn num_machines(&self) -> u64 {
-        self.n_machines
-    }
-
-    /// The total number of batches to create all permutations.
-    fn num_batches(&self) -> usize {
-        self.num_batches
-    }
-
-    fn requires_pre_decider_check(&self) -> bool {
-        false
-    }
-
     fn pre_decider_count(&self) -> PreDeciderCount {
         self.pre_decider_count_batch
     }
 
-    fn config(&self) -> &Config {
-        &self.config
-    }
-
     fn check_generator_batch_size_request_single_thread(&mut self) {
-        if self.config.generator_batch_size_request_full != BATCH_SIZE_REQUEST_SINGLE_THREAD {
-            self.config.generator_batch_size_request_full = BATCH_SIZE_REQUEST_SINGLE_THREAD;
+        if self.config.generator_batch_size_request_full() != BATCH_SIZE_REQUEST_SINGLE_THREAD {
+            // self.config.generator_batch_size_request_full = BATCH_SIZE_REQUEST_SINGLE_THREAD;
             let batch_size =
                 Self::calc_batch_size(BATCH_SIZE_REQUEST_SINGLE_THREAD, self.n_states());
             self.num_batches = ((self.limit + batch_size as u64 - 1) / batch_size as u64) as usize;
@@ -384,7 +362,109 @@ impl Generator for GeneratorReduced {
     }
 
     fn num_eliminated(&self) -> u64 {
-        self.pre_decider_count().total()
+        self.pre_decider_count().num_total()
+    }
+}
+
+impl DataProvider for GeneratorReduced {
+    fn machine_batch_next(&mut self) -> DataProviderResult {
+        let (machines, is_last_batch) = self.generate_permutation_batch_next();
+        if is_last_batch {
+            return DataProviderResult::new(
+                machines,
+                Some(self.pre_decider_count_batch),
+                EndReason::IsLastBatch,
+            );
+        }
+        // if machines.is_empty() {
+        //     return DataProviderResult::new(machines, None, EndReason::NoMoreData);
+        // }
+
+        DataProviderResult::new(
+            machines,
+            Some(self.pre_decider_count_batch),
+            EndReason::Working,
+        )
+    }
+
+    fn batch_size(&self) -> usize {
+        self.batch_size
+    }
+
+    /// The total number of batches to create all permutations.
+    fn num_batches(&self) -> usize {
+        self.num_batches
+    }
+
+    fn config(&self) -> &Config {
+        &self.config
+    }
+
+    fn num_machines_total(&self) -> u64 {
+        self.limit
+    }
+
+    fn requires_pre_decider_check(&self) -> bool {
+        false
+    }
+
+    fn returns_pre_decider_count(&self) -> bool {
+        false
+    }
+
+    fn set_batch_size_for_num_threads(&mut self, num_threads: usize) {
+        // TODO fine tune
+        if num_threads == 1 {
+            self.check_generator_batch_size_request_single_thread();
+        }
+    }
+}
+
+impl DataProviderThreaded for GeneratorReduced {
+    fn new_from_data_provider(&self) -> Self {
+        let mut transition_table = TransitionTableSymbol2::new_default(self.n_states());
+        // set all in set to the first variant
+        transition_table.transitions[2..2 + self.n_states() * 2].fill(self.tr_permutations[0]);
+
+        Self {
+            id_next: 0,
+            // id_batch_start: 0,
+            id_batch_last: 0,
+            // n_states: self.n_states,
+            n_machines: self.n_machines,
+            batch_size: self.batch_size,
+            limit: self.limit,
+            num_batches: self.num_batches,
+            tr_permutations: self.tr_permutations.clone(),
+            // tr_permutations_a0: self.tr_permutations_a0.clone(),
+            transition_table,
+            n_fields: self.n_fields,
+            fields: [0; (MAX_STATES + 1) * 2],
+            field_no: 4,
+            pre_decider_count_batch: Default::default(),
+            // pre_decider_count_total: Default::default(),
+            config: self.config.clone(),
+        }
+    }
+
+    fn machine_batch_no(&mut self, batch_no: usize) -> DataProviderResult {
+        let (machines, is_last_batch) = self.generate_permutation_batch_no(batch_no);
+        if is_last_batch {
+            return DataProviderResult::new(
+                machines,
+                Some(self.pre_decider_count_batch),
+                EndReason::IsLastBatch,
+            );
+        }
+        // if machines.is_empty() {
+        //     return DataProviderResult::new(machines, None, EndReason::NoMoreData);
+        // }
+
+        DataProviderResult::new(
+            machines,
+            Some(self.pre_decider_count_batch),
+            EndReason::Working,
+        )
     }
 }
 
@@ -394,7 +474,10 @@ impl Generator for GeneratorReduced {
 mod tests {
     use crate::{
         config::Config,
-        decider::{self, run_decider_generator_single_thread},
+        decider::{
+            self, run_decider_data_provider_single_thread_deprecated,
+            run_decider_generator_single_thread_deprecated,
+        },
         decider_loop_v4::{DeciderLoopV4, STEP_LIMIT_DECIDER_LOOP},
         generator_full::GeneratorFull,
         result::result_max_steps_known,
@@ -406,13 +489,14 @@ mod tests {
     fn test_generator_reduced_batch_logic() {
         let config = Config::builder(4)
             .generator_batch_size_request_full(10_000)
+            .generator_batch_size_request_reduced(10_000)
             .generate_limit(10_000_000)
             .build();
         let mut mr = Machine::default();
         let mut batch_no = 0;
-        let mut g = GeneratorReduced::new(&config);
+        let mut generator_reduced = GeneratorReduced::new(&config);
         loop {
-            let (machines, is_finished) = g.generate_permutation_batch_next();
+            let (machines, is_finished) = generator_reduced.generate_permutation_batch_next();
             if let Some(m) = machines.first() {
                 mr = m.clone();
             }
@@ -451,12 +535,12 @@ mod tests {
 
     #[test]
     fn test_decider_generator_reduced_bb2() {
-        run_decider_generator_reduced(2);
+        run_test_decider_generator_reduced(2);
     }
 
     #[test]
-    fn test_compare_generator_reduced_bb2() {
-        let config = Config::new_default(2);
+    fn test_compare_generator_reduced_bb3() {
+        let config = Config::builder(3).generate_limit(500_000).build();
         let mut generator = GeneratorReduced::new(&config);
         let (machines_reduced, _) = generator.generate_permutation_batch_next();
         let mut generator = GeneratorFull::new(&config);
@@ -480,7 +564,12 @@ mod tests {
 
     #[test]
     fn test_decider_generator_reduced_bb3() {
-        run_decider_generator_reduced(3);
+        run_test_decider_generator_reduced(3);
+    }
+
+    #[test]
+    fn test_decider_data_provider_reduced_bb3() {
+        run_test_decider_data_provider_reduced(3);
     }
 
     #[test]
@@ -493,7 +582,7 @@ mod tests {
     /// cargo test --release test_decider_generator_reduced_bb4
     #[test]
     fn test_decider_generator_reduced_bb4() {
-        run_decider_generator_reduced(4);
+        run_test_decider_generator_reduced(4);
     }
 
     /// This is not a performance test, it only evaluates 350 million machines.
@@ -504,14 +593,24 @@ mod tests {
     }
 
     /// This tests only the first 350_000_000 permutations, as it will find one with 107 steps for n=4.
-    fn run_decider_generator_reduced(n_states: usize) {
+    fn run_test_decider_generator_reduced(n_states: usize) {
         let config = Config::new_default(n_states);
         let generator = GeneratorReduced::new(&config);
         let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-        let result = run_decider_generator_single_thread(decider, generator);
+        let result = run_decider_generator_single_thread_deprecated(decider, generator);
         println!("{}", result.to_string());
         println!("{}", result.machines_max_steps_to_string(10));
         println!("{}", result.machines_undecided_to_string(5));
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
+
+    fn run_test_decider_data_provider_reduced(n_states: usize) {
+        let config = Config::new_default(n_states);
+        let data_provider = GeneratorReduced::new(&config);
+        let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+        let result = run_decider_data_provider_single_thread_deprecated(decider, data_provider);
+        println!("{}", result);
+        println!("{}", result.machines_max_steps_to_string(10));
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
     }
 

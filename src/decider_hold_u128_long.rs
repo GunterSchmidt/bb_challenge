@@ -8,7 +8,6 @@ use crate::{
     machine::Machine,
     result::BatchResult,
     status::{MachineStatus, UndecidedReason},
-    sub_decider::SubDecider,
     tape_utils::{
         CLEAR_HIGH95_64BITS_U128, CLEAR_LOW63_32BITS_U128, HIGH32_SWITCH_U128, LOW64_SWITCH_U128,
         MIDDLE_BIT_U128, POS_HALF_U128, TAPE_SIZE_FOURTH_UPPER_128, TAPE_SIZE_HALF_128,
@@ -27,7 +26,7 @@ use crate::{
 // TODO Longer jump if multiple u32 in tape_long are FFFF
 // TODO Multiple repeating steps, e.g 3 on 001
 // pub struct DeciderU128Long<'a> {
-pub struct DeciderU128Long<T: SubDecider> {
+pub struct DeciderHoldU128Long {
     /// Partial fast Turing tape which shifts in every step, so that the head is always at the MIDDLE_BIT.
     tape_shifted: u128,
     pos_middle: usize,
@@ -51,13 +50,11 @@ pub struct DeciderU128Long<T: SubDecider> {
     id: u64,
     transition_table: TransitionTableSymbol2,
     #[allow(dead_code)]
-    sub_decider: Option<T>,
     status: MachineStatus,
     config: Config,
 }
 
-// impl<'a> DeciderU128Long<'a> {
-impl<T: SubDecider> DeciderU128Long<T> {
+impl DeciderHoldU128Long {
     pub fn new(config: &Config) -> Self {
         Self {
             tape_shifted: 0,
@@ -74,9 +71,8 @@ impl<T: SubDecider> DeciderU128Long<T> {
             // copy the transition table as this runs faster
             id: 0,
             transition_table: TransitionTableSymbol2::default(),
-            sub_decider: None,
             status: MachineStatus::NoDecision,
-            config: &Config,
+            config: config.clone(),
         }
     }
 
@@ -668,7 +664,7 @@ impl<T: SubDecider> DeciderU128Long<T> {
     }
 }
 
-impl<T: SubDecider> Decider for DeciderU128Long<T> {
+impl Decider for DeciderHoldU128Long {
     fn new_decider(&self) -> Self {
         Self::new(&self.config)
     }
@@ -693,8 +689,7 @@ impl<T: SubDecider> Decider for DeciderU128Long<T> {
     }
 }
 
-// impl<'a> Display for DeciderU128Long<'a> {
-impl<T: SubDecider> Display for DeciderU128Long<T> {
+impl Display for DeciderHoldU128Long {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // let s = String::new();
         // println!("State: Undecided: Too many steps to left.");
@@ -728,8 +723,6 @@ impl<T: SubDecider> Display for DeciderU128Long<T> {
 #[cfg(test)]
 mod tests {
 
-    use crate::sub_decider::SubDeciderDummy;
-
     use super::*;
 
     #[test]
@@ -737,7 +730,7 @@ mod tests {
         let config = Config::new_default(4);
         // BB4 Max
         let machine = Machine::build_machine("BB4_MAX").unwrap();
-        let mut d: DeciderU128Long<SubDeciderDummy> = DeciderU128Long::new(&config);
+        let mut d = DeciderHoldU128Long::new(&config);
         let check_result = d.decide_machine(&machine);
         // println!("{}", check_result);
         assert_eq!(check_result, MachineStatus::DecidedHolds(107));
@@ -749,9 +742,9 @@ mod tests {
         let config = Config::new_default(5);
         // BB5 Max
         let machine = Machine::build_machine("BB5_MAX").unwrap();
-        let mut d: DeciderU128Long<SubDeciderDummy> = DeciderU128Long::new(&config);
+        let mut d = DeciderHoldU128Long::new(&config);
         let check_result = d.decide_machine(&machine);
         // println!("{}", check_result);
-        assert_eq!(check_result, MachineStatus::DecidedHolds(47176870));
+        assert_eq!(check_result, MachineStatus::DecidedHolds(47_176_870));
     }
 }

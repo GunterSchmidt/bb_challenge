@@ -2,9 +2,11 @@
 
 use crate::{
     config::Config,
+    data_provider::{DataProvider, DataProviderResult},
+    data_provider_threaded::DataProviderThreaded,
     generator::{self, create_all_transition_permutations, Generator},
     machine::Machine,
-    result::PreDeciderCount,
+    result::{EndReason, PreDeciderCount},
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2},
     MAX_STATES,
 };
@@ -53,12 +55,13 @@ impl GeneratorFull {
         // set all in set to the first variant
         transition_table.transitions[2..2 + n_states * 2].fill(tr_permutations[0]);
         let n_machines = generator::num_turing_machine_permutations(n_states) as u64;
-        let limit = if config.generate_limit > 0 {
-            config.generate_limit.min(n_machines)
+        let limit = if config.generate_limit() > 0 {
+            config.generate_limit().min(n_machines)
         } else {
             n_machines
         };
-        let batch_size = Self::calc_batch_size(config.generator_batch_size_request_full, n_states);
+        let batch_size =
+            Self::calc_batch_size(config.generator_batch_size_request_full(), n_states);
         let num_batches = ((limit + batch_size as u64 - 1) / batch_size as u64) as usize;
 
         Self {
@@ -73,7 +76,7 @@ impl GeneratorFull {
             n_fields: 2 * (n_states + 1),
             fields: [0; (MAX_STATES + 1) * 2],
             field_no: 4,
-            config: *config,
+            config: config.clone(),
         }
     }
 
@@ -126,7 +129,7 @@ impl Generator for GeneratorFull {
             n_fields: self.n_fields,
             fields: [0; (MAX_STATES + 1) * 2],
             field_no: 4,
-            config: self.config,
+            config: self.config.clone(),
         }
     }
 
@@ -208,46 +211,18 @@ impl Generator for GeneratorFull {
         (permutations, is_last_batch)
     }
 
-    /// The reduced actual batch size (number of Turing machines generated in each call).
-    fn batch_size(&self) -> usize {
-        self.batch_size
-    }
-
     /// The given limit of machines to generate or (if smaller) the maximum number of machines for the number of states.
     fn limit(&self) -> u64 {
         self.limit
-    }
-
-    fn n_states(&self) -> usize {
-        self.config.n_states()
-    }
-
-    /// The total number of machines for the number of n_states.
-    fn num_machines(&self) -> u64 {
-        self.n_machines
-    }
-
-    /// The total number of batches to create all permutations.
-    fn num_batches(&self) -> usize {
-        self.num_batches
-    }
-
-    fn requires_pre_decider_check(&self) -> bool {
-        true
-        // false
     }
 
     fn pre_decider_count(&self) -> PreDeciderCount {
         PreDeciderCount::default()
     }
 
-    fn config(&self) -> &Config {
-        &self.config
-    }
-
     fn check_generator_batch_size_request_single_thread(&mut self) {
-        if self.config.generator_batch_size_request_full > BATCH_SIZE_REQUEST_SINGLE_THREAD_MAX {
-            self.config.generator_batch_size_request_full = BATCH_SIZE_REQUEST_SINGLE_THREAD_MAX;
+        if self.config.generator_batch_size_request_full() > BATCH_SIZE_REQUEST_SINGLE_THREAD_MAX {
+            // self.config.generator_batch_size_request_full = BATCH_SIZE_REQUEST_SINGLE_THREAD_MAX;
             let batch_size =
                 Self::calc_batch_size(BATCH_SIZE_REQUEST_SINGLE_THREAD_MAX, self.n_states());
             self.num_batches = ((self.limit + batch_size as u64 - 1) / batch_size as u64) as usize;
@@ -260,12 +235,98 @@ impl Generator for GeneratorFull {
     }
 }
 
+impl DataProvider for GeneratorFull {
+    fn machine_batch_next(&mut self) -> DataProviderResult {
+        let (machines, is_last_batch) = self.generate_permutation_batch_next();
+        if is_last_batch {
+            return DataProviderResult::new(machines, None, EndReason::IsLastBatch);
+        }
+        // if machines.is_empty() {
+        //     return DataProviderResult::new(machines, None, EndReason::NoMoreData);
+        // }
+
+        DataProviderResult::new(machines, None, EndReason::Working)
+    }
+
+    fn batch_size(&self) -> usize {
+        self.batch_size
+    }
+
+    /// The total number of batches to create all permutations.
+    fn num_batches(&self) -> usize {
+        self.num_batches
+    }
+
+    fn config(&self) -> &Config {
+        &self.config
+    }
+
+    fn num_machines_total(&self) -> u64 {
+        self.limit
+    }
+
+    fn requires_pre_decider_check(&self) -> bool {
+        true
+    }
+
+    fn returns_pre_decider_count(&self) -> bool {
+        false
+    }
+
+    fn set_batch_size_for_num_threads(&mut self, num_threads: usize) {
+        // TODO fine tune
+        if num_threads == 1 {
+            self.check_generator_batch_size_request_single_thread();
+        }
+    }
+}
+
+impl DataProviderThreaded for GeneratorFull {
+    fn new_from_data_provider(&self) -> Self {
+        let mut transition_table = TransitionTableSymbol2::new_default(self.n_states());
+        // set all in set to the first variant
+        transition_table.transitions[2..2 + self.n_states() * 2].fill(self.tr_permutations[0]);
+
+        Self {
+            id_next: 0,
+            // n_states: self.n_states,
+            n_machines: self.n_machines,
+            batch_size: self.batch_size,
+            limit: self.limit,
+            num_batches: self.num_batches,
+            tr_permutations: self.tr_permutations.clone(),
+            transition_table,
+            n_fields: self.n_fields,
+            fields: [0; (MAX_STATES + 1) * 2],
+            field_no: 4,
+            config: self.config.clone(),
+        }
+    }
+
+    fn machine_batch_no(&mut self, batch_no: usize) -> DataProviderResult {
+        let (machines, is_last_batch) = self.generate_permutation_batch_no(batch_no);
+        if is_last_batch {
+            return DataProviderResult::new(machines, None, EndReason::IsLastBatch);
+        }
+        // if machines.is_empty() {
+        //     return DataProviderResult::new(machines, None, EndReason::NoMoreData);
+        // }
+
+        DataProviderResult::new(machines, None, EndReason::Working)
+
+        // self.machine_batch_no(batch_no)
+    }
+}
+
 /// run this only in release mode from command line: \
 /// cargo test --release generator_full
 #[cfg(test)]
 mod tests {
     use crate::{
-        decider::{self, run_decider_generator_single_thread},
+        decider::{
+            self, run_decider_data_provider_single_thread_deprecated,
+            run_decider_generator_single_thread_deprecated,
+        },
         decider_loop_v4::{DeciderLoopV4, STEP_LIMIT_DECIDER_LOOP},
         result::result_max_steps_known,
     };
@@ -318,6 +379,11 @@ mod tests {
         run_test_decider_generator_full(3);
     }
 
+    #[test]
+    fn test_decider_data_provider_full_bb3() {
+        run_test_decider_data_provider_full(3);
+    }
+
     // /// run this only in release mode from command line: \
     // /// cargo test --release test_decider_generator_full_bb4
     #[test]
@@ -336,7 +402,17 @@ mod tests {
         let config = Config::new_default(n_states);
         let generator = GeneratorFull::new(&config);
         let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-        let result = run_decider_generator_single_thread(decider, generator);
+        let result = run_decider_generator_single_thread_deprecated(decider, generator);
+        println!("{}", result);
+        println!("{}", result.machines_max_steps_to_string(10));
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
+
+    fn run_test_decider_data_provider_full(n_states: usize) {
+        let config = Config::new_default(n_states);
+        let data_provider = GeneratorFull::new(&config);
+        let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+        let result = run_decider_data_provider_single_thread_deprecated(decider, data_provider);
         println!("{}", result);
         println!("{}", result.machines_max_steps_to_string(10));
         assert_eq!(result_max_steps_known(n_states), result.steps_max());

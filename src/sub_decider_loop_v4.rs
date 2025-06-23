@@ -49,6 +49,14 @@ impl Decider for DeciderLoopV5 {
     fn name(&self) -> String {
         "Decider Loop V5".to_string()
     }
+
+    fn decider_run_batch(
+        machines: &[Machine],
+        run_predecider: bool,
+        config: &crate::config::Config,
+    ) -> Option<crate::result::BatchResult> {
+        todo!()
+    }
 }
 
 impl Default for DeciderLoopV5 {

@@ -2,13 +2,8 @@
 use std::{fmt::Display, io};
 
 use crate::{
-    config::Config,
-    decider::Decider,
-    decider_u128_long::DeciderU128Long,
     file::BBFileReader,
     machine_info::MachineInfo,
-    status::MachineStatus,
-    sub_decider::SubDeciderDummy,
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2},
 };
 
@@ -133,11 +128,11 @@ impl Machine {
         self.transition_table.n_states()
     }
 
-    pub fn decide_hold(&self) -> MachineStatus {
-        let config = Config::new_default(self.n_states());
-        let mut d: DeciderU128Long<SubDeciderDummy> = DeciderU128Long::new(&config);
-        d.decide_machine(&self)
-    }
+    // pub fn decide_hold(&self) -> MachineStatus {
+    //     let config = Config::new_default(self.n_states());
+    //     let mut d: DeciderU128Long<SubDeciderDummy> = DeciderU128Long::new(&config);
+    //     d.decide_machine(&self)
+    // }
 
     pub fn to_standard_tm_text_format(&self) -> String {
         self.transition_table.to_standard_tm_text_format()

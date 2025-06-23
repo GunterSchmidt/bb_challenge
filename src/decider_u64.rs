@@ -37,7 +37,7 @@ impl<'a> DeciderU64<'a> {
             tr: crate::transition_symbol2::TRANSITION_SYM2_START,
             machine,
             status: MachineStatus::NoDecision,
-            step_limit: config.step_limit,
+            step_limit: config.step_limit(),
         }
     }
 

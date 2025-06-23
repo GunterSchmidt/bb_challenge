@@ -4,6 +4,8 @@ pub fn duration_as_ms_rounded(duration: std::time::Duration) -> f64 {
 
 pub fn user_locale() -> num_format::Locale {
     // TODO get user locale
+    // let locale = SystemLocale::default().unwrap(); // does not work on windows
+
     num_format::Locale::en
 }
 

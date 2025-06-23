@@ -1,14 +1,15 @@
 use crate::{
-    config::Config,
+    data_provider::DataProvider,
     machine::Machine,
     result::PreDeciderCount,
     transition_symbol2::{TransitionSymbol2, TRANSITION_SYM2_HOLD},
     MAX_STATES,
 };
 
-pub trait Generator {
+// TODO remove what is in DataProvider
+pub trait Generator: DataProvider {
     /// Create new generator for random batch no. \
-    /// Avoids some recalculations for e.g. batch_size, but is clean.
+    /// Avoids some recalculations for e.g. batch_size, but gives normal initialized struct.
     fn new_from_generator(&self) -> Self;
 
     /// Returns the specific batch of permutations and an info if this is the last batch.
@@ -17,28 +18,12 @@ pub trait Generator {
     /// Returns the next batch of permutations and an info if this is the last batch.
     fn generate_permutation_batch_next(&mut self) -> (Vec<Machine>, bool);
 
-    fn requires_pre_decider_check(&self) -> bool;
-
-    /// The reduced actual batch size (number of Turing machines generated in each call).
-    fn batch_size(&self) -> usize;
-
     /// The given limit of machines to generate or (if smaller) the maximum number of machines for the number of states.
     fn limit(&self) -> u64;
-
-    /// The number of states used for this generator.
-    fn n_states(&self) -> usize;
-
-    /// The total number of machines for the number of n_states.
-    fn num_machines(&self) -> u64;
-
-    /// The total number of batches to create all permutations.
-    fn num_batches(&self) -> usize;
 
     fn pre_decider_count(&self) -> PreDeciderCount;
 
     fn num_eliminated(&self) -> u64;
-
-    fn config(&self) -> &Config;
 
     fn check_generator_batch_size_request_single_thread(&mut self);
 

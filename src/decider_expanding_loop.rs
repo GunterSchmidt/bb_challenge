@@ -604,6 +604,7 @@ mod tests {
     #[test]
     // TODO make it work
     // TODO probably check the tape_shifted number, it may change here
+    // This test is currently failing, which is correct, as the outcome should be different.
     fn test_decider_expanding_loop_applies_not_bb5_max() {
         let mut decider = DeciderExpandingLoop::new();
 

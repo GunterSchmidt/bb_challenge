@@ -109,14 +109,14 @@ impl Display for MachineStatus {
                 match reason {
                             UndecidedReason::DeciderNoResult => s.push_str("Undecided: No result"),
                             UndecidedReason::TapeLimitLeftBoundReached => s.push_str(
-                                format!("Undecided: Step limit 64 reached (right), {steps} steps").as_str(),
+                                format!("Undecided: Tape bound reached (right 64 steps), {steps} steps").as_str(),
                             ),
                             UndecidedReason::TapeLimitRightBoundReached => s.push_str(
-                                format!("Undecided: Step limit 64 reached (left), {steps} steps").as_str(),
+                                format!("Undecided: Tape bound reached (left 64 steps), {steps} steps").as_str(),
                             ),
                             UndecidedReason::StepLimit => s.push_str(
                                 format!(
-                                    "Undecided: Step limit reached, machine did not hold for {steps} steps"
+                                    "Undecided: Step limit reached, machine did not hold for {steps} steps."
                                 )
                                 .as_str(),
                             ),

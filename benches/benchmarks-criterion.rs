@@ -1,21 +1,23 @@
 #![allow(dead_code)]
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use std::time::Duration;
+use std::{path::Component, time::Duration};
 
 use bb_challenge::{
     config::Config,
-    decider::{self, run_decider_generator_single_thread, Decider},
+    decider::{
+        self, run_decider_data_provider_single_thread,
+        run_decider_data_provider_single_thread_deprecated, run_decider_data_provider_threaded,
+        run_decider_generator_single_thread_deprecated, Decider,
+    },
+    decider_hold_u128_long::DeciderHoldU128Long,
     decider_loop_v4::{DeciderLoopV4, STEP_LIMIT_DECIDER_LOOP},
-    decider_u128::DeciderU128,
-    decider_u64::DeciderU64,
     generator::Generator,
     generator_full::GeneratorFull,
     generator_reduced::GeneratorReduced,
     machine::Machine,
     result::result_max_steps_known,
     status::MachineStatus,
-    sub_decider::SubDeciderDummy,
     StepType,
 };
 
@@ -30,7 +32,7 @@ criterion_group!(
     // benchmark_tape_type,
     // benchmark_generator,
     benchmark_decider_gen_bb3,
-    benchmark_decider_gen_bb4,
+    // benchmark_decider_gen_bb4,
 );
 criterion_main!(benches);
 
@@ -49,22 +51,50 @@ fn benchmark_generator(c: &mut Criterion) {
 
 fn benchmark_decider_gen_bb3(c: &mut Criterion) {
     let mut group = c.benchmark_group("Bench Decider Loop BB3");
+    let config = config_bench(3);
 
     group.warm_up_time(Duration::from_millis(WARM_UP_TIME_MS));
     // group.measurement_time(Duration::from_millis(MEASUREMENT_TIME_MS));
     group.sample_size(10);
 
-    group.bench_function("Decider P (Generator Full) BB3", |b| {
-        b.iter(|| bench_decider_generator_full(3))
+    // full single
+    group.bench_function("Decider (Generator Full) BB3 Deprecated", |b| {
+        b.iter(|| bench_decider_generator_full(&config))
     });
-    group.bench_function("Decider P (Generator Reduced) BB3", |b| {
-        b.iter(|| bench_decider_generator_reduced_p(3))
+    group.bench_function(
+        "Decider P (Data Provider Generator Full) BB3 Deprecated",
+        |b| b.iter(|| bench_decider_data_provider_gen_full_deprecated(&config)),
+    );
+    group.bench_function("Decider (Data Provider Generator Full) BB3", |b| {
+        b.iter(|| bench_decider_data_provider_gen_full(&config))
     });
-    group.bench_function("Decider (Generator Full) Threaded BB3", |b| {
+
+    // reduced single
+    group.bench_function("Decider (Generator Reduced) BB3 Deprecated", |b| {
+        b.iter(|| bench_decider_generator_reduced(3))
+    });
+    group.bench_function(
+        "Decider (Data Provider Generator Reduced) BB3 Deprecated",
+        |b| b.iter(|| bench_decider_data_provider_gen_reduced_deprecated(&config)),
+    );
+    group.bench_function("Decider P (Data Provider Generator Reduced) BB3", |b| {
+        b.iter(|| bench_decider_data_provider_gen_reduced(&config))
+    });
+
+    // full threaded
+    group.bench_function("Decider (Generator Full) Threaded BB3 Deprecated", |b| {
         b.iter(|| bench_decider_generator_full_threaded(3))
     });
-    group.bench_function("Decider (Generator Reduced) Threaded BB3", |b| {
+    group.bench_function("Decider (Generator Full) Threaded BB3", |b| {
+        b.iter(|| bench_decider_data_provider_gen_full_threaded(&config))
+    });
+
+    // full reduced
+    group.bench_function("Decider (Generator Reduced) Threaded BB3 Deprecated", |b| {
         b.iter(|| bench_decider_generator_reduced_threaded(3))
+    });
+    group.bench_function("Decider (Generator Reduced) Threaded BB3", |b| {
+        b.iter(|| bench_decider_data_provider_gen_reduced_threaded(&config))
     });
 
     group.finish();
@@ -72,23 +102,52 @@ fn benchmark_decider_gen_bb3(c: &mut Criterion) {
 
 fn benchmark_decider_gen_bb4(c: &mut Criterion) {
     let mut group = c.benchmark_group("Bench Decider Loop BB4");
+    let config = config_bench(4);
 
     group.warm_up_time(Duration::from_millis(WARM_UP_TIME_MS));
     // group.measurement_time(Duration::from_millis(MEASUREMENT_TIME_MS));
     group.sample_size(10);
 
-    // group.bench_function("Decider P (Generator Full) BB4", |b| {
-    //     b.iter(|| bench_decider_generator_full(4))
-    // });
-    // group.bench_function("Decider P (Generator Reduced) BB4", |b| {
-    //     b.iter(|| bench_decider_generator_reduced_p(4))
-    // });
-    group.bench_function("Decider (Generator Full) Threaded BB4", |b| {
+    // full single
+    group.bench_function("Decider (Generator Full) BB4 Deprecated", |b| {
+        b.iter(|| bench_decider_generator_full(&config))
+    });
+    group.bench_function(
+        "Decider (Data Provider Generator Full) BB4 Deprecated",
+        |b| b.iter(|| bench_decider_data_provider_gen_full_deprecated(&config)),
+    );
+    group.bench_function("Decider (Data Provider Generator Full) BB4", |b| {
+        b.iter(|| bench_decider_data_provider_gen_full(&config))
+    });
+
+    // reduced single
+    group.bench_function("Decider (Generator Reduced) BB4 Deprecated", |b| {
+        b.iter(|| bench_decider_generator_reduced(4))
+    });
+    group.bench_function(
+        "Decider (Data Provider Generator Reduced) BB4 Deprecated",
+        |b| b.iter(|| bench_decider_data_provider_gen_reduced_deprecated(&config)),
+    );
+    group.bench_function("Decider (Data Provider Generator Reduced) BB4", |b| {
+        b.iter(|| bench_decider_data_provider_gen_reduced(&config))
+    });
+
+    // full threaded
+    group.bench_function("Decider (Generator Full) Threaded BB4 Deprecated", |b| {
         b.iter(|| bench_decider_generator_full_threaded(4))
     });
-    group.bench_function("Decider (Generator Reduced) Threaded BB4", |b| {
+    group.bench_function("Decider (Generator Full) Threaded BB4", |b| {
+        b.iter(|| bench_decider_data_provider_gen_full_threaded(&config))
+    });
+
+    // reduced threaded
+    group.bench_function("Decider (Generator Reduced) Threaded BB4 Deprecated", |b| {
         b.iter(|| bench_decider_generator_reduced_threaded(4))
     });
+    group.bench_function(
+        "Decider (Data Provider Generator Reduced) Threaded BB4",
+        |b| b.iter(|| bench_decider_data_provider_gen_reduced_threaded(&config)),
+    );
 
     group.finish();
 }
@@ -110,18 +169,18 @@ fn benchmark_tape_type(c: &mut Criterion) {
     group.measurement_time(Duration::from_millis(MEASUREMENT_TIME_MS));
     // group.sample_size(50);
 
-    group.bench_function("u64 hold decider BB4 max function", |b| {
-        b.iter(|| bench_decider_hold_u64_bb4_max_function(&machine_p_bb4_max))
-    });
+    // group.bench_function("u64 hold decider BB4 max function", |b| {
+    //     b.iter(|| bench_decider_hold_u64_bb4_max_function(&machine_p_bb4_max))
+    // });
     // Removing 'u64 hold decider BB4 max object' from the test
     // results in a 50% higher run-time of 'u128 hold decider BB4 max object'?!
     // Only if sample_size is 50,
     // group.bench_function("u64 hold decider BB4 max object", |b| {
     //     b.iter(|| bench_decider_hold_u64_bb4_max_object(&machine_p_bb4_max))
     // });
-    group.bench_function("u128 hold decider BB4 max function", |b| {
-        b.iter(|| bench_decider_hold_u128_function(&machine_p_bb4_max, 107))
-    });
+    // group.bench_function("u128 hold decider BB4 max function", |b| {
+    //     b.iter(|| bench_decider_hold_u128_function(&machine_p_bb4_max, 107))
+    // });
     // group.bench_function("u128 hold decider BB4 max object", |b| {
     //     b.iter(|| bench_decider_hold_u128_object(&machine_p_bb4_max, 107))
     // });
@@ -158,35 +217,35 @@ fn benchmark_tape_type(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_decider_hold_u64_bb4_max_function(machine: &Machine) {
-    let config = Config::new_default(machine.n_states());
-    let check_result = DeciderU64::check_hold(&machine, &config);
-    // println!("{}", check_result);
-    assert_eq!(check_result, MachineStatus::DecidedHolds(107));
-}
-
-fn bench_decider_hold_u64_bb4_max_object(machine: &Machine) {
-    let config = Config::new_default(machine.n_states());
-    let mut d = DeciderU64::new(&machine, &config);
-    let check_result = d.run_check_hold();
-    // println!("{}", check_result);
-    assert_eq!(check_result, MachineStatus::DecidedHolds(107));
-}
-
-fn bench_decider_hold_u128_function(machine: &Machine, steps: StepType) {
-    let config = Config::new_default(machine.n_states());
-    let check_result = DeciderU128::check_hold(&machine, &config);
-    // println!("{}", check_result);
-    assert_eq!(check_result, MachineStatus::DecidedHolds(steps));
-}
-
-fn bench_decider_hold_u128_object(machine: &Machine, steps: StepType) {
-    let config = Config::new_default(machine.n_states());
-    let mut d = DeciderU128::new(&machine, &config);
-    let check_result = d.run_check_hold();
-    // println!("{}", check_result);
-    assert_eq!(check_result, MachineStatus::DecidedHolds(steps));
-}
+// fn bench_decider_hold_u64_bb4_max_function(machine: &Machine) {
+//     let config = Config::new_default(machine.n_states());
+//     let check_result = DeciderU64::check_hold(&machine, &config);
+//     // println!("{}", check_result);
+//     assert_eq!(check_result, MachineStatus::DecidedHolds(107));
+// }
+//
+// fn bench_decider_hold_u64_bb4_max_object(machine: &Machine) {
+//     let config = Config::new_default(machine.n_states());
+//     let mut d = DeciderU64::new(&machine, &config);
+//     let check_result = d.run_check_hold();
+//     // println!("{}", check_result);
+//     assert_eq!(check_result, MachineStatus::DecidedHolds(107));
+// }
+//
+// fn bench_decider_hold_u128_function(machine: &Machine, steps: StepType) {
+//     let config = Config::new_default(machine.n_states());
+//     let check_result = DeciderU128::check_hold(&machine, &config);
+//     // println!("{}", check_result);
+//     assert_eq!(check_result, MachineStatus::DecidedHolds(steps));
+// }
+//
+// fn bench_decider_hold_u128_object(machine: &Machine, steps: StepType) {
+//     let config = Config::new_default(machine.n_states());
+//     let mut d = DeciderU128::new(&machine, &config);
+//     let check_result = d.run_check_hold();
+//     // println!("{}", check_result);
+//     assert_eq!(check_result, MachineStatus::DecidedHolds(steps));
+// }
 
 // fn bench_decider_hold_u128_long_v1(machine: &MachineCompactDeprecated, steps: StepType) {
 //     let mut d = bb_challenge::decider_u128_long_v1::DeciderU128LongV1::new(&machine);
@@ -197,36 +256,35 @@ fn bench_decider_hold_u128_object(machine: &Machine, steps: StepType) {
 
 fn bench_decider_hold_u128_long(machine: &Machine, n_states: usize, steps_result: StepType) {
     let config = Config::new_default(n_states);
-    let mut d: bb_challenge::decider_u128_long::DeciderU128Long<SubDeciderDummy> =
-        bb_challenge::decider_u128_long::DeciderU128Long::new(&config);
+    let mut d: DeciderHoldU128Long = DeciderHoldU128Long::new(&config);
     // let mut d = bb_challenge::decider_u128_long::DeciderU128Long::new(&machine, STEP_LIMIT_DEFAULT);
     let check_result = d.decide_machine(machine);
     // println!("{}", check_result);
     assert_eq!(check_result, MachineStatus::DecidedHolds(steps_result));
 }
 
-fn bench_decider_hold_u64_applies_not_bb5_max(machine: &Machine) {
-    // BB5 Max
-    let config = Config::new_default(machine.n_states());
-    let mut d = DeciderU64::new(&machine, &config);
-    let check_result = d.run_check_hold();
-    // println!("{}", check_result);
-    let okay = match check_result {
-        MachineStatus::Undecided(_, _, _) => true,
-        _ => false,
-    };
+// fn bench_decider_hold_u64_applies_not_bb5_max(machine: &Machine) {
+//     // BB5 Max
+//     let config = Config::new_default(machine.n_states());
+//     let mut d = DeciderU64::new(&machine, &config);
+//     let check_result = d.run_check_hold();
+//     // println!("{}", check_result);
+//     let okay = match check_result {
+//         MachineStatus::Undecided(_, _, _) => true,
+//         _ => false,
+//     };
+//
+//     assert!(okay);
+// }
 
-    assert!(okay);
-}
-
-fn bench_decider_hold_u128_applies_not_bb5_max(machine: &Machine) {
-    // BB5 Max
-    let config = Config::new_default(machine.n_states());
-    let mut decider = DeciderU128::new(&machine, &config);
-    let check_result = decider.run_check_hold();
-    // println!("{}", check_result);
-    assert_eq!(check_result, MachineStatus::UndecidedFastTapeBoundReached);
-}
+// fn bench_decider_hold_u128_applies_not_bb5_max(machine: &Machine) {
+//     // BB5 Max
+//     let config = Config::new_default(machine.n_states());
+//     let mut decider = DeciderU128::new(&machine, &config);
+//     let check_result = decider.run_check_hold();
+//     // println!("{}", check_result);
+//     assert_eq!(check_result, MachineStatus::UndecidedFastTapeBoundReached);
+// }
 
 // pub fn bench_decider_hold_u64_u128_applies_not_bb5_max(machine: &MachineCompact) {
 //     // BB5 Max
@@ -261,11 +319,86 @@ fn bench_generate_reduced() {
     }
 }
 
-fn bench_decider_generator_full(n_states: usize) {
-    let generator = GeneratorFull::new(&config_bench(n_states));
+fn bench_decider_generator_full(config: &Config) {
+    let generator = GeneratorFull::new(config);
     let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-    let result = run_decider_generator_single_thread(decider, generator);
+    let result = run_decider_generator_single_thread_deprecated(decider, generator);
     // println!("{}", result);
+    if config.n_states() <= 3 {
+        assert_eq!(
+            result_max_steps_known(config.n_states()),
+            result.steps_max()
+        );
+    }
+}
+
+fn bench_decider_data_provider_gen_full_deprecated(config: &Config) {
+    let data_provider = GeneratorFull::new(config);
+    let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+    let result = run_decider_data_provider_single_thread_deprecated(decider, data_provider);
+    // println!("{}", result);
+    let n_states = config.n_states();
+    if n_states <= 3 {
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
+}
+
+fn bench_decider_data_provider_gen_reduced_deprecated(config: &Config) {
+    let data_provider = GeneratorReduced::new(config);
+    let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+    let result = run_decider_data_provider_single_thread_deprecated(decider, data_provider);
+    // println!("{}", result);
+    let n_states = config.n_states();
+    if n_states <= 3 {
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
+}
+
+fn bench_decider_data_provider_gen_full(config: &Config) {
+    let data_provider = GeneratorFull::new(config);
+    let result = run_decider_data_provider_single_thread(
+        DeciderLoopV4::decider_run_batch,
+        data_provider,
+        config,
+    );
+    // println!("{}", result);
+    let n_states = config.n_states();
+    if n_states <= 3 {
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
+}
+
+fn bench_decider_data_provider_gen_reduced(config: &Config) {
+    let data_provider = GeneratorReduced::new(config);
+    let result = run_decider_data_provider_single_thread(
+        DeciderLoopV4::decider_run_batch,
+        data_provider,
+        config,
+    );
+    // println!("{}", result);
+    let n_states = config.n_states();
+    if n_states <= 3 {
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
+}
+
+fn bench_decider_data_provider_gen_full_threaded(config: &Config) {
+    let data_provider = GeneratorFull::new(config);
+    let result =
+        run_decider_data_provider_threaded(DeciderLoopV4::decider_run_batch, data_provider, config);
+    // println!("{}", result);
+    let n_states = config.n_states();
+    if n_states <= 3 {
+        assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
+}
+
+fn bench_decider_data_provider_gen_reduced_threaded(config: &Config) {
+    let data_provider = GeneratorReduced::new(config);
+    let result =
+        run_decider_data_provider_threaded(DeciderLoopV4::decider_run_batch, data_provider, config);
+    // println!("{}", result);
+    let n_states = config.n_states();
     if n_states <= 3 {
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
     }
@@ -292,10 +425,10 @@ fn bench_decider_generator_full_threaded(n_states: usize) {
 //     assert_eq!(result_max_steps(n_states), result.steps_max);
 // }
 
-fn bench_decider_generator_reduced_p(n_states: usize) {
+fn bench_decider_generator_reduced(n_states: usize) {
     let generator = GeneratorReduced::new(&config_bench(n_states));
     let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-    let result = run_decider_generator_single_thread(decider, generator);
+    let result = run_decider_generator_single_thread_deprecated(decider, generator);
     // println!("{}", result);
     if n_states <= 3 {
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
