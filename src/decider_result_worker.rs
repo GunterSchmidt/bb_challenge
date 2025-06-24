@@ -1,0 +1,151 @@
+// TODO Function which is called for the results.
+// For performance reasons this should be done after each package and in a separate thread.
+
+use std::io::Write;
+use std::{fmt::Display, fs::File};
+
+use chrono::{DateTime, Local, Utc};
+
+use crate::{
+    config::{Config, PATH_DATA},
+    decider_result::BatchResult,
+};
+
+pub type ResultWorker = std::result::Result<(), ResultWorkerError>;
+pub type ResultString = std::result::Result<(), String>;
+
+pub fn save_machines_undecided(batch_result: &BatchResult, config: &Config) -> ResultWorker {
+    let machine_infos = batch_result.machines_undecided.to_machine_info();
+
+    let time_string;
+    if config.use_local_time() {
+        let datetime_local: DateTime<Local> = config.creation_time().into();
+        time_string = datetime_local.format("%Y%m%d_%H%M%S").to_string();
+    } else {
+        let datetime_utc: DateTime<Utc> = config.creation_time().into();
+        time_string = datetime_utc.format("%Y%m%d_%H%M%S").to_string();
+    };
+
+    // thread::spawn(move || {
+    let path = PATH_DATA;
+    let file_name =
+        time_string.to_owned() + "_undecided_step_limit " + &batch_result.decider_name + ".txt";
+    let mut file_step_limit = open_file_for_append(path, &file_name)?;
+    let file_name =
+        time_string.to_owned() + "_undecided_tape_bound " + &batch_result.decider_name + ".txt";
+    let mut file_tape_bound = open_file_for_append(path, &file_name)?;
+    let file_name =
+        time_string.to_owned() + "_undecided_other " + &batch_result.decider_name + ".txt";
+    // let mut file_other = open_file_for_append(path, &file_name)?;
+    let mut file_other = None;
+
+    // save machines
+    for mi in machine_infos.iter().take(500) {
+        match mi.status() {
+            crate::status::MachineStatus::Undecided(undecided_reason, _, _) => {
+                match undecided_reason {
+                    crate::status::UndecidedReason::TapeLimitLeftBoundReached
+                    | crate::status::UndecidedReason::TapeLimitRightBoundReached => {
+                        writeln!(file_tape_bound, "{}: {}", batch_result.decider_name, mi)?
+                    }
+                    crate::status::UndecidedReason::NoSinusRhythmIdentified => todo!(),
+                    crate::status::UndecidedReason::StepLimit => {
+                        writeln!(file_step_limit, "{}: {}", batch_result.decider_name, mi)?
+                    }
+                    crate::status::UndecidedReason::TapeSizeLimit => todo!(),
+                    crate::status::UndecidedReason::Undefined => todo!(),
+                    _ => {
+                        if file_other.is_none() {
+                            file_other = Some(open_file_for_append(path, &file_name)?);
+                        }
+                        writeln!(
+                            file_other.as_ref().unwrap(),
+                            "{}: {}",
+                            batch_result.decider_name,
+                            mi
+                        )?
+                    }
+                }
+            }
+            _ => panic!("Must not happen"),
+        }
+    }
+    // });
+
+    Ok(())
+}
+
+fn open_file_for_append(path: &str, file_name: &str) -> Result<File, ResultWorkerError> {
+    // open file for append
+    let file_path = path.to_owned() + &file_name;
+    let r = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&file_path);
+
+    match r {
+        Ok(file) => {
+            return Ok(file);
+        }
+        Err(e) => {
+            let message = e.to_string() + ":" + file_path.as_str();
+            return Err(ResultWorkerError::FileError(message));
+        }
+    }
+}
+
+// pub fn save_machines_undecided_to_file(machine_infos: &[MachineInfo]) -> ResultWorker {
+//     let path = PATH_DATA;
+//     let file_name = "undecided_machines.txt";
+//     let file_path = path.to_owned() + file_name;
+
+//     // open file for append
+//     let mut file = std::fs::OpenOptions::new()
+//         .append(true)
+//         .create(true)
+//         .open(file_path)?;
+
+//     Ok(())
+// }
+
+pub fn print_batch_result(batch_result: &BatchResult, _config: &Config) -> ResultWorker {
+    let machine_infos = batch_result.machines_undecided.to_machine_info();
+
+    // thread::spawn(move || {
+    for mi in machine_infos.iter().take(500) {
+        println!("{}: {}", batch_result.decider_name, mi);
+    }
+    // });
+
+    Ok(())
+}
+
+/// This is a dummy function to pass when no worker is required.
+pub fn no_worker(_batch_result: &BatchResult, _config: &Config) -> ResultWorker {
+    Ok(())
+}
+
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum ResultWorkerError {
+    StopRun(String),
+    FileError(String),
+}
+
+impl std::error::Error for ResultWorkerError {}
+
+// Implement std::convert::From for AppError; from io::Error
+impl From<std::io::Error> for ResultWorkerError {
+    fn from(error: std::io::Error) -> Self {
+        ResultWorkerError::FileError(error.to_string())
+    }
+}
+
+impl Display for ResultWorkerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResultWorkerError::StopRun(message) => write!(f, "{message}"),
+            ResultWorkerError::FileError(message) => write!(f, "{message}"),
+        }
+    }
+}

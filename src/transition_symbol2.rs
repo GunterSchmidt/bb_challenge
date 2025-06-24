@@ -71,7 +71,7 @@ const SYMBOL_ONE: TransitionType = 0b0000_0001;
 const DIRECTION_UNDEFINED: TransitionType = 0b1000_0000;
 const TO_RIGHT: TransitionType = 0b1100_0000;
 const TO_LEFT: TransitionType = 0b0100_0000;
-const STATE_HOLD: TransitionType = 0;
+pub const STATE_HOLD_SYM2: TransitionType = 0;
 
 // TODO doc
 // TODO change Undefined: Symbol only bit 0 (0 and 1), Direction holds undefined. Symbol and Direction are either both defined or undefined.
@@ -306,7 +306,7 @@ impl TransitionSymbol2 {
     }
 
     pub fn is_hold(&self) -> bool {
-        self.transition & FILTER_STATE == STATE_HOLD
+        self.transition & FILTER_STATE == STATE_HOLD_SYM2
     }
 
     pub fn is_self_ref(&self) -> bool {
@@ -695,31 +695,6 @@ impl TransitonTypeExt for TransitionType {
     }
 }
 
-#[cfg(test)]
-#[allow(non_snake_case)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn test_transition_table_1RB0LB_1LA0RA() {
-        let tm_in = "1RB0LB_1LA0RA";
-        let t = TransitionTableSymbol2::from_standard_tm_text_format(tm_in).unwrap();
-        let tm_out = t.to_standard_tm_text_format();
-        assert_eq!(tm_in, tm_out);
-    }
-
-    #[test]
-    fn test_transitions_for_A0() {
-        let mut t = TransitionTableSymbol2::new_default(1);
-        t.transitions[2] = TRANSITIONS_FOR_A0[0];
-        t.transitions[3] = TRANSITIONS_FOR_A0[1];
-        let tm_in = "0RB1RB";
-        let tm_out = t.to_standard_tm_text_format();
-        assert_eq!(tm_in, tm_out);
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TransitionError {
     InvalidSymbol(u8),
@@ -745,5 +720,30 @@ impl Display for TransitionError {
                 write!(f, "State {} out of range (max {})", s, MAX_STATES)
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[allow(non_snake_case)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn transition_table_1RB0LB_1LA0RA() {
+        let tm_in = "1RB0LB_1LA0RA";
+        let t = TransitionTableSymbol2::from_standard_tm_text_format(tm_in).unwrap();
+        let tm_out = t.to_standard_tm_text_format();
+        assert_eq!(tm_in, tm_out);
+    }
+
+    #[test]
+    fn transitions_for_A0() {
+        let mut t = TransitionTableSymbol2::new_default(1);
+        t.transitions[2] = TRANSITIONS_FOR_A0[0];
+        t.transitions[3] = TRANSITIONS_FOR_A0[1];
+        let tm_in = "0RB1RB";
+        let tm_out = t.to_standard_tm_text_format();
+        assert_eq!(tm_in, tm_out);
     }
 }

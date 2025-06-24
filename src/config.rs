@@ -1,14 +1,19 @@
+use std::time::SystemTime;
+
 use crate::StepType;
 use hashbrown::HashMap;
 
 /// Default step limit if not changed in working machine.
 pub const STEP_LIMIT_DEFAULT: StepType = 50_000_000;
 pub const GENERATOR_BATCH_SIZE_RECOMMENDATION_FULL: usize = 500_000;
-pub const GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED: usize = 1_000_000;
+pub const GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED: usize = 5_000_000;
 /// Default tape size limit if not changed in working machine.
 const TAPE_SIZE_LIMIT_DEFAULT: usize = 20000;
 const RECORD_MACHINES_MAX_STEPS_DEFAULT: usize = 10;
-const CPU_UTILIZATION_DEFAULT: usize = 80;
+const CPU_UTILIZATION_DEFAULT: usize = 100;
+// TODO make config reference with lifetime
+// TODO include data path
+pub const PATH_DATA: &str = "./data/";
 
 /// This sets the configuration for the decider run. \
 /// Use new_default(n_states) or the builder to create a Config.
@@ -28,7 +33,12 @@ pub struct Config {
     limit_machines_undecided: usize,
     /// CPU utilization in percent, e.g. 75 -> 6 of 8 cores used. 0-150 allowed.
     cpu_utilization_percent: usize,
-    pub config_key_value: HashMap<String, String>,
+    /// Additional config e.g. for specific deciders.
+    config_key_value: HashMap<String, String>,
+    creation_time: SystemTime,
+    /// when set to false UTC is used instead, e.g. for file name
+    // TODO builder
+    use_local_time: bool,
 }
 
 impl Config {
@@ -77,6 +87,8 @@ impl Config {
             limit_machines_undecided: 0,
             cpu_utilization_percent: CPU_UTILIZATION_DEFAULT,
             config_key_value: HashMap::new(),
+            creation_time: SystemTime::now(),
+            use_local_time: true,
         }
     }
 
@@ -152,6 +164,23 @@ impl Config {
     pub fn tape_size_limit(&self) -> usize {
         self.tape_size_limit
     }
+
+    pub fn config_key_value(&self) -> &HashMap<String, String> {
+        &self.config_key_value
+    }
+
+    /// Returns the value for the given key (get() from HashMap).
+    pub fn config_value(&self, key: &str) -> Option<&String> {
+        self.config_key_value.get(key)
+    }
+
+    pub fn creation_time(&self) -> SystemTime {
+        self.creation_time
+    }
+
+    pub fn use_local_time(&self) -> bool {
+        self.use_local_time
+    }
 }
 
 // pub struct ConfigKeyValue {
@@ -168,8 +197,8 @@ pub struct ConfigBuilder {
     generate_limit: Option<u64>,
     generator_batch_size_request_full: Option<usize>,
     generator_batch_size_request_reduced: Option<usize>,
-    record_machines_max_steps: Option<usize>,
-    record_machines_undecided: Option<usize>,
+    limit_machines_max_steps: Option<usize>,
+    limit_machines_undecided: Option<usize>,
     cpu_utilization_percent: Option<usize>,
     config_key_value: Option<HashMap<String, String>>,
 }
@@ -214,12 +243,12 @@ impl ConfigBuilder {
     }
 
     pub fn limit_machines_max_steps(mut self, value: usize) -> Self {
-        self.record_machines_max_steps = Some(value);
+        self.limit_machines_max_steps = Some(value);
         self
     }
 
     pub fn limit_machines_undecided(mut self, value: usize) -> Self {
-        self.record_machines_undecided = Some(value);
+        self.limit_machines_undecided = Some(value);
         self
     }
 
@@ -246,13 +275,15 @@ impl ConfigBuilder {
                 .generator_batch_size_request_reduced
                 .unwrap_or(GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED),
             limit_machines_max_steps: self
-                .record_machines_max_steps
+                .limit_machines_max_steps
                 .unwrap_or(RECORD_MACHINES_MAX_STEPS_DEFAULT),
-            limit_machines_undecided: self.record_machines_undecided.unwrap_or(0),
+            limit_machines_undecided: self.limit_machines_undecided.unwrap_or(0),
             cpu_utilization_percent: self
                 .cpu_utilization_percent
                 .unwrap_or(CPU_UTILIZATION_DEFAULT),
             config_key_value: self.config_key_value.unwrap_or_default(),
+            creation_time: SystemTime::now(),
+            use_local_time: true,
         }
     }
 }

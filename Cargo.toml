@@ -5,6 +5,7 @@ edition = "2021"
 # default-run = "../busy_beaver"
 
 [dependencies]
+chrono = "0.4"
 hashbrown = "0.15"
 num_cpus = "1.16"
 num-format = "0.4"

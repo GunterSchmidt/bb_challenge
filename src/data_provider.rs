@@ -4,10 +4,12 @@ use std::fmt::Display;
 
 use crate::{
     config::Config,
+    decider_result::{EndReason, PreDeciderCount},
     machine::Machine,
-    result::{EndReason, PreDeciderCount},
+    pre_decider::PreDeciderRun,
 };
 
+// TODO BatchInfo with batch_no, num_batches, machine_no_first, machines_total
 pub trait DataProvider {
     /// Returns the next batch of machines. DataProviderResult may have end_reason: IsLastBatch on last batch.
     fn machine_batch_next(&mut self) -> DataProviderResult;
@@ -33,7 +35,7 @@ pub trait DataProvider {
     /// It is generally more efficient to run the pre-decider check within the data generator
     /// or data reader as less data is stored and moved in memory.
     // TODO possibly not required because of option, but may be clearer for developer
-    fn requires_pre_decider_check(&self) -> bool;
+    fn requires_pre_decider_check(&self) -> PreDeciderRun;
 
     /// Indicates if a pre_decider_count is created and needs to be added to the result.
     fn returns_pre_decider_count(&self) -> bool;

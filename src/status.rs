@@ -15,6 +15,7 @@ pub enum PreDeciderReason {
     OnlyOneDirection,
     SimpleStartLoop,
     StartRecursive,
+    StartStateBandRight,
     WritesOnlyZero,
 }
 
@@ -68,13 +69,11 @@ pub enum MachineStatus {
     DecidedHolds(StepType),
     /// Holds after steps, tape size, ones on tape
     DecidedHoldsDetail(StepType, usize, usize),
-    // DecidedHoldsOld(StepType, usize),
     DecidedNotMaxTooManyHoldTransitions,
     DecidedNotMaxNotAllStatesUsed,
     EliminatedPreDecider(PreDeciderReason),
-    /// Undecided after (UndecidedReasond, steps, tape size)
     Undecided(UndecidedReason, StepType, usize),
-    UndecidedFastTapeBoundReached,
+    // UndecidedFastTapeBoundReached,
 }
 
 impl Display for MachineStatus {
@@ -133,10 +132,9 @@ impl Display for MachineStatus {
                         }
                 // s.push_str(format!(
                 // "Safety stop reached, machine did not hold for {steps} steps or tape length limit {tape_len}").as_str());
-            }
-            MachineStatus::UndecidedFastTapeBoundReached => {
-                s.push_str("Undecided as fast tape size limit was reached.")
-            }
+            } // MachineStatus::UndecidedFastTapeBoundReached => {
+              //     s.push_str("Undecided as fast tape size limit was reached.")
+              // }
         }
         write!(f, "{}", s)
     }

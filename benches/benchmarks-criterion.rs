@@ -6,33 +6,37 @@ use std::time::Duration;
 use bb_challenge::{
     config::Config,
     decider::{
-        self, run_decider_data_provider_single_thread,
-        run_decider_data_provider_single_thread_deprecated, run_decider_data_provider_threaded,
-        run_decider_generator_single_thread_deprecated, Decider,
+        run_decider_data_provider_single_thread, run_decider_data_provider_threaded, Decider,
+    },
+    decider_deprecated::{
+        run_decider_data_provider_single_thread_deprecated,
+        run_decider_generator_single_thread_deprecated, run_decider_generator_threaded_deprecated,
     },
     decider_hold_u128_long::DeciderHoldU128Long,
     decider_loop_v4::DeciderLoopV4,
+    decider_result::result_max_steps_known,
+    decider_result_worker::no_worker,
     generator::Generator,
     generator_full::GeneratorFull,
     generator_reduced::GeneratorReduced,
     machine::Machine,
-    result::result_max_steps_known,
     status::MachineStatus,
     StepType,
 };
 
 const WARM_UP_TIME_MS: u64 = 500;
 const MEASUREMENT_TIME_MS: u64 = 2000;
-const GENERATOR_BATCH_SIZE_REQUEST_FULL: usize = 500_000;
-const GENERATOR_BATCH_SIZE_REQUEST_REDUCED: usize = 1_000_000;
+const BENCH_GENERATOR_BATCH_SIZE_REQUEST_FULL: usize = 500_000;
+const BENCH_GENERATOR_BATCH_SIZE_REQUEST_REDUCED: usize = 1_000_000;
 const GENERATOR_LIMIT: u64 = 50_000_000;
+const RUN_DEPRECATED: bool = false;
 
 criterion_group!(
     benches,
     // benchmark_tape_type,
     // benchmark_generator,
     benchmark_decider_gen_bb3,
-    // benchmark_decider_gen_bb4,
+    benchmark_decider_gen_bb4,
 );
 criterion_main!(benches);
 
@@ -58,45 +62,55 @@ fn benchmark_decider_gen_bb3(c: &mut Criterion) {
     group.sample_size(10);
 
     // full single
-    group.bench_function("Decider (Generator Full) BB3 Deprecated", |b| {
-        b.iter(|| bench_decider_generator_full(&config))
-    });
-    group.bench_function(
-        "Decider (Data Provider Generator Full) BB3 Deprecated",
-        |b| b.iter(|| bench_decider_data_provider_gen_full_deprecated(&config)),
-    );
     group.bench_function("Decider (Data Provider Generator Full) BB3", |b| {
         b.iter(|| bench_decider_data_provider_gen_full(&config))
     });
 
     // reduced single
-    group.bench_function("Decider (Generator Reduced) BB3 Deprecated", |b| {
-        b.iter(|| bench_decider_generator_reduced(3))
-    });
-    group.bench_function(
-        "Decider (Data Provider Generator Reduced) BB3 Deprecated",
-        |b| b.iter(|| bench_decider_data_provider_gen_reduced_deprecated(&config)),
-    );
     group.bench_function("Decider (Data Provider Generator Reduced) BB3", |b| {
         b.iter(|| bench_decider_data_provider_gen_reduced(&config))
     });
 
     // full threaded
-    group.bench_function("Decider (Generator Full) Threaded BB3 Deprecated", |b| {
-        b.iter(|| bench_decider_generator_full_threaded(3))
-    });
     group.bench_function("Decider (Generator Full) Threaded BB3", |b| {
         b.iter(|| bench_decider_data_provider_gen_full_threaded(&config))
     });
 
     // full reduced
-    group.bench_function("Decider (Generator Reduced) Threaded BB3 Deprecated", |b| {
-        b.iter(|| bench_decider_generator_reduced_threaded(3))
-    });
     group.bench_function("Decider (Generator Reduced) Threaded BB3", |b| {
         b.iter(|| bench_decider_data_provider_gen_reduced_threaded(&config))
     });
 
+    // deprecated
+    if RUN_DEPRECATED {
+        // full single
+        group.bench_function("Decider (Generator Full) BB3 Deprecated", |b| {
+            b.iter(|| bench_decider_generator_full(&config))
+        });
+        // group.bench_function(
+        //     "Decider (Data Provider Generator Full) BB3 Deprecated",
+        //     |b| b.iter(|| bench_decider_data_provider_gen_full_deprecated(&config)),
+        // );
+
+        // reduced single
+        group.bench_function("Decider (Generator Reduced) BB3 Deprecated", |b| {
+            b.iter(|| bench_decider_generator_reduced(3))
+        });
+        // group.bench_function(
+        //     "Decider (Data Provider Generator Reduced) BB3 Deprecated",
+        //     |b| b.iter(|| bench_decider_data_provider_gen_reduced_deprecated(&config)),
+        // );
+
+        // full threaded
+        group.bench_function("Decider (Generator Full) Threaded BB3 Deprecated", |b| {
+            b.iter(|| bench_decider_generator_full_threaded(3))
+        });
+
+        // full reduced
+        group.bench_function("Decider (Generator Reduced) Threaded BB3 Deprecated", |b| {
+            b.iter(|| bench_decider_generator_reduced_threaded(3))
+        });
+    }
     group.finish();
 }
 
@@ -109,46 +123,55 @@ fn benchmark_decider_gen_bb4(c: &mut Criterion) {
     group.sample_size(10);
 
     // full single
-    group.bench_function("Decider (Generator Full) BB4 Deprecated", |b| {
-        b.iter(|| bench_decider_generator_full(&config))
-    });
-    group.bench_function(
-        "Decider (Data Provider Generator Full) BB4 Deprecated",
-        |b| b.iter(|| bench_decider_data_provider_gen_full_deprecated(&config)),
-    );
     group.bench_function("Decider (Data Provider Generator Full) BB4", |b| {
         b.iter(|| bench_decider_data_provider_gen_full(&config))
     });
 
     // reduced single
-    group.bench_function("Decider (Generator Reduced) BB4 Deprecated", |b| {
-        b.iter(|| bench_decider_generator_reduced(4))
-    });
-    group.bench_function(
-        "Decider (Data Provider Generator Reduced) BB4 Deprecated",
-        |b| b.iter(|| bench_decider_data_provider_gen_reduced_deprecated(&config)),
-    );
     group.bench_function("Decider (Data Provider Generator Reduced) BB4", |b| {
         b.iter(|| bench_decider_data_provider_gen_reduced(&config))
     });
 
     // full threaded
-    group.bench_function("Decider (Generator Full) Threaded BB4 Deprecated", |b| {
-        b.iter(|| bench_decider_generator_full_threaded(4))
-    });
     group.bench_function("Decider (Generator Full) Threaded BB4", |b| {
         b.iter(|| bench_decider_data_provider_gen_full_threaded(&config))
     });
 
     // reduced threaded
-    group.bench_function("Decider (Generator Reduced) Threaded BB4 Deprecated", |b| {
-        b.iter(|| bench_decider_generator_reduced_threaded(4))
-    });
     group.bench_function(
         "Decider (Data Provider Generator Reduced) Threaded BB4",
         |b| b.iter(|| bench_decider_data_provider_gen_reduced_threaded(&config)),
     );
 
+    if RUN_DEPRECATED {
+        // full single
+        group.bench_function("Decider (Generator Full) BB4 Deprecated", |b| {
+            b.iter(|| bench_decider_generator_full(&config))
+        });
+        // group.bench_function(
+        //     "Decider (Data Provider Generator Full) BB4 Deprecated",
+        //     |b| b.iter(|| bench_decider_data_provider_gen_full_deprecated(&config)),
+        // );
+
+        // reduced single
+        group.bench_function("Decider (Generator Reduced) BB4 Deprecated", |b| {
+            b.iter(|| bench_decider_generator_reduced(4))
+        });
+        // group.bench_function(
+        //     "Decider (Data Provider Generator Reduced) BB4 Deprecated",
+        //     |b| b.iter(|| bench_decider_data_provider_gen_reduced_deprecated(&config)),
+        // );
+
+        // full threaded
+        group.bench_function("Decider (Generator Full) Threaded BB4 Deprecated", |b| {
+            b.iter(|| bench_decider_generator_full_threaded(4))
+        });
+
+        // reduced threaded
+        group.bench_function("Decider (Generator Reduced) Threaded BB4 Deprecated", |b| {
+            b.iter(|| bench_decider_generator_reduced_threaded(4))
+        });
+    }
     group.finish();
 }
 
@@ -360,6 +383,7 @@ fn bench_decider_data_provider_gen_full(config: &Config) {
         DeciderLoopV4::decider_run_batch,
         data_provider,
         config,
+        &no_worker,
     );
     // println!("{}", result);
     let n_states = config.n_states();
@@ -374,6 +398,7 @@ fn bench_decider_data_provider_gen_reduced(config: &Config) {
         DeciderLoopV4::decider_run_batch,
         data_provider,
         config,
+        &no_worker,
     );
     // println!("{}", result);
     let n_states = config.n_states();
@@ -384,8 +409,12 @@ fn bench_decider_data_provider_gen_reduced(config: &Config) {
 
 fn bench_decider_data_provider_gen_full_threaded(config: &Config) {
     let data_provider = GeneratorFull::new(config);
-    let result =
-        run_decider_data_provider_threaded(DeciderLoopV4::decider_run_batch, data_provider, config);
+    let result = run_decider_data_provider_threaded(
+        DeciderLoopV4::decider_run_batch,
+        data_provider,
+        config,
+        &no_worker,
+    );
     // println!("{}", result);
     let n_states = config.n_states();
     if n_states <= 3 {
@@ -395,8 +424,12 @@ fn bench_decider_data_provider_gen_full_threaded(config: &Config) {
 
 fn bench_decider_data_provider_gen_reduced_threaded(config: &Config) {
     let data_provider = GeneratorReduced::new(config);
-    let result =
-        run_decider_data_provider_threaded(DeciderLoopV4::decider_run_batch, data_provider, config);
+    let result = run_decider_data_provider_threaded(
+        DeciderLoopV4::decider_run_batch,
+        data_provider,
+        config,
+        &no_worker,
+    );
     // println!("{}", result);
     let n_states = config.n_states();
     if n_states <= 3 {
@@ -407,7 +440,7 @@ fn bench_decider_data_provider_gen_reduced_threaded(config: &Config) {
 fn bench_decider_generator_full_threaded(n_states: usize) {
     let generator = GeneratorFull::new(&config_bench(n_states));
     let decider = DeciderLoopV4::new(DeciderLoopV4::step_limit(n_states));
-    let result = decider::run_decider_generator_threaded(decider, generator);
+    let result = run_decider_generator_threaded_deprecated(decider, generator);
     // println!("{}", result);
     if n_states <= 3 {
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
@@ -438,7 +471,7 @@ fn bench_decider_generator_reduced(n_states: usize) {
 fn bench_decider_generator_reduced_threaded(n_states: usize) {
     let generator = GeneratorReduced::new(&config_bench(n_states));
     let decider = DeciderLoopV4::new(DeciderLoopV4::step_limit(n_states));
-    let result = decider::run_decider_generator_threaded(decider, generator);
+    let result = run_decider_generator_threaded_deprecated(decider, generator);
     // println!("{}", result);
     if n_states <= 3 {
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
@@ -447,8 +480,8 @@ fn bench_decider_generator_reduced_threaded(n_states: usize) {
 
 fn config_bench(n_states: usize) -> Config {
     Config::builder(n_states)
-        .generator_batch_size_request_full(GENERATOR_BATCH_SIZE_REQUEST_FULL)
-        .generator_batch_size_request_reduced(GENERATOR_BATCH_SIZE_REQUEST_REDUCED)
+        .generator_batch_size_request_full(BENCH_GENERATOR_BATCH_SIZE_REQUEST_FULL)
+        .generator_batch_size_request_reduced(BENCH_GENERATOR_BATCH_SIZE_REQUEST_REDUCED)
         .generate_limit(GENERATOR_LIMIT)
         .cpu_utilization(100)
         .build()

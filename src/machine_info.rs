@@ -103,9 +103,10 @@ impl Ord for MachineInfo {
 
 impl Display for MachineInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut s = format!("Machine No: {}\n", self.id);
-        s.push_str(format!("{}\n", self.transition_table).as_str());
-        s.push_str(format!("Status: {}", self.status).as_str());
+        let s = format!(
+            "Machine {:12}, {}: {}",
+            self.id, self.transition_table, self.status
+        );
         // match self.status {
         //     MachineStatus::Undecided(steps, tape_len) => {
         //         s.push_str(format!(

@@ -1,7 +1,7 @@
 use crate::{
     data_provider::DataProvider,
+    decider_result::PreDeciderCount,
     machine::Machine,
-    result::PreDeciderCount,
     transition_symbol2::{TransitionSymbol2, TRANSITION_SYM2_HOLD},
     MAX_STATES,
 };

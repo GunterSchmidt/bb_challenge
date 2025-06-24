@@ -2,8 +2,14 @@
 use std::{fmt::Display, io};
 
 use crate::{
+    config::Config,
+    decider::Decider,
+    decider_hold_u128_long::DeciderHoldU128Long,
+    decider_loop_v4::DeciderLoopV4,
     file::BBFileReader,
     machine_info::MachineInfo,
+    pre_decider::run_pre_decider_simple,
+    status::MachineStatus,
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2},
 };
 
@@ -14,7 +20,7 @@ use crate::{
 /// Direction, L, R (undefined without effect)  
 /// Next Status: A, B, C, D, E (BB5)  
 ///
-/// For each transition, this results in 2 (symbols) * 2 (directions) * 5 (states) + 1 (undefined) = 21 possibilites.  
+/// For each transition, this results in 2 (symbols) * 2 (directions) * 5 (states) + 1 (undefined) = 21 possibilities.  
 /// In the transition table there are 5 (current state) * 2 (current symbol) = 10 fields, so to the power of 10.  
 /// General formula (4*s+1)^2*s (s = number of status)  
 /// Results for  
@@ -30,12 +36,12 @@ use crate::{
 /// BB=10: 180.167.782.956.421.000.000.000.000.000.000
 ///
 /// However, a lot of variants are redundant, as they will produce the same result, e.g.
-/// -- When the first step does not change the state, it will run indefinetely. Thus
+/// -- When the first step does not change the state, it will run indefinitely. Thus
 /// the transitions of the other fields do not matter.
-/// -- L and R can be switched for all variants resulting in same stap count
+/// -- L and R can be switched for all variants resulting in same step count
 /// -- status labels can be switched (other than A), e.g. B and C with same result
 /// -- all transitions go in the same direction
-/// -- all transitions write 0 (test hyothesis: either holds in 2*s steps or runs indefinetly)
+/// -- all transitions write 0 (test hypothesis: either holds in 2*s steps or runs indefinitely)
 /// -- loop within?
 
 /// Turing Machine (which is a single generated permutation)
@@ -69,6 +75,23 @@ impl Machine {
         }
     }
 
+    /// This calls the [DeciderHoldU128Long] to check if a machine holds. This is
+    /// only implemented for up to 5 states. \
+    /// This should only be used for testing single machines as it is slow in a loop.
+    pub fn decide_hold(&self) -> MachineStatus {
+        let config = Config::new_default(self.n_states());
+        let mut status = run_pre_decider_simple(&self.transition_table);
+        if status != MachineStatus::NoDecision {
+            return status;
+        }
+        status = DeciderLoopV4::decide_single_machine(&self, &config);
+        match status {
+            MachineStatus::Undecided(_, _, _) => {}
+            _ => return status,
+        }
+        DeciderHoldU128Long::decide_single_machine(&self, &config)
+    }
+
     /// Creates the transition table from the Standard TM Text Format \
     /// https://www.sligocki.com/2022/10/09/standard-tm-format.html
     pub fn from_standard_tm_text_format(
@@ -90,11 +113,11 @@ impl Machine {
         Self::new(machine_id, transition_table)
     }
 
-    pub fn from_bbchallenge_id(
+    pub fn from_bb_challenge_id(
         machine_id: u64,
-        path_to_bbchallenge_db: &str,
+        path_to_bb_challenge_db: &str,
     ) -> io::Result<Machine> {
-        BBFileReader::read_machine_single(machine_id, path_to_bbchallenge_db)
+        BBFileReader::read_machine_single(machine_id, path_to_bb_challenge_db)
     }
 
     pub fn id(&self) -> u64 {
@@ -128,18 +151,12 @@ impl Machine {
         self.transition_table.n_states()
     }
 
-    // pub fn decide_hold(&self) -> MachineStatus {
-    //     let config = Config::new_default(self.n_states());
-    //     let mut d: DeciderU128Long<SubDeciderDummy> = DeciderU128Long::new(&config);
-    //     d.decide_machine(&self)
-    // }
-
     pub fn to_standard_tm_text_format(&self) -> String {
         self.transition_table.to_standard_tm_text_format()
     }
 
     /// Some notable machines
-    /// Builds certain default machines which may be usefull for testing.
+    /// Builds certain default machines which may be  for testing.
     /// SA: https://www.scottaaronson.com/papers/bb.pdf
     pub fn build_machine(name: &str) -> Option<Self> {
         let mut id = 0;
@@ -149,15 +166,15 @@ impl Machine {
         match name.to_uppercase().to_owned().as_str() {
             "BB3_MAX" => {
                 id = 651320;
-                transitions.push(("1LB", "---"));
-                transitions.push(("1RB", "0LC"));
-                transitions.push(("1RC", "1RA"));
+                transitions.push(("1RB", "---"));
+                transitions.push(("1LB", "0RC"));
+                transitions.push(("1LC", "1LA"));
             }
             "BB4_MAX" => {
-                id = 322636617;
-                transitions.push(("1RC", "1LC"));
+                id = 191_658_921;
+                transitions.push(("1RB", "1LB"));
+                transitions.push(("1LA", "0LC"));
                 transitions.push(("---", "1LD"));
-                transitions.push(("1LA", "0LB"));
                 transitions.push(("1RD", "0RA"));
             }
             "BB5_MAX" => {
@@ -179,7 +196,7 @@ impl Machine {
                 transitions.push(("1RB", "0LC"));
                 transitions.push(("1RC", "1RA"));
             }
-            // other older ones, check if usefull
+            // other older ones, check if useful
             "BB4_28051367" => {
                 // endless, no hold
                 id = 28051367;
@@ -266,10 +283,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_machine_1RB0LB_1LA0RA() {
+    fn create_machine_from_tm_standard_text_format() {
         let tm_in = "1RB0LB_1LA0RA";
         let m = Machine::from_standard_tm_text_format(0, tm_in).unwrap();
         let tm_out = m.to_standard_tm_text_format();
         assert_eq!(tm_in, tm_out);
+    }
+
+    #[test]
+    // https://bbchallenge.org/story#will-it-halt-or-not, Machine 1
+    fn machine_bb2_holds_after_4_steps() {
+        let mut transitions: Vec<(&str, &str)> = Vec::new();
+        transitions.push(("1RB", "1RB"));
+        transitions.push(("1LA", "---"));
+
+        let machine = Machine::from_string_tuple(0, &transitions);
+        println!("{}", machine);
+        let result = machine.decide_hold();
+        let steps = match result {
+            MachineStatus::DecidedHolds(s) => s,
+            _ => 0,
+        };
+        assert_eq!(steps, 4);
+    }
+
+    #[test]
+    // https://bbchallenge.org/story#will-it-halt-or-not, Machine 2
+    fn machine_bb5_holds_after_105_steps() {
+        let mut transitions: Vec<(&str, &str)> = Vec::new();
+        transitions.push(("1RB", "1LC"));
+        transitions.push(("0LB", "1LA"));
+        transitions.push(("1RD", "1LB"));
+        transitions.push(("1RE", "0RD"));
+        transitions.push(("0RA", "---"));
+        let machine = Machine::from_string_tuple(0, &transitions);
+        let result = machine.decide_hold();
+        let steps = match result {
+            MachineStatus::DecidedHolds(s) => s,
+            _ => 0,
+        };
+        assert_eq!(steps, 105);
+    }
+
+    #[test]
+    fn machine_bb5_max_holds_after_47_176_870_steps() {
+        let machine = Machine::build_machine("BB5_MAX").unwrap();
+        let result = machine.decide_hold();
+        assert_eq!(result, MachineStatus::DecidedHolds(47_176_870));
     }
 }

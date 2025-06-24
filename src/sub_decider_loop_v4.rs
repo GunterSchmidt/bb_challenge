@@ -54,7 +54,7 @@ impl Decider for DeciderLoopV5 {
         machines: &[Machine],
         run_predecider: bool,
         config: &crate::config::Config,
-    ) -> Option<crate::result::BatchResult> {
+    ) -> Option<crate::result::ResultBatch> {
         todo!()
     }
 }

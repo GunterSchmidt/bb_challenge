@@ -14,7 +14,7 @@ pub const I: StateType = 9;
 pub const J: StateType = 10;
 
 /// tape cell storage size, can be any i/u available, e.g. u8, i32, with u16 seems fastest
-/// CellType and MoveType affect Transition size, be carefull u16 makes nice 4 byte struct
+/// CellType and MoveType affect Transition size, be careful, u16 makes nice 4 byte struct
 pub type CellType = u16;
 pub type MoveType = i8;
 pub type StateType = u8;
@@ -45,7 +45,7 @@ pub const SYMBOL_UNUSED: CellType = u8::MAX as CellType - 1;
 pub const DIR_RIGHT: MoveType = 1;
 pub const DIR_LEFT: MoveType = -1;
 pub const DIR_UNDEFINED: MoveType = 0;
-pub const STATE_HOLD: u8 = 0;
+pub const STATE_HOLD_GENERIC: StateType = 0;
 pub const TRANSITION_HOLD: TransitionGeneric = TransitionGeneric {
     symbol_write: SYMBOL_UNDEFINED,
     direction: 0,
@@ -109,7 +109,7 @@ impl TransitionGeneric {
             b'1'..b'9' => transition[2] - b'0',
             b'A'..b'Y' => transition[2] - b'A' + 1,
             // b'-' | b'Z' => 0,
-            _ => STATE_HOLD,
+            _ => STATE_HOLD_GENERIC,
         };
         assert!(state_next <= MAX_STATES_GENERIC as u8);
 
@@ -146,7 +146,9 @@ impl TryFrom<&str> for TransitionGeneric {
 /// Displays the transition in Standard TM Text Format.
 impl Display for TransitionGeneric {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_unused() || (self.state_next == STATE_HOLD && self.direction == DIR_UNDEFINED) {
+        if self.is_unused()
+            || (self.state_next == STATE_HOLD_GENERIC && self.direction == DIR_UNDEFINED)
+        {
             return write!(f, "---");
         }
         let write_symbol = match self.symbol_write {
@@ -365,7 +367,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_machine_2x2_6_4() {
+    fn machine_2x2_6_4() {
         // 2x2-6-4
         let text = "1RB1LB_1LA1RZ";
         let table = TransitionTableGeneric::from_standard_tm_text_format(text).unwrap();
@@ -376,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn test_machine_2x6_e9866() {
+    fn machine_2x6_e9866() {
         // 2x6-e9866
         let text = "1RB2LA1RZ5LB5LA4LB_1LA4RB3RB5LB1LB4RA";
         let table = TransitionTableGeneric::from_standard_tm_text_format(text).unwrap();
@@ -387,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn test_machine_4x3_e12068() {
+    fn machine_4x3_e12068() {
         // 4x3-e12068
         let text = "1RB0LB1RD_2RC2LA0LA_1LB0LA0LA_1RA0RA1RZ";
         let table = TransitionTableGeneric::from_standard_tm_text_format(text).unwrap();
@@ -401,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn test_machine_10x2_green() {
+    fn machine_10x2_green() {
         // 10x2-Green
         let text = "1LB1RZ_0LC1LC_0LD0LC_1LE1RA_0LF0LE_1LG1RD_0LH0LG_1LI1RF_0LJ0LI_1RJ1RH";
         let table = TransitionTableGeneric::from_standard_tm_text_format(text).unwrap();
@@ -418,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn test_machine_10x10_random() {
+    fn machine_10x10_random() {
         let text = "8LB1RZ0LC1LC0LD9LC1LE1RA0LF0LE_4LG1RD0LH0LG6LI1RF0LJ0LI1RJ1RH\
         _8LB1RZ0LC1LC0LD9LC1LE1RA0LF0LE_4LG1RD0LH0LG6LI1RF0LJ0LI1RJ1RH\
         _8LB1RZ0LC1LC0LD9LC1LE1RA0LF0LE_4LG1RD0LH0LG6LI1RF0LJ0LI1RJ1RH\

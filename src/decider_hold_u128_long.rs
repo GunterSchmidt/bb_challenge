@@ -5,8 +5,9 @@ use crate::tape_utils::{VecU32Ext, TAPE_DISPLAY_RANGE_128};
 use crate::{
     config::Config,
     decider::Decider,
+    decider_result::BatchResult,
     machine::Machine,
-    result::BatchResult,
+    pre_decider::PreDeciderRun,
     status::{MachineStatus, UndecidedReason},
     tape_utils::{
         CLEAR_HIGH95_64BITS_U128, CLEAR_LOW63_32BITS_U128, HIGH32_SWITCH_U128, LOW64_SWITCH_U128,
@@ -41,7 +42,7 @@ pub struct DeciderHoldU128Long {
     /// tl_pos represents the start of the 128 tape in the long tape (covering 4 u32)
     tl_pos: usize,
     tl_high_bound: usize,
-    /// TODO low bound in bit, this is the rightmost doubleword in tape_shifted (bit 0), min value is 0, but will be negative when testing.
+    /// TODO low bound in bit, this is the rightmost doubleword (16-bit) in tape_shifted (bit 0), min value is 0, but will be negative when testing.
     /// Low bound in tape_long, this is the leftmost value.
     tl_low_bound: usize,
     num_steps: StepType,
@@ -675,17 +676,22 @@ impl Decider for DeciderHoldU128Long {
         self.run_check_hold(machine)
     }
 
+    fn decide_single_machine(machine: &Machine, config: &Config) -> MachineStatus {
+        let mut d = Self::new(config);
+        d.decide_machine(machine)
+    }
+
     fn decider_run_batch(
         machines: &[Machine],
-        run_predecider: bool,
+        run_predecider: PreDeciderRun,
         config: &Config,
     ) -> Option<BatchResult> {
         let decider = Self::new(config);
         crate::decider::decider_generic_run_batch(decider, machines, run_predecider, config)
     }
 
-    fn name(&self) -> String {
-        "Decider U128 Long".to_string()
+    fn name(&self) -> &str {
+        "Decider U128 Long"
     }
 }
 
@@ -726,7 +732,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_decider_hold_u128_applies_bb4_max() {
+    fn decider_hold_u128_applies_bb4_max() {
         let config = Config::new_default(4);
         // BB4 Max
         let machine = Machine::build_machine("BB4_MAX").unwrap();
@@ -738,7 +744,7 @@ mod tests {
 
     #[test]
     /// This test runs 50 mio steps, so turn off default = ["bb_debug"].
-    fn test_decider_hold_u128_applies_bb5_max() {
+    fn decider_hold_u128_applies_bb5_max() {
         let config = Config::new_default(5);
         // BB5 Max
         let machine = Machine::build_machine("BB5_MAX").unwrap();

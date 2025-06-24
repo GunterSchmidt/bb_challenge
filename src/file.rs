@@ -169,7 +169,7 @@ impl BBFileReader {
     /// This was a test to shrink the file size by using only 4 byte instead of 30 for the transition table of the machine. \
     /// The BB5_challenge file is reduced from 2700 MB to 700 MB. The zip file difference is only 70 MB.
     /// It does work, but has no current use. Also a reader for this file format is not written.
-    pub fn rewrite_file(file_path: &str) -> io::Result<usize> {
+    pub fn rewrite_file_to_compact_format(file_path: &str) -> io::Result<usize> {
         const BATCH_SIZE: usize = 1000;
         let mut file = Self::new(file_path)?;
         let file_path_out = file_path.to_owned() + ".new";

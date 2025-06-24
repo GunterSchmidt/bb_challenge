@@ -7,8 +7,9 @@ use crate::tape_utils::U64Ext;
 use crate::{
     config::Config,
     decider::{self, Decider},
+    decider_result::BatchResult,
     machine::Machine,
-    result::BatchResult,
+    pre_decider::PreDeciderRun,
     status::{EndlessReason, MachineStatus, UndecidedReason},
     transition_symbol2::{DirectionType, TransitionSymbol2, TransitionType},
     StepType, MAX_STATES,
@@ -147,27 +148,27 @@ impl Decider for DeciderLoopV4 {
 
             // halt is regarded as step, so always count step
             // check if done
-            if tr.is_hold() || self.steps.len() > self.step_limit {
-                if self.steps.len() > self.step_limit {
+            if tr.is_hold() {
+                // Hold found
+                // write last symbol
+                // TODO count ones
+                #[allow(unused_assignments)]
+                if tr.symbol() < 2 {
+                    if tr.is_symbol_one() {
+                        tape_shifted |= POS_HALF
+                    } else {
+                        tape_shifted &= !POS_HALF
+                    };
+                }
+                // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
+                return MachineStatus::DecidedHolds(self.steps.len() as StepType);
+            } else if self.steps.len() >= self.step_limit {
+                if self.steps.len() >= self.step_limit {
                     return MachineStatus::Undecided(
                         UndecidedReason::StepLimit,
-                        self.steps.len() as StepType,
+                        self.step_limit as StepType,
                         TAPE_SIZE_BIT,
                     );
-                } else {
-                    // Hold found
-                    // write last symbol
-                    // TODO count ones
-                    #[allow(unused_assignments)]
-                    if tr.symbol() < 2 {
-                        if tr.is_symbol_one() {
-                            tape_shifted |= POS_HALF
-                        } else {
-                            tape_shifted &= !POS_HALF
-                        };
-                    }
-                    // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
-                    return MachineStatus::DecidedHolds(self.steps.len() as StepType);
                 }
             }
 
@@ -226,10 +227,6 @@ impl Decider for DeciderLoopV4 {
 
             // get next transition
             let read_symbol_next = ((tape_shifted & POS_HALF) != 0) as usize; // resolves to one if bit is set
-                                                                              // if read_symbolnew != read_symbol {
-                                                                              //     println!("read wrong");
-                                                                              //     todo!("read false")
-                                                                              // }
 
             #[cfg(all(debug_assertions, feature = "bb_debug"))]
             println!(
@@ -240,7 +237,7 @@ impl Decider for DeciderLoopV4 {
                 tr,
                 (tape_shifted >> 32) as u32,
                 tape_shifted as u32,
-                tr.state_as_char(),
+                tr.state_to_char(),
                 read_symbol_next,
                 machine.transition(tr.state_x2() + read_symbol_next),
             );
@@ -406,17 +403,22 @@ impl Decider for DeciderLoopV4 {
         }
     }
 
+    fn decide_single_machine(machine: &Machine, config: &Config) -> MachineStatus {
+        let mut d = Self::new(Self::step_limit(config.n_states()));
+        d.decide_machine(machine)
+    }
+
     fn decider_run_batch(
         machines: &[Machine],
-        run_predecider: bool,
+        run_predecider: PreDeciderRun,
         config: &Config,
     ) -> Option<BatchResult> {
         let decider = Self::new(Self::step_limit(config.n_states()));
         decider::decider_generic_run_batch(decider, machines, run_predecider, config)
     }
 
-    fn name(&self) -> String {
-        "Decider Loop V4".to_string()
+    fn name(&self) -> &str {
+        "Decider Loop V4"
     }
 }
 
@@ -509,7 +511,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_decider_loop_v4_compact() {
+    fn decider_loop_v4_compact_holds_after_107_steps() {
         // check does not apply
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RC", "1LC"));
@@ -525,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decider_loop_v4_compact_unspecified() {
+    fn decider_loop_v4_compact_unspecified() {
         // free test without expected result
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("0RC", "1LC"));

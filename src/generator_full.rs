@@ -4,14 +4,15 @@ use crate::{
     config::Config,
     data_provider::{DataProvider, DataProviderResult},
     data_provider_threaded::DataProviderThreaded,
+    decider_result::{EndReason, PreDeciderCount},
     generator::{self, create_all_transition_permutations, Generator},
     machine::Machine,
-    result::{EndReason, PreDeciderCount},
+    pre_decider::PreDeciderRun,
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2},
     MAX_STATES,
 };
 
-const BATCH_SIZE_REQUEST_SINGLE_THREAD_MAX: usize = 250_000;
+const BATCH_SIZE_REQUEST_SINGLE_THREAD_MAX: usize = 500_000;
 
 /// This generator creates all permutations of transition sets (Turing machine) possible for the given n_states,
 /// where halt is limited to one transition ('---'). This results in (4n+1)^2n combinations. \
@@ -265,8 +266,8 @@ impl DataProvider for GeneratorFull {
         self.limit
     }
 
-    fn requires_pre_decider_check(&self) -> bool {
-        true
+    fn requires_pre_decider_check(&self) -> PreDeciderRun {
+        PreDeciderRun::RunWithStart0rb1rbOnly
     }
 
     fn returns_pre_decider_count(&self) -> bool {
@@ -324,17 +325,17 @@ impl DataProviderThreaded for GeneratorFull {
 mod tests {
     use crate::{
         decider::{
-            self, run_decider_data_provider_single_thread_deprecated,
-            run_decider_generator_single_thread_deprecated,
+            run_decider_data_provider_single_thread, run_decider_data_provider_threaded, Decider,
         },
-        decider_loop_v4::{DeciderLoopV4, STEP_LIMIT_DECIDER_LOOP},
-        result::result_max_steps_known,
+        decider_loop_v4::DeciderLoopV4,
+        decider_result::result_max_steps_known,
+        decider_result_worker::no_worker,
     };
 
     use super::*;
 
     #[test]
-    fn test_generator_full_batch_logic() {
+    fn generator_full_direct_access_batch_no() {
         let config = Config::builder(4)
             .generator_batch_size_request_full(10_000)
             .generate_limit(10_000_000)
@@ -370,60 +371,62 @@ mod tests {
     }
 
     #[test]
-    fn test_decider_generator_full_bb2() {
-        run_test_decider_generator_full(2);
-    }
-
-    #[test]
-    fn test_decider_generator_full_bb3() {
+    fn decider_generator_full_bb2() {
         run_test_decider_generator_full(3);
     }
 
     #[test]
-    fn test_decider_data_provider_full_bb3() {
-        run_test_decider_data_provider_full(3);
+    fn decider_generator_full_bb3() {
+        run_test_decider_generator_full(3);
     }
 
-    // /// run this only in release mode from command line: \
-    // /// cargo test --release test_decider_generator_full_bb4
+    /// run this only in release mode from command line: \
+    /// cargo test --release test_decider_generator_full_bb4
     #[test]
-    fn test_decider_generator_full_bb4() {
+    fn decider_generator_full_bb4() {
         run_test_decider_generator_full(4);
     }
 
     /// run this only in release mode from command line: \
     /// cargo test --release test_decider_generator_full_threaded_bb4
     #[test]
-    fn test_decider_generator_full_threaded_bb4() {
+    fn decider_generator_full_bb4_threaded() {
         run_test_decider_generator_full_threaded(4);
     }
 
     fn run_test_decider_generator_full(n_states: usize) {
-        let config = Config::new_default(n_states);
+        let config = config_bench(n_states);
         let generator = GeneratorFull::new(&config);
-        let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-        let result = run_decider_generator_single_thread_deprecated(decider, generator);
-        println!("{}", result);
-        println!("{}", result.machines_max_steps_to_string(10));
-        assert_eq!(result_max_steps_known(n_states), result.steps_max());
-    }
-
-    fn run_test_decider_data_provider_full(n_states: usize) {
-        let config = Config::new_default(n_states);
-        let data_provider = GeneratorFull::new(&config);
-        let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-        let result = run_decider_data_provider_single_thread_deprecated(decider, data_provider);
+        let result = run_decider_data_provider_single_thread(
+            DeciderLoopV4::decider_run_batch,
+            generator,
+            &config,
+            &no_worker,
+        );
         println!("{}", result);
         println!("{}", result.machines_max_steps_to_string(10));
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
     }
 
     fn run_test_decider_generator_full_threaded(n_states: usize) {
-        let config = Config::new_default(n_states);
+        let config = config_bench(n_states);
         let generator = GeneratorFull::new(&config);
-        let decider = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-        let result = decider::run_decider_generator_threaded(decider, generator);
+        let result = run_decider_data_provider_threaded(
+            DeciderLoopV4::decider_run_batch,
+            generator,
+            &config,
+            &no_worker,
+        );
         // println!("{}", result);
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
+    }
+
+    fn config_bench(n_states: usize) -> Config {
+        Config::builder(n_states)
+            // .generator_batch_size_request_full(GENERATOR_BATCH_SIZE_REQUEST_FULL)
+            // .generator_batch_size_request_reduced(GENERATOR_BATCH_SIZE_REQUEST_REDUCED)
+            .generate_limit(200_000_000)
+            // .cpu_utilization(100)
+            .build()
     }
 }

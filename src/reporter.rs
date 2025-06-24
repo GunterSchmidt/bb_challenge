@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use num_format::ToFormattedString;
 
-use crate::result::ResultDecider;
+use crate::decider_result::DeciderResultStats;
 
 static REPORT_PROGRESS_STANDARD: ReportProgressStandard = ReportProgressStandard;
 
@@ -46,7 +46,7 @@ impl<'a> Reporter<'a> {
 
     /// This should be called when self.is_due_progress returns true. \
     /// Calling this every time would be inefficient as the parameters would be passed needlessly most of the time.
-    pub fn report(&mut self, processed: u64, total: u64, result: &ResultDecider) -> String {
+    pub fn report(&mut self, processed: u64, total: u64, result: &DeciderResultStats) -> String {
         let mut s = self
             .report_progress
             .report_progress(processed, total, self.start_calc);
@@ -122,7 +122,7 @@ impl<'a> Default for Reporter<'a> {
 
 pub trait ReportProgress {
     fn report_progress(&self, processed: u64, total: u64, start: Instant) -> String;
-    fn report_detail(&self, result: &ResultDecider) -> String;
+    fn report_detail(&self, result: &DeciderResultStats) -> String;
 }
 
 #[derive(Default)]
@@ -145,7 +145,7 @@ impl ReportProgress for ReportProgressStandard {
         )
     }
 
-    fn report_detail(&self, result: &ResultDecider) -> String {
+    fn report_detail(&self, result: &DeciderResultStats) -> String {
         format!("\nCurrent result\n{}", result)
     }
 }
