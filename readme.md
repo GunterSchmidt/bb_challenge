@@ -1,7 +1,7 @@
 # BB_Challenge Library
 
 ## About
-This startet as a fun project to better understand the [[Busy Beaver Challenge] [https://bbchallenge.org/story]]. 
+This started as a fun project to better understand the [[Busy Beaver Challenge] [https://bbchallenge.org/story]]. 
 
 As the problem requires billions of calculations, I wrote this in Rust and chose a data structure which supports very performant calculations.
 
@@ -22,7 +22,12 @@ Turing Machine:
 
 **Limitations**
 * Symbols: The data structure is very specific to BB problems with only 2 symbols. 
-* States: MAX_STATES: This const is set to 5 for the BB_Challenge. It can currently be set to a maximum of 7 states (which is the limit of u64).
+* States: MAX_STATES: This const is defaulted to 5 for the BB_Challenge. It runs fine with n_states between 1 and 5. 
+6 and 7 will generally work, but will hit size and runtime issues. It can currently be set to a maximum of 7 states 
+(which is the limit of u64 which is used generally).The ids for n_states 8 and more will exceed 
+the u64 number range and thus are not permitted. You can lift this restriction and see what happens. Number overflow does not
+create an error in release mode and is hard to detect.
+
 * Tape Size: unknown: The tape is a vec of u32 (using bits, so one u32 represents 32 cells) which grows dynamically.
 
 
@@ -30,7 +35,16 @@ Turing Machine:
 What the library can do:
 * 
 
-Treat this as a late Alpha version.
+Treat this as an **Alpha version**.
+This means for instance:
+* data structures may be altered
+* function parameters may be altered
+* function names may be altered
+* enums may be altered
+* Code is unfinished and may not work in all cases.
+* Code is not reviewed or tested extensively.
+
+
 application code is to test and run stuff in the [[bb_challenge library](https://github.com/GunterSchmidt/bb_challenge)].
 
 It contains a bunch of test code, most of it can be disregarded, but may help to identify how the library is used.
@@ -49,7 +63,7 @@ default-members = ["busy_beaver"]
 ## Permutations
 
 The general formula to calculate the possible machines is (4*s+1)^2*s (s = number of status).  
-For each transition, this results in 2 (symbols) * 2 (directions) * 5 (states) + 1 (undefined) = 21 possibilites.  
+For each transition, this results in 2 (symbols) * 2 (directions) * 5 (states) + 1 (undefined) = 21 possibilities.  
 In the transition table there are 5 (current state) * 2 (current symbol) = 10 fields, so to the power of 10.  
 
 Number of machines for:  

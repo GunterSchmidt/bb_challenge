@@ -1,12 +1,11 @@
 use std::fmt::Display;
 
 use crate::{
-    config::Config,
+    config::{Config, StepTypeBig, StepTypeSmall},
     machine::Machine,
     status::{MachineStatus, UndecidedReason},
     tape_utils::{U64Ext, MIDDLE_BIT_U64, POS_HALF_U64, TAPE_SIZE_BIT_U64},
     transition_symbol2::TransitionSymbol2,
-    StepType,
 };
 
 /// This decider is the fastest as it runs on a 64-Bit number only. \
@@ -17,27 +16,29 @@ pub struct DeciderU64<'a> {
     // TODO make fields private and include all tape logic here
     /// Partial fast Turing tape which shifts in every step, so that the head is always at the MIDDLE_BIT.
     pub tape_shifted: u64,
-    pub low_bound: usize,
-    pub high_bound: usize,
-    pub num_steps: StepType,
+    pub low_bound: StepTypeSmall,
+    pub high_bound: StepTypeSmall,
+    pub num_steps: StepTypeSmall,
     pub tr: TransitionSymbol2,
     pub machine: &'a Machine,
     pub status: MachineStatus,
-    step_limit: StepType,
+    step_limit: StepTypeSmall,
 }
 
 impl<'a> DeciderU64<'a> {
     pub fn new(machine: &'a Machine, config: &Config) -> Self {
         Self {
             tape_shifted: 0,
-            low_bound: MIDDLE_BIT_U64,
-            high_bound: MIDDLE_BIT_U64,
+            low_bound: MIDDLE_BIT_U64 as StepTypeSmall,
+            high_bound: MIDDLE_BIT_U64 as StepTypeSmall,
             num_steps: 0,
             // Initialize transition with A0 as start
             tr: crate::transition_symbol2::TRANSITION_SYM2_START,
             machine,
             status: MachineStatus::NoDecision,
-            step_limit: config.step_limit(),
+            step_limit: config
+                .step_limit_hold()
+                .min(StepTypeSmall::MAX as StepTypeBig) as StepTypeSmall,
         }
     }
 
@@ -92,13 +93,13 @@ impl<'a> DeciderU64<'a> {
     #[allow(dead_code)]
     fn get_status_hold_details(&self) -> MachineStatus {
         MachineStatus::DecidedHoldsDetail(
-            self.num_steps as StepType,
-            self.get_tape_size(),
-            self.tape_shifted.count_ones() as usize,
+            self.num_steps as StepTypeBig,
+            self.get_tape_size() as StepTypeSmall,
+            self.tape_shifted.count_ones() as StepTypeSmall,
         )
     }
 
-    fn get_tape_size(&self) -> usize {
+    fn get_tape_size(&self) -> StepTypeSmall {
         self.high_bound - self.low_bound + 1
     }
 
@@ -119,7 +120,7 @@ impl<'a> DeciderU64<'a> {
                 self.update_tape_symbol();
             }
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
-            self.status = MachineStatus::DecidedHolds(self.num_steps);
+            self.status = MachineStatus::DecidedHolds(self.num_steps as StepTypeBig);
             return false;
         } else if self.num_steps > self.step_limit {
             self.status = self.undecided_step_limit();
@@ -129,7 +130,11 @@ impl<'a> DeciderU64<'a> {
         if self.tr.is_dir_right() {
             self.high_bound += 1;
             if self.high_bound == TAPE_SIZE_BIT_U64 {
-                self.status = MachineStatus::UndecidedFastTapeBoundReached;
+                self.status = MachineStatus::Undecided(
+                    UndecidedReason::TapeLimitLeftBoundReached,
+                    self.num_steps as StepTypeBig,
+                    32,
+                );
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 {
                     println!("{}", self.step_to_string());
@@ -145,7 +150,11 @@ impl<'a> DeciderU64<'a> {
             }
         } else {
             if self.low_bound == 0 {
-                self.status = MachineStatus::UndecidedFastTapeBoundReached;
+                self.status = MachineStatus::Undecided(
+                    UndecidedReason::TapeLimitRightBoundReached,
+                    self.num_steps as StepTypeBig,
+                    32,
+                );
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 {
                     println!("{}", self.step_to_string());
@@ -186,7 +195,7 @@ impl<'a> DeciderU64<'a> {
                 self.update_tape_symbol();
             }
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
-            self.status = MachineStatus::DecidedHolds(self.num_steps);
+            self.status = MachineStatus::DecidedHolds(self.num_steps as StepTypeBig);
             return false;
         } else if self.num_steps > self.step_limit {
             self.status = self.undecided_step_limit();
@@ -197,7 +206,7 @@ impl<'a> DeciderU64<'a> {
         if self.tr.is_dir_right() {
             // Check if self referencing, which speeds up the shift greatly.
             if self.tr.array_id() == arr_id {
-                let mut jump = self.count_right(curr_read_symbol) as usize;
+                let mut jump = self.count_right(curr_read_symbol) as StepTypeSmall;
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 println!("  jump right {jump}");
                 if self.high_bound + jump > TAPE_SIZE_BIT_U64 {
@@ -209,7 +218,7 @@ impl<'a> DeciderU64<'a> {
 
                 // shift tape
                 self.tape_shifted <<= jump;
-                self.num_steps += jump as StepType - 1;
+                self.num_steps += jump - 1;
 
                 self.low_bound = MIDDLE_BIT_U64.min(self.low_bound + jump);
             } else {
@@ -224,7 +233,11 @@ impl<'a> DeciderU64<'a> {
             }
 
             if self.high_bound == TAPE_SIZE_BIT_U64 {
-                self.status = MachineStatus::UndecidedFastTapeBoundReached;
+                self.status = MachineStatus::Undecided(
+                    UndecidedReason::TapeLimitLeftBoundReached,
+                    self.num_steps as StepTypeBig,
+                    32,
+                );
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 {
                     println!("{}", self.step_to_string());
@@ -237,7 +250,11 @@ impl<'a> DeciderU64<'a> {
             // goes left
 
             if self.low_bound == 0 {
-                self.status = MachineStatus::UndecidedFastTapeBoundReached;
+                self.status = MachineStatus::Undecided(
+                    UndecidedReason::TapeLimitRightBoundReached,
+                    self.num_steps as StepTypeBig,
+                    32,
+                );
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 {
                     println!("{}", self.step_to_string());
@@ -249,7 +266,7 @@ impl<'a> DeciderU64<'a> {
 
             // Check if self referencing, which speeds up the shift greatly.
             if self.tr.array_id() == arr_id {
-                let mut jump = self.count_left(curr_read_symbol) as usize;
+                let mut jump = self.count_left(curr_read_symbol) as StepTypeSmall;
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 println!("  jump left {jump}");
                 if self.low_bound < jump {
@@ -261,7 +278,7 @@ impl<'a> DeciderU64<'a> {
 
                 // shift tape
                 self.tape_shifted >>= jump;
-                self.num_steps += jump as StepType - 1;
+                self.num_steps += jump - 1;
                 self.high_bound = MIDDLE_BIT_U64.max(self.high_bound - jump);
             } else {
                 self.low_bound -= 1;
@@ -286,7 +303,7 @@ impl<'a> DeciderU64<'a> {
     fn undecided_step_limit(&self) -> MachineStatus {
         MachineStatus::Undecided(
             UndecidedReason::StepLimit,
-            self.num_steps as StepType,
+            self.num_steps as StepTypeBig,
             self.get_tape_size(),
         )
     }
@@ -370,6 +387,9 @@ mod tests {
         let mut d = DeciderU64::new(&machine, &config);
         let check_result = d.run_check_hold();
         // println!("{}", check_result);
-        assert_eq!(check_result, MachineStatus::UndecidedFastTapeBoundReached);
+        assert_eq!(
+            check_result,
+            MachineStatus::Undecided(UndecidedReason::TapeLimitRightBoundReached, 301, 32)
+        );
     }
 }

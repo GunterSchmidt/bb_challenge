@@ -1,7 +1,8 @@
 use std::{cmp::Ordering, fmt::Display};
 
 use crate::{
-    machine::Machine, status::MachineStatus, transition_symbol2::TransitionTableSymbol2, StepType,
+    config::StepTypeBig, machine::Machine, status::MachineStatus,
+    transition_symbol2::TransitionTableSymbol2,
 };
 
 /// Essential info about machine, can be used to store machine with less data.
@@ -34,9 +35,9 @@ impl MachineInfo {
         }
     }
 
-    pub fn steps(&self) -> StepType {
+    pub fn steps(&self) -> StepTypeBig {
         match self.status {
-            MachineStatus::DecidedHolds(steps) => steps as StepType,
+            MachineStatus::DecidedHolds(steps) => steps,
             _ => 0,
         }
     }

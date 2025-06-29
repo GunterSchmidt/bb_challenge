@@ -2,54 +2,90 @@ use std::time::{Duration, Instant};
 
 use num_format::ToFormattedString;
 
-use crate::decider_result::DeciderResultStats;
+use crate::{config::IdBig, decider_result::DeciderResultStats};
 
 static REPORT_PROGRESS_STANDARD: ReportProgressStandard = ReportProgressStandard;
 
 /// Simple methods to track time and report something after a while
 pub struct Reporter<'a> {
-    pub start_calc: Instant,
     last_progress_time: Instant,
     report_progress_after: Duration,
     last_detail_time: Instant,
     report_detail_after: Duration,
     report_progress: &'a (dyn ReportProgress + 'a),
+    progress_info: ProgressInfo,
 }
 
 // impl<R: ReportProgress> Reporter<R> {
 impl<'a> Reporter<'a> {
-    pub fn new(
-        report_progress_every_ms: u32,
-        report_detail_every_s: u64,
-        report_progress: &'a impl ReportProgress,
-    ) -> Self {
+    pub fn new_default(total: IdBig) -> Self {
         Self {
-            start_calc: std::time::Instant::now(),
-            report_progress_after: Duration::new(0, report_progress_every_ms * 1_000_000),
-            report_detail_after: Duration::new(report_detail_every_s, 0),
-            report_progress: report_progress,
-            last_progress_time: Instant::now(),
-            last_detail_time: Instant::now(),
-        }
-    }
-
-    pub fn default_with_custom_reporter(report_progress: &'a impl ReportProgress) -> Self {
-        Self {
-            start_calc: std::time::Instant::now(),
+            last_progress_time: std::time::Instant::now(),
             report_progress_after: Duration::new(2, 0),
+            last_detail_time: std::time::Instant::now(),
             report_detail_after: Duration::new(30, 0),
-            report_progress: report_progress,
-            last_progress_time: Instant::now(),
-            last_detail_time: Instant::now(),
+            report_progress: &REPORT_PROGRESS_STANDARD,
+            progress_info: ProgressInfo::new(total),
         }
     }
 
+    // TODO extent Builder with these fields
+    //     pub fn new(
+    //         report_progress_every_ms: u32,
+    //         report_detail_every_s: u64,
+    //         report_progress: &'a impl ReportProgress,
+    //         total: IdBig,
+    //     ) -> Self {
+    //         Self {
+    //             report_progress_after: Duration::new(0, report_progress_every_ms * 1_000_000),
+    //             report_detail_after: Duration::new(report_detail_every_s, 0),
+    //             report_progress,
+    //             progress_info: ProgressInfo::new(total),
+    //             ..Default::default()
+    //         }
+    //     }
+    //
+    //     pub fn default_with_custom_reporter(report_progress: &'a impl ReportProgress) -> Self {
+    //         Self {
+    //             report_progress,
+    //             last_progress_time: std::time::Instant::now(),
+    //             report_progress_after: Duration::new(2, 0),
+    //             last_detail_time: std::time::Instant::now(),
+    //             report_detail_after: Duration::new(30, 0),
+    //             report_progress: &REPORT_PROGRESS_STANDARD,
+    //             progress_info: Default::default(),
+    //             total: 0,
+    //         }
+    //     }
+
+    /// Builder to initialize required values.
+    pub fn builder(total: IdBig) -> ReporterBuilder {
+        ReporterBuilder::new(total)
+    }
+
+    /// Reports progress; this only supports x of y (for percentage).
+    /// This should be called when self.is_due_progress returns true. \
+    /// Calling this too often may be inefficient as the parameters would be passed needlessly most of the time.
+    pub fn report(&mut self, processed: IdBig) -> String {
+        // store progress with time stamp in progress_info
+        self.progress_info.add_progress(processed);
+        let s = self
+            .report_progress
+            .report_progress(processed, &self.progress_info);
+        self.reset_last_report_progress_time();
+
+        s
+    }
+
+    /// Reports progress with DeciderStats details.
     /// This should be called when self.is_due_progress returns true. \
     /// Calling this every time would be inefficient as the parameters would be passed needlessly most of the time.
-    pub fn report(&mut self, processed: u64, total: u64, result: &DeciderResultStats) -> String {
+    pub fn report_stats(&mut self, processed: IdBig, result: &DeciderResultStats) -> String {
+        // store progress with time stamp in progress_info
+        self.progress_info.add_progress(processed);
         let mut s = self
             .report_progress
-            .report_progress(processed, total, self.start_calc);
+            .report_progress(processed, &self.progress_info);
         self.reset_last_report_progress_time();
 
         if self.is_due_detail() {
@@ -93,6 +129,14 @@ impl<'a> Reporter<'a> {
         self.report_detail_after
     }
 
+    pub fn progress_calc(&self) -> &ProgressInfo {
+        &self.progress_info
+    }
+
+    pub fn start_calc(&self) -> Instant {
+        self.progress_info.start_time
+    }
+
     // pub fn check_time(&self) {
     //     if self.last_reporting.elapsed() > self.report_after {
     //         let mio = (result.num_total as f64 / 100_000.0).round() / 10.0;
@@ -107,61 +151,276 @@ impl<'a> Reporter<'a> {
     // }
 }
 
-impl<'a> Default for Reporter<'a> {
-    fn default() -> Self {
-        Self {
-            start_calc: std::time::Instant::now(),
-            last_progress_time: std::time::Instant::now(),
-            report_progress_after: Duration::new(2, 0),
-            last_detail_time: std::time::Instant::now(),
-            report_detail_after: Duration::new(30, 0),
-            report_progress: &REPORT_PROGRESS_STANDARD,
-        }
-    }
-}
+// /// Do not use this, always use new
+// impl<'a> Default for Reporter<'a> {
+//     fn default() -> Self {
+//         Self {
+//             last_progress_time: std::time::Instant::now(),
+//             report_progress_after: Duration::new(2, 0),
+//             last_detail_time: std::time::Instant::now(),
+//             report_detail_after: Duration::new(30, 0),
+//             report_progress: &REPORT_PROGRESS_STANDARD,
+//             progress_info: Default::default(),
+//         }
+//     }
+// }
 
 pub trait ReportProgress {
-    fn report_progress(&self, processed: u64, total: u64, start: Instant) -> String;
+    fn report_progress(&self, processed: IdBig, progress_info: &ProgressInfo) -> String;
+    fn report_progress_stats(
+        &self,
+        decider_result: &DeciderResultStats,
+        progress_info: &ProgressInfo,
+    ) -> String;
     fn report_detail(&self, result: &DeciderResultStats) -> String;
 }
 
 #[derive(Default)]
 pub struct ReportProgressStandard;
 
-impl ReportProgress for ReportProgressStandard {
-    fn report_progress(&self, processed: u64, total: u64, start: Instant) -> String {
-        let locale = crate::utils::user_locale();
-        let percent = (processed as f64 / total as f64 * 1000.0).round() / 10.0;
-        // estimate time to run
-        let dur_total = start.elapsed().as_secs_f64();
-        let p_per_sec = processed as f64 / dur_total;
-        let remaining = (total - processed) as f64 / p_per_sec;
-        format!(
-            "Working: {} / {} ({percent:.1}%), left {}, runtime {}", // , end at {:?}",
-            processed.to_formatted_string(&locale),
-            total.to_formatted_string(&locale),
-            fmt_duration(remaining),
-            fmt_duration(dur_total),
-        )
-    }
-
-    fn report_detail(&self, result: &DeciderResultStats) -> String {
-        format!("\nCurrent result\n{}", result)
+impl ReportProgressStandard {
+    fn get_5_min_average(&self, progress_info: &ProgressInfo) -> String {
+        let average_300 = progress_info.progress_average_per_sec(300);
+        let s_avg = match average_300 {
+            Some(a) => {
+                let processed = progress_info.progress_data.last().unwrap().processed;
+                let remaining_300 =
+                    Duration::from_secs_f64((progress_info.total - processed) as f64 / a);
+                format!(
+                    ", left 5 min avg {}",
+                    format_duration_hhmmss_ms(remaining_300, false)
+                )
+            }
+            None => String::new(),
+        };
+        s_avg
     }
 }
 
-fn fmt_duration(duration_sec: f64) -> String {
-    let remaining;
-    let remaining_type;
-    if duration_sec > 7200.0 {
-        remaining = duration_sec / 3600.0;
-        remaining_type = "hours";
-    } else if duration_sec > 120.0 {
-        remaining = duration_sec / 60.0;
-        remaining_type = "min";
-    } else {
-        remaining = duration_sec;
-        remaining_type = "sec"
+impl ReportProgress for ReportProgressStandard {
+    fn report_detail(&self, result: &DeciderResultStats) -> String {
+        format!("\nCurrent result\n{}", result)
     }
-    format!("{remaining:.1} {remaining_type}")
+
+    fn report_progress(&self, processed: IdBig, progress_info: &ProgressInfo) -> String {
+        let locale = crate::utils::user_locale();
+        let percent = (processed as f64 / progress_info.total as f64 * 1000.0).round() / 10.0;
+        // estimate time to run
+        let dur_total = progress_info.start_time.elapsed();
+        let p_per_sec = processed as f64 / dur_total.as_secs_f64();
+        let remaining =
+            Duration::from_secs_f64((progress_info.total - processed) as f64 / p_per_sec);
+
+        format!(
+            "Working: {} / {} ({percent:.1}%), left {}{}, runtime {}", // , end at {:?}",
+            processed.to_formatted_string(&locale),
+            progress_info.total.to_formatted_string(&locale),
+            format_duration_hhmmss_ms(remaining, false),
+            self.get_5_min_average(&progress_info),
+            format_duration_hhmmss_ms(dur_total, false)
+        )
+    }
+
+    fn report_progress_stats(
+        &self,
+        decider_result: &DeciderResultStats,
+        progress_info: &ProgressInfo,
+    ) -> String {
+        let locale = crate::utils::user_locale();
+        let percent = (decider_result.num_processed_total() as f64
+            / decider_result.num_total_turing_machines() as f64
+            * 1000.0)
+            .round()
+            / 10.0;
+        // estimate time to run
+        let dur_total = progress_info.start_time.elapsed();
+        let p_per_sec = decider_result.num_processed_total() as f64 / dur_total.as_secs_f64();
+        let remaining = Duration::from_secs_f64(
+            (decider_result.num_total_turing_machines() - decider_result.num_processed_total())
+                as f64
+                / p_per_sec,
+        );
+        format!(
+            "Working: {} / {} ({percent:.1}%), left {}, runtime {}", // , end at {:?}",
+            decider_result
+                .num_processed_total()
+                .to_formatted_string(&locale),
+            decider_result
+                .num_total_turing_machines()
+                .to_formatted_string(&locale),
+            format_duration_hhmmss_ms(remaining, false),
+            format_duration_hhmmss_ms(dur_total, false),
+            // TODO some data
+        )
+    }
+}
+
+/// Stores progress of different times to adjust remaining time calculation
+#[derive(Debug)]
+pub struct ProgressTimeStamp {
+    time_stamp: Instant,
+    processed: IdBig,
+}
+
+impl ProgressTimeStamp {
+    pub fn time_stamp(&self) -> Instant {
+        self.time_stamp
+    }
+
+    pub fn processed(&self) -> u64 {
+        self.processed
+    }
+}
+
+#[derive(Debug)]
+pub struct ProgressInfo {
+    start_time: Instant,
+    total: IdBig,
+    progress_data: Vec<ProgressTimeStamp>,
+    /// The maximum duration which is kept, e.g. 600 means all data older than 10 Minutes is deleted
+    max_duration_s: u64,
+}
+
+impl ProgressInfo {
+    pub fn new(total: IdBig) -> Self {
+        Self {
+            start_time: Instant::now(),
+            total,
+            progress_data: Vec::new(),
+            max_duration_s: 600,
+        }
+    }
+
+    pub fn add_progress(&mut self, processed: IdBig) {
+        self.progress_data.push(ProgressTimeStamp {
+            time_stamp: Instant::now(),
+            processed,
+        });
+        if self.progress_data.len() % 50 == 0 {
+            self.clean_progress();
+        }
+    }
+
+    // keep only 10 minutes
+    fn clean_progress(&mut self) {
+        // find first required
+        let reference = Instant::now() - Duration::from_secs(self.max_duration_s);
+        for (i, p) in self.progress_data.iter().enumerate() {
+            if p.time_stamp >= reference {
+                self.progress_data.drain(0..i);
+                break;
+            }
+        }
+    }
+
+    pub fn progress_average_per_sec(&self, last_secs: u64) -> Option<f64> {
+        // search simple
+        // TODO half search, which is faster
+        let start_ref = Instant::now()
+            .checked_sub(Duration::from_secs(last_secs))
+            .unwrap();
+        for (i, p) in self.progress_data.iter().enumerate() {
+            if p.time_stamp >= start_ref {
+                if i == 0 {
+                    break;
+                }
+                let p = &self.progress_data[i - 1];
+                let last = self.progress_data.last().unwrap();
+                let dur = last.time_stamp - p.time_stamp;
+                return Some((last.processed - p.processed) as f64 / dur.as_secs_f64());
+            }
+        }
+        None
+    }
+
+    pub fn start_time(&self) -> Instant {
+        self.start_time
+    }
+
+    pub fn progress_data(&self) -> &[ProgressTimeStamp] {
+        &self.progress_data
+    }
+
+    pub fn total(&self) -> u64 {
+        self.total
+    }
+}
+
+impl Default for ProgressInfo {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
+pub fn fmt_duration(duration_sec: f64) -> String {
+    let duration;
+    let duration_type;
+    if duration_sec > 7200.0 {
+        duration = duration_sec / 3600.0;
+        duration_type = "hours";
+    } else if duration_sec > 120.0 {
+        duration = duration_sec / 60.0;
+        duration_type = "min";
+    } else if duration_sec > 2.0 {
+        duration = duration_sec;
+        duration_type = "sec"
+    } else {
+        duration = duration_sec / 1000.0;
+        duration_type = "ms"
+    }
+    format!("{duration:.1} {duration_type}")
+}
+
+/// Formats a `std::time::Duration` into a string in `HH:mm:ss.ms` format.
+///
+/// # Arguments
+/// * `duration` - The `Duration` to format.
+///
+/// # Returns
+/// A `String` representing the formatted duration.
+///
+/// # Examples
+/// ```
+/// use std::time::Duration;
+/// use bb_challenge::utils::format_duration_hhmmss_ms;
+///
+/// assert_eq!(format_duration_hhmmss_ms(Duration::from_secs(3661)), "01:01:01.000");
+/// assert_eq!(format_duration_hhmmss_ms(Duration::from_millis(123456)), "00:02:03.456");
+/// ```
+pub fn format_duration_hhmmss_ms(duration: Duration, display_millis: bool) -> String {
+    let total_milliseconds = duration.as_millis();
+    let hours = total_milliseconds / (1000 * 60 * 60);
+    let minutes = (total_milliseconds % (1000 * 60 * 60)) / (1000 * 60);
+    let seconds = ((total_milliseconds % (1000 * 60 * 60)) % (1000 * 60)) / 1000;
+    let milliseconds = total_milliseconds % 1000;
+
+    if display_millis {
+        format!(
+            "{:02}:{:02}:{:02}.{:03}",
+            hours, minutes, seconds, milliseconds
+        )
+    } else {
+        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+    }
+}
+
+pub struct ReporterBuilder {
+    total: IdBig,
+}
+
+impl ReporterBuilder {
+    pub fn new(total: IdBig) -> Self {
+        Self { total }
+    }
+
+    pub fn build(self) -> Reporter<'static> {
+        Reporter {
+            last_progress_time: std::time::Instant::now(),
+            report_progress_after: Duration::new(2, 0),
+            last_detail_time: std::time::Instant::now(),
+            report_detail_after: Duration::new(30, 0),
+            report_progress: &REPORT_PROGRESS_STANDARD,
+            progress_info: ProgressInfo::new(self.total),
+        }
+    }
 }

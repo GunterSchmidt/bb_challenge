@@ -6,11 +6,11 @@
 //! run_pre_decider(&machine) for this.
 
 use crate::{
+    config::MAX_STATES,
     status::{MachineStatus, PreDeciderReason},
     transition_symbol2::{
         TransitionSymbol2, TransitionTableSymbol2, STATE_HOLD_SYM2, TRANSITIONS_FOR_A0,
     },
-    MAX_STATES,
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -20,35 +20,71 @@ pub enum PreDeciderRun {
     RunWithStart0rb1rbOnly,
 }
 
-// /// This struct allows the predecider to be put in the decider chain. It is not required,
-// /// run_pre_decider(&machine) can be used separately.
-// pub struct PreDecider;
-//
-// impl Decider for PreDecider {
-//     fn new_decider(&self) -> Self {
-//         PreDecider
-//     }
-//
-//     fn decide_machine(&mut self, machine: &crate::machine::Machine) -> MachineStatus {
-//         let r = run_pre_decider_simple(machine.transition_table());
-//         if r == MachineStatus::NoDecision {
-//             return MachineStatus::Undecided(crate::status::UndecidedReason::Undefined, 0, 0);
-//         }
-//         r
-//     }
-//
-//     fn name(&self) -> &str {
-//         "PreDecider"
-//     }
-//
-//     fn decider_run_batch(
-//         _machines: &[crate::machine::Machine],
-//         _run_predecider: PreDeciderRun,
-//         _config: &crate::config::Config,
-//     ) -> Option<crate::decider_result::BatchResult> {
-//         panic!("Not build for this!")
-//     }
-// }
+/// This struct allows the predecider to be put in the decider chain. It is not required,
+/// run_pre_decider(&machine) can be used separately.
+pub struct PreDecider;
+
+impl crate::decider::DeciderMinimal for PreDecider {
+    // fn new_decider(&self) -> Self {
+    //     PreDecider
+    // }
+
+    fn decide_machine_minimal(&mut self, machine: &crate::machine::Machine) -> MachineStatus {
+        let r = run_pre_decider_simple(machine.transition_table());
+        if r == MachineStatus::NoDecision {
+            return MachineStatus::Undecided(crate::status::UndecidedReason::Undefined, 0, 0);
+        }
+        r
+    }
+
+    fn name_minimal(&self) -> &str {
+        "PreDecider"
+    }
+
+    //     fn decider_run_batch(
+    //         _machines: &[crate::machine::Machine],
+    //         _run_predecider: PreDeciderRun,
+    //         _config: &crate::config::Config,
+    //     ) -> Option<crate::decider_result::BatchResult> {
+    //         panic!("Not build for this!")
+    //     }
+    //
+    //     fn decide_single_machine(
+    //         machine: &crate::machine::Machine,
+    //         config: &crate::config::Config,
+    //     ) -> MachineStatus {
+    //         todo!()
+    //     }
+}
+
+impl crate::decider::Decider for PreDecider {
+    // fn new_from_self(&self) -> Self {
+    //     todo!()
+    // }
+
+    fn decide_machine(&mut self, machine: &crate::machine::Machine) -> MachineStatus {
+        todo!()
+    }
+
+    fn decide_single_machine(
+        machine: &crate::machine::Machine,
+        config: &crate::config::Config,
+    ) -> MachineStatus {
+        todo!()
+    }
+
+    fn decider_run_batch(
+        machines: &[crate::machine::Machine],
+        run_predecider: PreDeciderRun,
+        config: &crate::config::Config,
+    ) -> Option<crate::decider_result::BatchResult> {
+        todo!()
+    }
+
+    fn name(&self) -> &str {
+        todo!()
+    }
+}
 
 // TODO same checks, e.g. only right, when not all states are used
 // TODO Hypothesis: Longest contains self referencing element, e.g. BB5 MAX B1, D1
@@ -94,7 +130,7 @@ pub fn run_pre_decider_strict(table: &TransitionTableSymbol2) -> MachineStatus {
 
     if check_simple_start_loop(table) {
         // return MachineStatus::DecidedEndless(EndlessReason::SimpleStartLoop);
-        return MachineStatus::EliminatedPreDecider(PreDeciderReason::SimpleStartLoop);
+        return MachineStatus::EliminatedPreDecider(PreDeciderReason::SimpleStartCycle);
     }
 
     if check_only_zero_writes(tr_used) {
@@ -134,7 +170,7 @@ pub fn run_pre_decider_simple(table: &TransitionTableSymbol2) -> MachineStatus {
 
     if check_simple_start_loop(table) {
         // return MachineStatus::DecidedEndless(EndlessReason::SimpleStartLoop);
-        return MachineStatus::EliminatedPreDecider(PreDeciderReason::SimpleStartLoop);
+        return MachineStatus::EliminatedPreDecider(PreDeciderReason::SimpleStartCycle);
     }
 
     if check_only_zero_writes(tr_used) {
@@ -351,6 +387,51 @@ pub fn check_not_all_states_used(table: &TransitionTableSymbol2, n_states: usize
     false
 }
 
+/// This pre-decider eliminates machines which use a direct path through the
+/// transitions and either hold or run endless because of recursion.
+/// Example 1RB0RA_0RB1LC_1LC---: A0 goes to B0, B0 referenced on itself -> endless.
+/// Example 1RB0RB_1RC0RC_---0LC:
+#[inline]
+pub fn check_straight_to_end(table: &TransitionTableSymbol2, n_states: usize) -> bool {
+    // check states for A0 and following x0
+    // let a0_state_next = table.transition_start().state() as usize;
+    // // follow state from A0 and look where it is going
+    // let second_state_next_symbol_0 = table.transition(a0_state_next * 2).state() as usize;
+    // if second_state_next_symbol_0 == STATE_HOLD_SYM2 as usize {
+    //     return true;
+    // }
+    // let s0 = table.transition(second_state_next_symbol_0 * 2).state() as usize;
+    // if s0 == STATE_HOLD_SYM2 as usize {
+    //     return true;
+    // }
+    // println!("Test Straight: {}", table.to_standard_tm_text_format());
+    let mut tr = table.transition_start();
+    let mut state = tr.state();
+    let dir = tr.direction();
+    let mut steps = 1;
+
+    while steps < n_states + 2 {
+        steps += 1;
+        // read field for symbol 0
+        tr = table.transitions[state as usize * 2];
+        if tr.is_hold() {
+            return true;
+        }
+        // as long direction does not change tape will be 0
+        if tr.direction() == dir {
+            // self referencing?
+            if tr.state() == state {
+                return true;
+            }
+        } else {
+            return false;
+        }
+        state = tr.state();
+    }
+
+    false
+}
+
 /// This pre-decider eliminates valid, but not required machines, because they are essentially identical,
 /// only the state order has been changed. \
 /// Example for BB4: \
@@ -363,7 +444,7 @@ pub fn check_not_all_states_used(table: &TransitionTableSymbol2, n_states: usize
 /// State B: B0 or B1: At least one must be A, B or C.
 /// State C: C0 or C1: At least one must be A, B or C or D.
 #[inline]
-pub fn check_states_can_be_switched(table: &TransitionTableSymbol2, n_states: usize) -> bool {
+pub fn check_states_can_be_switched(_table: &TransitionTableSymbol2, _n_states: usize) -> bool {
     false
 }
 
@@ -375,24 +456,87 @@ mod tests {
     use super::*;
 
     #[test]
-    fn check_pre_decider_no_decision() {
-        // check does not apply
-        let mut transitions: Vec<(&str, &str)> = Vec::new();
-        transitions.push(("1RB", "1LB"));
-        transitions.push(("1LD", "---"));
-        transitions.push(("1LA", "0LC"));
-        transitions.push(("1RC", "0RB"));
+    fn check_pre_decider_straight_to_end() {
+        // let tm = "1RB0RA_0RB1LC_1LC---";
+        // let table = TransitionTableSymbol2::from_standard_tm_text_format(&tm).unwrap();
+        // // println!("{}", tc.to_standard_tm_text_format());
+        // let check_result = check_straight_to_end(&table, table.n_states());
+        // assert_eq!(check_result, true);
 
-        let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = run_pre_decider_strict(&tc);
-        assert_eq!(check_result, MachineStatus::NoDecision);
+        let tm = "1RB0RB_1RC0RC_---0LC";
+        let table = TransitionTableSymbol2::from_standard_tm_text_format(&tm).unwrap();
+        // println!("{}", tc.to_standard_tm_text_format());
+        let check_result = check_straight_to_end(&table, table.n_states());
+        assert_eq!(check_result, true);
 
-        // BB5 max
-        let table = *Machine::build_machine("BB5_MAX")
+        // This case is interesting:
+        // A 0RB 1RA
+        // B 1LC 0RA
+        // C 0RC ---
+        // Step 1: A0 goes to B: But A is not used yet, unless it comes back to A. Otherwise it is just one more step to BB2.
+        // Step 2: B0 goes to C: Since now symbols have been written, both C are possible, but only C0 goes further, to C.
+        // Step 3: Either hold or C. So neither A nor B are visited again; thus not max.
+        let tm = "0RB1RA_1LC0RA_0RC---";
+        let table = TransitionTableSymbol2::from_standard_tm_text_format(&tm).unwrap();
+        // println!("{}", tc.to_standard_tm_text_format());
+        let check_result = check_not_all_states_used(&table, table.n_states());
+        assert_eq!(check_result, true);
+
+        // This case just caused an error because of an programming error.
+        let tm = "1RB---_0LB0RA_0RA0RA";
+        let table = TransitionTableSymbol2::from_standard_tm_text_format(&tm).unwrap();
+        // println!("{}", tc.to_standard_tm_text_format());
+        let check_result = check_not_all_states_used(&table, table.n_states());
+        assert_eq!(check_result, true);
+
+        // This case uses all states, but does not come back to A. So A is only used for the start transition,
+        // which is regarded as "cannot reach max steps".
+        let tm = "1RB1LC_0LC0LC_0LC---";
+        let table = TransitionTableSymbol2::from_standard_tm_text_format(&tm).unwrap();
+        // println!("{}", tc.to_standard_tm_text_format());
+        let check_result = check_not_all_states_used(&table, table.n_states());
+        assert_eq!(check_result, true);
+
+        let table = *Machine::build_machine("BB3_MAX")
             .unwrap()
             .transition_table();
-        let check_result = run_pre_decider_strict(&table);
-        assert_eq!(check_result, MachineStatus::NoDecision);
+        let check_result = check_not_all_states_used(&table, table.n_states());
+        assert_eq!(check_result, false);
+
+        // check does not apply
+        let mut transitions: Vec<(&str, &str)> = Vec::new();
+        transitions.push(("1RC", "1LC"));
+        transitions.push(("---", "1LD"));
+        transitions.push(("1LA", "0LB"));
+        transitions.push(("1RD", "0RA"));
+        // TODO is this BB5 MAX, then maybe the rhythm is clear and BB6 can be created
+        // transitions.push(("0RA", "0RA"));
+
+        let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
+        // println!("{}", tc.to_standard_tm_text_format());
+        let check_result = check_not_all_states_used(&tc, tc.n_states());
+        assert_eq!(check_result, false);
+
+        // check does not apply
+        let mut transitions: Vec<(&str, &str)> = Vec::new();
+        transitions.push(("0RC", "1RC")); // always goes to state C
+        transitions.push(("---", "1LB"));
+        transitions.push(("0LA", "1LD")); // goes to A or D
+        transitions.push(("0LB", "1LD")); // goes to B or D
+
+        let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
+        let check_result = check_not_all_states_used(&tc, tc.n_states());
+        assert_eq!(check_result, false);
+
+        // check applies
+        let mut transitions: Vec<(&str, &str)> = Vec::new();
+        transitions.push(("0RC", "1RC")); // always goes to state C
+        transitions.push(("---", "1LB"));
+        transitions.push(("0LA", "1LA")); // always to A, so B is unused
+
+        let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
+        let check_result = check_not_all_states_used(&tc, tc.n_states());
+        assert_eq!(check_result, true);
     }
 
     #[test]
@@ -629,8 +773,24 @@ mod tests {
         assert_eq!(check_result, true);
     }
 
-    // fn run_test_pre_decider(transitions: &[(&str, &str)]) -> MachineStatus {
-    //     let tc = TransitionTableCompact::from_string_tuple(&transitions);
-    //     run_pre_deciders(&tc, tc.n_states())
-    // }
+    #[test]
+    fn check_pre_decider_no_decision() {
+        // check does not apply
+        let mut transitions: Vec<(&str, &str)> = Vec::new();
+        transitions.push(("1RB", "1LB"));
+        transitions.push(("1LD", "---"));
+        transitions.push(("1LA", "0LC"));
+        transitions.push(("1RC", "0RB"));
+
+        let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
+        let check_result = run_pre_decider_strict(&tc);
+        assert_eq!(check_result, MachineStatus::NoDecision);
+
+        // BB5 max
+        let table = *Machine::build_machine("BB5_MAX")
+            .unwrap()
+            .transition_table();
+        let check_result = run_pre_decider_strict(&table);
+        assert_eq!(check_result, MachineStatus::NoDecision);
+    }
 }

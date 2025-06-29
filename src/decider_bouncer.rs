@@ -1,6 +1,4 @@
-#[cfg(all(debug_assertions, feature = "bb_debug"))]
-use std::fs::File;
-#[cfg(all(debug_assertions, feature = "bb_debug"))]
+#[cfg(debug_assertions)]
 use std::io::Write;
 
 /// This decider finds repeating machines, which do not have a loop, but a repeating rhythm on tape, which endlessly expands.
@@ -12,42 +10,32 @@ use std::io::Write;
 // #[cfg(all(debug_assertions, feature = "bb_debug"))]
 // use crate::utils::U64Ext;
 use crate::{
+    config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES, N_STATES_DEFAULT},
+    decider::{self, Decider},
     machine::Machine,
     machine_info::MachineInfo,
-    status::{EndlessReason, ExpandingSinusReason, MachineStatus, UndecidedReason},
+    status::{EndlessReason, ExpandingBouncerReason, MachineStatus, UndecidedReason},
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_0RA},
-    StepType, MAX_STATES,
 };
 
-#[allow(dead_code)]
 #[cfg(debug_assertions)]
-const DEBUG_MACHINE_NO: usize = 84080; // 351902; // 1469538; // 322636617; // BB3 max: 651320; // 46; //
-                                       // #[cfg(debug_assertions)]
-                                       // const MASK_SYMBOL: u8 = 0b1100_0000;
-                                       // #[cfg(debug_assertions)]
-                                       // const MASK_STATE: u8 = 0b0000_1111;
+const IS_DEBUG: bool = true;
 
-// const TAPE_LONG_BYTE: usize = 8;
-// const TAPE_SIZE_BIT: usize = 64;
-// const POS_HALF: u64 = 0b1000_0000_0000_0000_0000_0000_0000_0000;
+// #[cfg(debug_assertions)]
+// const DEBUG_MACHINE_NO: usize = 0; // 84080; // 351902; // 1469538; // 322636617; // BB3 max: 651320; // 46; //
 
-// const U64_LEFT_HALF_EMPTY: u64 = u32::MAX as u64;
-// const U64_RIGHT_HALF_EMPTY: u64 =
-//     0b1111_1111_1111_1111_1111_1111_1111_1111_0000_0000_0000_0000_0000_0000_0000_0000;
 type TapeType = u128;
 type BitType = i8;
 type SymbolStateType = u8;
 
-const TAPE_SIZE_BIT: i32 = 128;
+const TAPE_SIZE_BIT: StepTypeSmall = 128;
 const MIDDLE_BIT: BitType = (TAPE_SIZE_BIT / 2 - 1) as BitType;
 const POS_HALF: TapeType = 1 << MIDDLE_BIT;
-// const POS_HALF_TEST: TapeType =
-//     0b1000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000;
 
 // const SINUS_RHYTHM_GIVE_UP: usize = 100;
-pub const STEP_LIMIT_DECIDER_BOUNCER: usize = 4999; // STEP_LIMIT;
 
 pub struct DeciderBouncer {
+    step_limit: StepTypeSmall,
     /// Stores each step and its tape
     steps: Vec<StepExpanding>,
     /// For each field in the transition matrix store which steps were used.
@@ -64,41 +52,45 @@ pub struct DeciderBouncer {
     deltas2nd_count: Vec<(i32, i32)>,
     sync_high_bit: BitType,
     sync_low_bit: BitType,
-    expanding_sinus_reason: ExpandingSinusReason,
+    expanding_sinus_reason: ExpandingBouncerReason,
     // #[cfg(all(debug_assertions, feature = "bb_debug"))]
+    #[cfg(debug_assertions)]
     // TODO remove in final run
     // used in debugging to see which machine is currently worked on in sub-function
     machine_info: MachineInfo,
 }
 
 impl DeciderBouncer {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(config: &Config) -> Self {
+        Self {
+            step_limit: config.step_limit_bouncer(),
+            ..Default::default()
+        }
+    }
+
+    pub fn new_form_self(&self) -> Self {
+        Self {
+            step_limit: self.step_limit,
+            ..Default::default()
+        }
     }
 
     // tape_long_bits in machine?
     // TODO counter: longest loop
-    pub fn decider_expanding_sinus(&mut self, machine: &Machine) -> MachineStatus {
-        #[cfg(any(debug_assertions, test))]
-        {
-            // if machine.id != DEBUG_MACHINE_NO {
-            // return MachineStatus::NoDecision;
-            // }
+    pub fn decide_machine_main(&mut self, machine: &Machine) -> MachineStatus {
+        #[cfg(debug_assertions)]
+        let mut file = None;
+        #[cfg(debug_assertions)]
+        if IS_DEBUG {
             println!("\nDecider Expanding Sinus for {}", machine);
+            // TODO why not simply machine?
+            self.machine_info = MachineInfo::from_machine(machine, &MachineStatus::NoDecision);
+            file = Some(std::fs::File::create("debug_info.txt").unwrap());
         }
-
-        // // #[cfg(all(debug_assertions, feature = "bb_debug"))]
-        // {
-        //     self.machine_info = MachineInfo::from_permutation(machine); // TODO remove in release
-        // }
-
-        #[cfg(all(debug_assertions, feature = "bb_debug"))]
-        let mut file = File::create("debug_info.txt").unwrap();
 
         // initialize decider
 
         // num steps, same as steps, but steps can be deactivated after a while
-        // let mut steps: Vec<Step> = Vec::with_capacity(STEP_LIMIT_DECIDER_LOOP);
         self.steps.clear();
 
         // tape for storage in Step with cell before transition at position u32 top bit
@@ -142,33 +134,32 @@ impl DeciderBouncer {
 
             // check if done
             // halt is regarded as step, so always count step
-            if tr.is_hold() || self.steps.len() > STEP_LIMIT_DECIDER_BOUNCER {
-                if self.steps.len() > STEP_LIMIT_DECIDER_BOUNCER {
-                    return MachineStatus::Undecided(
-                        UndecidedReason::StepLimit,
-                        self.steps.len() as StepType,
-                        TAPE_SIZE_BIT as usize,
-                    );
-                } else {
-                    // Hold found
-                    // write last symbol
-                    // TODO count ones
-                    #[allow(unused_assignments)]
-                    if tr.symbol() < 2 {
-                        tape_shifted = if tr.is_symbol_one() {
-                            tape_shifted | POS_HALF
-                        } else {
-                            tape_shifted & !POS_HALF
-                        };
-                    }
-                    // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
-                    return MachineStatus::DecidedHolds(self.steps.len() as StepType);
+            if tr.is_hold() {
+                // Hold found
+                // write last symbol
+                // TODO count ones
+                #[allow(unused_assignments)]
+                if tr.symbol() < 2 {
+                    tape_shifted = if tr.is_symbol_one() {
+                        tape_shifted | POS_HALF
+                    } else {
+                        tape_shifted & !POS_HALF
+                    };
                 }
+                // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
+                return MachineStatus::DecidedHolds(self.steps.len() as StepTypeBig);
+            }
+            if self.steps.len() > self.step_limit as usize {
+                return MachineStatus::Undecided(
+                    UndecidedReason::StepLimit,
+                    self.steps.len() as StepTypeBig,
+                    TAPE_SIZE_BIT,
+                );
             }
 
             // print step info
-            #[cfg(all(debug_assertions, feature = "bb_debug"))]
-            {
+            #[cfg(debug_assertions)]
+            if IS_DEBUG {
                 // let read_symbol_next = ((tape_shifted & POS_HALF) != 0) as usize;
                 let step = self.steps.last().unwrap();
                 let s = format!(
@@ -184,7 +175,9 @@ impl DeciderBouncer {
                     if step.is_a0() {"A0"} else {""},
                 );
                 println!("{s}");
-                _ = writeln!(file, "{s}");
+                if let Some(mut file) = file.as_ref() {
+                    _ = writeln!(file, "{s}");
+                }
             }
 
             // check sinus loop for multiple steps with A0, this covers most sinus loops
@@ -195,13 +188,15 @@ impl DeciderBouncer {
                 self.sync_high_bit = step_2.high_bound_before;
                 self.sync_low_bit = step_2.low_bound_before;
                 if high_bound == self.sync_high_bit {
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                    println!(
-                        "  Check high_bound step {}: {}{}",
-                        self.steps.len() - 1,
-                        self.steps.last().unwrap().text[0],
-                        self.steps.last().unwrap().text[1],
-                    );
+                    #[cfg(debug_assertions)]
+                    if IS_DEBUG {
+                        println!(
+                            "  Check high_bound step {}: {}{}",
+                            self.steps.len() - 1,
+                            self.steps.last().unwrap().text[0],
+                            self.steps.last().unwrap().text[1],
+                        );
+                    }
                     // let mut relevant_steps = Vec::with_capacity(10);
 
                     // if relevant_steps.len() > SINUS_RHYTHM_GIVE_UP {
@@ -234,19 +229,21 @@ impl DeciderBouncer {
                     // }
 
                     // check rhythm
-                    if self.check_sinus_rhythm() {
-                        return MachineStatus::DecidedEndless(EndlessReason::ExpandingSinus(
+                    if self.decide_is_bouncer() {
+                        return MachineStatus::DecidedEndless(EndlessReason::ExpandingBouncer(
                             self.expanding_sinus_reason,
                         ));
                     }
                 } else if low_bound == self.sync_low_bit {
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                    println!(
-                        "  Check low_bound step {}: {}{}",
-                        self.steps.len() - 1,
-                        self.steps.last().unwrap().text[0],
-                        self.steps.last().unwrap().text[1],
-                    );
+                    #[cfg(debug_assertions)]
+                    if IS_DEBUG {
+                        println!(
+                            "  Check low_bound step {}: {}{}",
+                            self.steps.len() - 1,
+                            self.steps.last().unwrap().text[0],
+                            self.steps.last().unwrap().text[1],
+                        );
+                    }
                     // let mut relevant_steps = Vec::with_capacity(10);
 
                     self.sinus_steps.clear();
@@ -279,8 +276,8 @@ impl DeciderBouncer {
                     //     println!("old {old}, new {new}");
                     // }
                     // check rhythm
-                    if self.check_sinus_rhythm() {
-                        return MachineStatus::DecidedEndless(EndlessReason::ExpandingSinus(
+                    if self.decide_is_bouncer() {
+                        return MachineStatus::DecidedEndless(EndlessReason::ExpandingBouncer(
                             self.expanding_sinus_reason,
                         ));
                     }
@@ -317,8 +314,8 @@ impl DeciderBouncer {
                                 == relevant_steps[0].1 + delta_low * last as BitType
                             {
                                 return MachineStatus::DecidedEndless(
-                                    EndlessReason::ExpandingSinus(
-                                        ExpandingSinusReason::HeadMiddleExpanding,
+                                    EndlessReason::ExpandingBouncer(
+                                        ExpandingBouncerReason::HeadMiddleExpanding,
                                     ),
                                 );
                             }
@@ -332,16 +329,18 @@ impl DeciderBouncer {
                                 == relevant_steps[0].2 + delta_high * last as BitType
                             {
                                 return MachineStatus::DecidedEndless(
-                                    EndlessReason::ExpandingSinus(
-                                        ExpandingSinusReason::HeadMiddleExpanding,
+                                    EndlessReason::ExpandingBouncer(
+                                        ExpandingBouncerReason::HeadMiddleExpanding,
                                     ),
                                 );
                             }
                         };
 
                         // not expanding
-                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                        println!("  low and high bounds do not match");
+                        #[cfg(debug_assertions)]
+                        if IS_DEBUG {
+                            println!("  low and high bounds do not match");
+                        }
                     }
                 }
             }
@@ -354,13 +353,15 @@ impl DeciderBouncer {
                     let sync_high_bit = step_2.high_bound_before;
                     let sync_low_bit = step_2.low_bound_before;
                     if high_bound == sync_high_bit {
-                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                        println!(
-                            "  Extra check high_bound step {}: {}{}",
-                            self.steps.len() - 1,
-                            self.steps.last().unwrap().text[0],
-                            self.steps.last().unwrap().text[1],
-                        );
+                        #[cfg(debug_assertions)]
+                        if IS_DEBUG {
+                            println!(
+                                "  Extra check high_bound step {}: {}{}",
+                                self.steps.len() - 1,
+                                self.steps.last().unwrap().text[0],
+                                self.steps.last().unwrap().text[1],
+                            );
+                        }
                         // let mut relevant_steps = Vec::with_capacity(10);
 
                         // skip first transition as it sometimes is out of sync
@@ -384,19 +385,21 @@ impl DeciderBouncer {
                         // }
 
                         // check rhythm
-                        if self.check_sinus_rhythm() {
-                            return MachineStatus::DecidedEndless(EndlessReason::ExpandingSinus(
-                                ExpandingSinusReason::DeciderNoResult,
+                        if self.decide_is_bouncer() {
+                            return MachineStatus::DecidedEndless(EndlessReason::ExpandingBouncer(
+                                ExpandingBouncerReason::DeciderNoResult,
                             ));
                         }
                     } else if low_bound == sync_low_bit {
-                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                        println!(
-                            "  Check low_bound step {}: {}{}",
-                            self.steps.len() - 1,
-                            self.steps.last().unwrap().text[0],
-                            self.steps.last().unwrap().text[1],
-                        );
+                        #[cfg(debug_assertions)]
+                        if IS_DEBUG {
+                            println!(
+                                "  Check low_bound step {}: {}{}",
+                                self.steps.len() - 1,
+                                self.steps.last().unwrap().text[0],
+                                self.steps.last().unwrap().text[1],
+                            );
+                        }
                         // let mut relevant_steps = Vec::with_capacity(10);
 
                         // skip Start as it sometimes is out of sync
@@ -420,8 +423,8 @@ impl DeciderBouncer {
                         // }
 
                         // check rhythm
-                        if self.check_sinus_rhythm() {
-                            return MachineStatus::DecidedEndless(EndlessReason::ExpandingSinus(
+                        if self.decide_is_bouncer() {
+                            return MachineStatus::DecidedEndless(EndlessReason::ExpandingBouncer(
                                 self.expanding_sinus_reason,
                             ));
                         }
@@ -439,8 +442,8 @@ impl DeciderBouncer {
             tape_shifted = if tr.is_dir_right() {
                 pos_middle_bit += 1;
                 if high_bound == (TAPE_SIZE_BIT - 1) as BitType {
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                    {
+                    #[cfg(debug_assertions)]
+                    if IS_DEBUG {
                         println!("\n{}", machine);
                         println!("step         {}", self.steps.len());
                         println!("low_bound    {}", low_bound);
@@ -453,8 +456,8 @@ impl DeciderBouncer {
                     }
                     return MachineStatus::Undecided(
                         UndecidedReason::TapeLimitLeftBoundReached,
-                        self.steps.len() as StepType,
-                        TAPE_SIZE_BIT as usize,
+                        self.steps.len() as StepTypeBig,
+                        TAPE_SIZE_BIT,
                     );
                 }
                 // adding high bound here, so i8 will not overflow
@@ -467,8 +470,8 @@ impl DeciderBouncer {
                 pos_middle_bit -= 1;
                 low_bound -= 1;
                 if low_bound == -1 {
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                    {
+                    #[cfg(debug_assertions)]
+                    if IS_DEBUG {
                         println!("\n{}", machine);
                         println!("step         {}", self.steps.len());
                         println!("low_bound    {}", low_bound);
@@ -481,8 +484,8 @@ impl DeciderBouncer {
                     }
                     return MachineStatus::Undecided(
                         UndecidedReason::TapeLimitRightBoundReached,
-                        self.steps.len() as StepType,
-                        TAPE_SIZE_BIT as usize,
+                        self.steps.len() as StepTypeBig,
+                        TAPE_SIZE_BIT,
                     );
                 }
                 if high_bound > MIDDLE_BIT {
@@ -493,14 +496,16 @@ impl DeciderBouncer {
         }
     }
 
-    /// returns true if Back to square one applies
+    /// returns true if this is a bouncer
     // #[inline(always)]
-    fn check_sinus_rhythm(&mut self) -> bool {
+    fn decide_is_bouncer(&mut self) -> bool {
         // check rhythm
         // would be safer to check also extension, e.g. 01
         if self.sinus_steps.len() < 8 {
-            #[cfg(all(debug_assertions, feature = "bb_debug"))]
-            println!("  only {} sinus steps", self.sinus_steps.len());
+            #[cfg(debug_assertions)]
+            if IS_DEBUG {
+                println!("  only {} sinus steps", self.sinus_steps.len());
+            }
             return false;
         } else if self.sinus_steps[1].pos_middle - self.sinus_steps[0].pos_middle
             != self.sinus_steps[2].pos_middle - self.sinus_steps[1].pos_middle
@@ -515,8 +520,10 @@ impl DeciderBouncer {
                 }
             }
             if self.sinus_steps.len() < 8 {
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                println!("  only {} reduced sinus steps", self.sinus_steps.len());
+                #[cfg(debug_assertions)]
+                if IS_DEBUG {
+                    println!("  only {} reduced sinus steps", self.sinus_steps.len());
+                }
                 return false;
             }
         }
@@ -535,7 +542,7 @@ impl DeciderBouncer {
             == (self.sinus_steps[self.sinus_steps.len() - 1].pos_middle
                 - self.sinus_steps[0].pos_middle) as i32
         {
-            // check step delta, either equal in all steps or halfs every time
+            // check step delta, either equal in all steps or halves every time
             let sd1 = self.sinus_steps[1].step_id - self.sinus_steps[0].step_id;
             let sd2 = self.sinus_steps[2].step_id - self.sinus_steps[1].step_id;
             let sd3 = self.sinus_steps[3].step_id - self.sinus_steps[2].step_id;
@@ -547,7 +554,7 @@ impl DeciderBouncer {
                 // if sd2 == self.sinus_steps[4].step_id - self.sinus_steps[3].step_id
                 //     && sd1 == self.sinus_steps[5].step_id - self.sinus_steps[4].step_id
                 if self.sinus_steps[0].step_id + sd1 * 7 == self.sinus_steps[7].step_id {
-                    self.expanding_sinus_reason = ExpandingSinusReason::StepDeltaIdentical;
+                    self.expanding_sinus_reason = ExpandingBouncerReason::StepDeltaIdentical;
                     return true;
                 }
             }
@@ -568,7 +575,7 @@ impl DeciderBouncer {
                         d2nd *= 2;
                         d += d2nd;
                     }
-                    self.expanding_sinus_reason = ExpandingSinusReason::StepDelta2ndDoubles;
+                    self.expanding_sinus_reason = ExpandingBouncerReason::StepDelta2ndDoubles;
                     return true;
                 }
             }
@@ -580,8 +587,13 @@ impl DeciderBouncer {
                 if sd2 == self.sinus_steps[4].step_id - self.sinus_steps[3].step_id
                     && sd1 == self.sinus_steps[5].step_id - self.sinus_steps[4].step_id
                 {
-                    println!("{}", self.machine_info);
-                    todo!("Distance iterates same value positive and negative");
+                    #[cfg(debug_assertions)]
+                    if IS_DEBUG {
+                        println!("{}", self.machine_info);
+                        todo!("Distance iterates same value positive and negative");
+                    }
+                    // TODO This code section is incomplete
+                    return false;
                     // self.expanding_sinus_reason =
                     // return true;
                 }
@@ -589,7 +601,7 @@ impl DeciderBouncer {
 
             // try every 2nd step
             // if shift == 0 && self.sinus_steps.len() > 10 {
-            //     // check step delta, either equal in all steps or halfs every time
+            //     // check step delta, either equal in all steps or halves every time
             //     let sd1 = self.sinus_steps[2].step_id - self.sinus_steps[0].step_id;
             //     let sd2 = self.sinus_steps[4].step_id - self.sinus_steps[2].step_id;
             //     let sd3 = self.sinus_steps[6].step_id - self.sinus_steps[4].step_id;
@@ -629,7 +641,7 @@ impl DeciderBouncer {
                 && self.deltas2nd[2] == self.deltas2nd[5]
             {
                 // TODO more elements to check?
-                self.expanding_sinus_reason = ExpandingSinusReason::StepDelta2ndRepeating;
+                self.expanding_sinus_reason = ExpandingBouncerReason::StepDelta2ndRepeating;
                 return true;
             }
 
@@ -650,7 +662,7 @@ impl DeciderBouncer {
                 && self.sinus_tapes[7] == self.sinus_tapes[0] + tape_delta_1 * 7
             {
                 // validated with step 7
-                self.expanding_sinus_reason = ExpandingSinusReason::TapeValueDeltaIdentical;
+                self.expanding_sinus_reason = ExpandingBouncerReason::TapeValueDeltaIdentical;
                 return true;
             }
 
@@ -662,7 +674,7 @@ impl DeciderBouncer {
                 && self.sinus_tapes[5] == self.sinus_tapes[1]
                 && self.sinus_tapes[7] == self.sinus_tapes[1]
             {
-                self.expanding_sinus_reason = ExpandingSinusReason::TapeValueDeltaAlternating;
+                self.expanding_sinus_reason = ExpandingBouncerReason::TapeValueDeltaAlternating;
                 return true;
             }
 
@@ -687,7 +699,10 @@ impl DeciderBouncer {
                     self.deltas2nd_count.push((last_d, count));
                 }
                 if self.deltas2nd_count.len() >= 12 {
-                    println!("Machine {}", self.machine_info);
+                    #[cfg(debug_assertions)]
+                    if IS_DEBUG {
+                        println!("Machine {}", self.machine_info);
+                    }
                     // Check special constellation with 3 repeating values for BB4 64379691
                     // TODO other constellations
                     let mut d3rd = [[0; 4]; 3];
@@ -741,23 +756,36 @@ impl DeciderBouncer {
                         //         }
                         //     }
                         // }
-                        println!("OK: Find repeat value at step {}", self.steps.len());
-                        println!("Deltas: {:?}", d3rd);
+                        #[cfg(debug_assertions)]
+                        if IS_DEBUG {
+                            println!("OK: Find repeat value at step {}", self.steps.len());
+                            println!("Deltas: {:?}", d3rd);
+                        }
                         self.expanding_sinus_reason =
-                            ExpandingSinusReason::StepDelta2ndCompressedRepeating;
+                            ExpandingBouncerReason::StepDelta2ndCompressedRepeating;
                         // break;
                         return true;
                     }
-                    println!("Failed: Find repeat value at step {}", self.steps.len());
-                    println!("Deltas: {:?}", d3rd);
+                    #[cfg(debug_assertions)]
+                    if IS_DEBUG {
+                        println!("Failed: Find repeat value at step {}", self.steps.len());
+                        println!("Deltas: {:?}", d3rd);
+                        todo!("check if false should be returned")
+                    }
+                    // TODO false is a quick fix
+                    return false;
                 }
             }
 
-            #[cfg(all(debug_assertions, feature = "bb_debug"))]
-            println!("  double: step delta does not match");
+            #[cfg(debug_assertions)]
+            if IS_DEBUG {
+                println!("  double: step delta does not match");
+            }
         } else {
-            #[cfg(all(debug_assertions, feature = "bb_debug"))]
-            println!("  shift does not match");
+            #[cfg(debug_assertions)]
+            if IS_DEBUG {
+                println!("  shift does not match");
+            }
         }
 
         // try ascending, descending position, e.g. BB4 15783962
@@ -782,10 +810,14 @@ impl DeciderBouncer {
             let d3 = self.deltas[3] - self.deltas[2];
             if d2 == d1 * 2 && d3 == d2 + d1 * 2 {
                 // distance between deltas grows linear by d1 (*1, *2, *3, etc)
-                // TODO check extension, e.g. 110, 1
-                todo!("Found ascending delta");
-                // println!("Found ascending delta",);
-                // return true;
+                #[cfg(debug_assertions)]
+                if IS_DEBUG {
+                    // TODO check extension, e.g. 110, 1
+                    todo!("Found ascending delta");
+                    // println!("Found ascending delta",);
+                    // return true
+                };
+                return false;
             }
         }
 
@@ -795,9 +827,11 @@ impl DeciderBouncer {
 
 impl Default for DeciderBouncer {
     fn default() -> Self {
+        let step_limit = Config::step_limit_bouncer_default(N_STATES_DEFAULT);
         Self {
-            steps: Vec::with_capacity(STEP_LIMIT_DECIDER_BOUNCER),
-            maps_1d: core::array::from_fn(|_| Vec::with_capacity(STEP_LIMIT_DECIDER_BOUNCER / 4)),
+            // TODO fine tune capacity. Lower may be faster in general.
+            steps: Vec::with_capacity(step_limit as usize),
+            maps_1d: core::array::from_fn(|_| Vec::with_capacity(step_limit as usize / 4)),
             sinus_steps: Vec::new(),
             sinus_tapes: Vec::new(),
             deltas: Vec::new(),
@@ -805,15 +839,44 @@ impl Default for DeciderBouncer {
             deltas2nd_count: Vec::new(),
             sync_high_bit: 0,
             sync_low_bit: 0,
-            expanding_sinus_reason: ExpandingSinusReason::DeciderNoResult,
-            // #[cfg(all(debug_assertions, feature = "bb_debug"))]
+            expanding_sinus_reason: ExpandingBouncerReason::DeciderNoResult,
+            #[cfg(debug_assertions)]
             machine_info: MachineInfo::new(
                 0,
                 TransitionTableSymbol2::new_default(0),
                 MachineStatus::NoDecision,
             ),
+            step_limit,
         }
     }
+}
+
+impl Decider for DeciderBouncer {
+    fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
+        self.decide_machine_main(machine)
+    }
+
+    fn decide_single_machine(machine: &Machine, config: &crate::config::Config) -> MachineStatus {
+        let mut d = Self::new(config);
+        d.decide_machine_main(machine)
+    }
+
+    fn decider_run_batch(
+        machines: &[Machine],
+        run_predecider: crate::pre_decider::PreDeciderRun,
+        config: &crate::config::Config,
+    ) -> Option<crate::decider_result::BatchResult> {
+        let decider = Self::new(config);
+        decider::decider_generic_run_batch(decider, machines, run_predecider, config)
+    }
+
+    fn name(&self) -> &str {
+        "Decider Bouncer"
+    }
+
+    // fn new_from_self(&self) -> Self {
+    //     todo!()
+    // }
 }
 
 /// Single Step when run, records the state before to identify loops
@@ -829,8 +892,7 @@ struct StepExpanding {
     low_bound_before: BitType,
     pos_middle_bit_before: BitType,
 
-    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-    #[allow(dead_code)]
+    #[cfg(debug_assertions)]
     pub text: [char; 3],
 }
 
@@ -858,7 +920,7 @@ impl StepExpanding {
             high_bound_before,
             low_bound_before,
             pos_middle_bit_before: pos_middle_bit,
-            #[cfg(all(debug_assertions, feature = "bb_debug"))]
+            #[cfg(debug_assertions)]
             text: Self::to_chars(transition.state() as SymbolStateType, for_symbol, 0),
         }
     }
@@ -873,19 +935,17 @@ impl StepExpanding {
         //     | (self.from_symbol_state & Self::FILTER_SYMBOL_PURE_STEP) >> 6) as usize
     }
 
-    // #[allow(unused)]
-    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+    #[cfg(debug_assertions)]
     fn for_state(&self) -> SymbolStateType {
         self.for_symbol_state & Self::FILTER_STATE
     }
 
-    // #[allow(unused)]
-    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+    #[cfg(debug_assertions)]
     fn for_symbol(&self) -> SymbolStateType {
         self.for_symbol_state & Self::FILTER_SYMBOL_PURE
     }
 
-    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+    #[cfg(debug_assertions)]
     fn to_chars(
         for_state: SymbolStateType,
         for_symbol: SymbolStateType,
@@ -919,7 +979,8 @@ mod tests {
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_41399() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB3 41399 (low bound check)
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -928,19 +989,20 @@ mod tests {
         transitions.push(("1RA", "0RA"));
 
         let machine = Machine::from_string_tuple(41399, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         // println!("Result: {}", check_result);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDeltaIdentical
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDeltaIdentical
             )),
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_84080() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB3 84080 (high bound check)
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -949,19 +1011,20 @@ mod tests {
         transitions.push(("0LA", "0RA"));
 
         let machine = Machine::from_string_tuple(84080, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         // println!("Result: {}", check_result);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndRepeating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndRepeating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_112641() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB3 112641
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -970,19 +1033,20 @@ mod tests {
         transitions.push(("1LA", "0RA"));
 
         let machine = Machine::from_string_tuple(112641, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         // println!("Result: {}", check_result);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndRepeating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndRepeating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_569564() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB3 569564
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -990,19 +1054,20 @@ mod tests {
         transitions.push(("1LA", "---"));
         transitions.push(("0LB", "1RA"));
         let machine = Machine::from_string_tuple(569564, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         // println!("Result: {}", check_result);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndRepeating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndRepeating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_584567() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB3 584567 step_delta doubles
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1010,18 +1075,19 @@ mod tests {
         transitions.push(("0RA", "0LB"));
         transitions.push(("1LB", "1RA"));
         let machine = Machine::from_string_tuple(584567, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::TapeValueDeltaAlternating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::TapeValueDeltaAlternating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_1265977() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB3 1265977 step_delta doubles
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1029,18 +1095,19 @@ mod tests {
         transitions.push(("0LA", "0RB"));
         transitions.push(("1RB", "1LA"));
         let machine = Machine::from_string_tuple(1265977, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::TapeValueDeltaIdentical
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::TapeValueDeltaIdentical
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_1970063() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB3 1970063 step_delta iterates same delta +-
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1048,18 +1115,19 @@ mod tests {
         transitions.push(("1RC", "---"));
         transitions.push(("1LA", "1RB"));
         let machine = Machine::from_string_tuple(1970063, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::TapeValueDeltaAlternating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::TapeValueDeltaAlternating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_3044529() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB3 3044529 A0 always same low_bound and pos = MIDDLE_BIT
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1067,18 +1135,19 @@ mod tests {
         transitions.push(("1RC", "1LB"));
         transitions.push(("0LA", "0RC"));
         let machine = Machine::from_string_tuple(3044529, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::TapeValueDeltaIdentical
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::TapeValueDeltaIdentical
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_3554911() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB3 3554911 A0 always same low_bound and pos = MIDDLE_BIT
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1086,18 +1155,19 @@ mod tests {
         transitions.push(("1LC", "1RB"));
         transitions.push(("0RA", "0LC"));
         let machine = Machine::from_string_tuple(3554911, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::TapeValueDeltaAlternating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::TapeValueDeltaAlternating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_6317243() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB4 Start out of sync
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1106,18 +1176,19 @@ mod tests {
         transitions.push(("1LB", "0RB"));
         transitions.push(("0RA", "0RA"));
         let machine = Machine::from_string_tuple(6317243, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndRepeating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndRepeating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_13318557() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB4 Start High bound out of sync
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1126,18 +1197,19 @@ mod tests {
         transitions.push(("0LB", "1RC"));
         transitions.push(("0RA", "0RA"));
         let machine = Machine::from_string_tuple(13318557, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndRepeating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndRepeating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_15783962() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB4 ascending shift with gap and linear growing distance between head pos
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1146,18 +1218,19 @@ mod tests {
         transitions.push(("1RA", "1LC"));
         transitions.push(("0RA", "0RA"));
         let machine = Machine::from_string_tuple(15783962, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndDoubles
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndDoubles
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_32538705() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB4 sinus, but not with A0
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1166,18 +1239,19 @@ mod tests {
         transitions.push(("1LD", "1RB"));
         transitions.push(("1RA", "0RA"));
         let machine = Machine::from_string_tuple(32538705, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndRepeating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndRepeating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_45935166() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB4 delta of delta rhythm 22, 14, 20 repeats; requires 128-bit tape
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1186,18 +1260,19 @@ mod tests {
         transitions.push(("1RB", "1LD"));
         transitions.push(("1RA", "0RA"));
         let machine = Machine::from_string_tuple(45935166, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndRepeating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndRepeating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb4_2793430() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(4);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB4 every 2nd step
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1206,18 +1281,19 @@ mod tests {
         transitions.push(("---", "1RA"));
         transitions.push(("0RA", "0RA"));
         let machine = Machine::from_string_tuple(2793430, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndRepeating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndRepeating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_bb4_64379691() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(4);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB4 every steps repeating, but with growing amount of identical steps
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1226,11 +1302,11 @@ mod tests {
         transitions.push(("1RB", "1LC"));
         transitions.push(("0LA", "0RA"));
         let machine = Machine::from_string_tuple(64379691, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndCompressedRepeating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndCompressedRepeating
             ))
         );
 
@@ -1241,18 +1317,19 @@ mod tests {
         transitions.push(("---", "1RD"));
         transitions.push(("0LA", "0RA"));
         let machine = Machine::from_string_tuple(68106631, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::StepDelta2ndCompressedRepeating
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::StepDelta2ndCompressedRepeating
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_not_bb3_max_651320() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(3);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB3 Max
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1260,18 +1337,19 @@ mod tests {
         transitions.push(("1RB", "0LC"));
         transitions.push(("1RC", "1RA"));
         let machine = Machine::from_string_tuple(651320, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_ne!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::DeciderNoResult
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::DeciderNoResult
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_not_bb4_max_322636617() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(4);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB4 Max
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1280,18 +1358,19 @@ mod tests {
         transitions.push(("1LA", "0LB"));
         transitions.push(("1RD", "0RA"));
         let machine = Machine::from_string_tuple(322636617, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_ne!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::DeciderNoResult
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::DeciderNoResult
             ))
         );
     }
 
     #[test]
     fn test_decider_expanding_sinus_applies_not_bb5_max() {
-        let mut decider = DeciderBouncer::new();
+        let config = Config::new_default(5);
+        let mut decider = DeciderBouncer::new(&config);
 
         // BB5 Max
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1301,11 +1380,11 @@ mod tests {
         transitions.push(("1LA", "1LD"));
         transitions.push(("---", "0LA"));
         let machine = Machine::from_string_tuple(0, &transitions);
-        let check_result = decider.decider_expanding_sinus(&machine);
+        let check_result = decider.decide_machine_main(&machine);
         assert_ne!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingSinus(
-                ExpandingSinusReason::DeciderNoResult
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::ExpandingBouncer(
+                ExpandingBouncerReason::DeciderNoResult
             ))
         );
     }

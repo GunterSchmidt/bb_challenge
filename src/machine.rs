@@ -2,11 +2,11 @@
 use std::{fmt::Display, io};
 
 use crate::{
+    bb_file_reader::BBFileReader,
     config::Config,
     decider::Decider,
+    decider_cycler_v4::DeciderCyclerV4,
     decider_hold_u128_long::DeciderHoldU128Long,
-    decider_loop_v4::DeciderLoopV4,
-    file::BBFileReader,
     machine_info::MachineInfo,
     pre_decider::run_pre_decider_simple,
     status::MachineStatus,
@@ -84,12 +84,12 @@ impl Machine {
         if status != MachineStatus::NoDecision {
             return status;
         }
-        status = DeciderLoopV4::decide_single_machine(&self, &config);
+        status = DeciderCyclerV4::decide_single_machine(self, &config);
         match status {
             MachineStatus::Undecided(_, _, _) => {}
             _ => return status,
         }
-        DeciderHoldU128Long::decide_single_machine(&self, &config)
+        DeciderHoldU128Long::decide_single_machine(self, &config)
     }
 
     /// Creates the transition table from the Standard TM Text Format \

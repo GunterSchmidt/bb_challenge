@@ -1,8 +1,8 @@
 use std::fmt::Display;
 
 use crate::{
+    config::MAX_STATES,
     transition_generic::{CellType, StateType, TransitionGeneric, TransitionTableGeneric},
-    MAX_STATES,
 };
 
 /// Number format to represent a transition (lower 8 bit used for state, symbol and direction).
@@ -473,16 +473,30 @@ impl TransitionTableSymbol2 {
         Self::try_from(tg).unwrap()
     }
 
-    /// Creates the transition table from the Standard TM Text Format \
+    /// Creates the transition table from the Standard TM Text Format or returns an error. \
     /// https://www.sligocki.com/2022/10/09/standard-tm-format.html
-    pub fn from_standard_tm_text_format(transitions_text: &str) -> Result<Self, &'static str> {
-        let tg = TransitionTableGeneric::from_standard_tm_text_format(transitions_text)?;
+    ///
+    /// # Arguments
+    /// * `standard_tm_text_format` - e.g. "1RB0LB_1LA0RA"
+    ///
+    /// # Examples
+    /// ```
+    /// # use bb_challenge::transition_symbol2::TransitionTableSymbol2;
+    /// let tm_in = "1RB0LB_1LA0RA";
+    /// let t = TransitionTableSymbol2::from_standard_tm_text_format(tm_in).unwrap();
+    /// let tm_out = t.to_standard_tm_text_format();
+    /// assert_eq!(tm_in, tm_out);
+    /// ```
+    pub fn from_standard_tm_text_format(
+        standard_tm_text_format: &str,
+    ) -> Result<Self, &'static str> {
+        let tg = TransitionTableGeneric::from_standard_tm_text_format(standard_tm_text_format)?;
         let t = Self::try_from(tg)?;
 
         Ok(t)
     }
 
-    /// Returns the transition table in standard TM Text format. Display returns this.
+    /// Returns the transition table as standard TM Text format. Display returns this.
     pub fn to_standard_tm_text_format(&self) -> String {
         let mut transition_texts = Vec::new();
         // let n_states = self.n_states();
@@ -678,12 +692,12 @@ impl Display for TransitionTableSymbol2 {
     }
 }
 
-pub trait TransitonTypeExt {
+pub trait TransitionTypeExt {
     #[allow(dead_code)] // required for debugging
     fn to_binary_split_string(&self) -> String;
 }
 
-impl TransitonTypeExt for TransitionType {
+impl TransitionTypeExt for TransitionType {
     fn to_binary_split_string(&self) -> String {
         format!(
             "{:024b}_{:08b} {:08b}_{:024b}",
@@ -730,15 +744,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn transition_table_1RB0LB_1LA0RA() {
-        let tm_in = "1RB0LB_1LA0RA";
-        let t = TransitionTableSymbol2::from_standard_tm_text_format(tm_in).unwrap();
-        let tm_out = t.to_standard_tm_text_format();
-        assert_eq!(tm_in, tm_out);
-    }
-
-    #[test]
-    fn transitions_for_A0() {
+    fn transitions_for_A0_correctly_defined() {
         let mut t = TransitionTableSymbol2::new_default(1);
         t.transitions[2] = TRANSITIONS_FOR_A0[0];
         t.transitions[3] = TRANSITIONS_FOR_A0[1];

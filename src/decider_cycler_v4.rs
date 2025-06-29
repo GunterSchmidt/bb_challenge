@@ -5,47 +5,44 @@
 #[cfg(all(debug_assertions, feature = "bb_debug"))]
 use crate::tape_utils::U64Ext;
 use crate::{
-    config::Config,
-    decider::{self, Decider},
+    config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES},
+    decider::{self, Decider, DeciderMinimal},
     decider_result::BatchResult,
     machine::Machine,
     pre_decider::PreDeciderRun,
     status::{EndlessReason, MachineStatus, UndecidedReason},
     transition_symbol2::{DirectionType, TransitionSymbol2, TransitionType},
-    StepType, MAX_STATES,
 };
 
 // #[cfg(debug_assertions)]
 // const DEBUG_MACHINE_NO: u64 = 84080; // 351902; // 1469538; // 322636617; // BB3 max: 651320; // 46; //
 
 type TapeType = u64;
-const TAPE_SIZE_BIT: usize = 64;
+const TAPE_SIZE_BIT: StepTypeSmall = 64;
 // const TAPE_LONG_BYTE: usize = 8;
-const MIDDLE_BIT: usize = TAPE_SIZE_BIT / 2 - 1;
+const MIDDLE_BIT: StepTypeSmall = TAPE_SIZE_BIT / 2 - 1;
 const POS_HALF: TapeType = 1 << MIDDLE_BIT;
 // const POS_HALF_TEST: u64 = 0b1000_0000_0000_0000_0000_0000_0000_0000;
 
-pub const STEP_LIMIT_DECIDER_LOOP: StepType = 510; // STEP_LIMIT;
 pub const MAX_INIT_CAPACITY: usize = 10_000;
 
 // TODO self_ref for loop
 
 #[derive(Debug)]
-pub struct DeciderLoopV4 {
+pub struct DeciderCyclerV4 {
     steps: Vec<StepLoop>,
     /// stores the step ids for each State-Symbol combination (basically e.g. all from A0 steps)
     // TODO check if storage as u16 is faster
     maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)],
     /// Step limit for this decider. Should not exceed 2000 // TODO why
-    step_limit: usize,
+    step_limit: StepTypeSmall,
     // TODO tape_size
 }
 
-impl DeciderLoopV4 {
-    pub fn new(step_limit: StepType) -> Self {
+impl DeciderCyclerV4 {
+    pub fn new(step_limit: StepTypeSmall) -> Self {
         // TODO reasoning for size, 510 was for BB5
         let cap = (step_limit as usize).min(MAX_INIT_CAPACITY);
-        let step_limit = step_limit as usize;
         Self {
             steps: Vec::with_capacity(cap),
             maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
@@ -53,17 +50,17 @@ impl DeciderLoopV4 {
         }
     }
 
-    fn new_from_self(&self) -> DeciderLoopV4 {
-        let cap = self.step_limit.min(MAX_INIT_CAPACITY);
-        DeciderLoopV4 {
-            steps: Vec::with_capacity(cap),
-            maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
-            step_limit: self.step_limit,
-        }
-    }
+    // fn new_from_self(&self) -> DeciderCyclerV4 {
+    //     let cap = (self.step_limit as usize).min(MAX_INIT_CAPACITY);
+    //     DeciderCyclerV4 {
+    //         steps: Vec::with_capacity(cap),
+    //         maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
+    //         step_limit: self.step_limit,
+    //     }
+    // }
 
     // TODO fine tune and other states
-    pub fn step_limit(n_states: usize) -> StepType {
+    pub fn step_limit(n_states: usize) -> StepTypeSmall {
         match n_states {
             1 => 100,
             2 => 100,
@@ -75,11 +72,17 @@ impl DeciderLoopV4 {
     }
 }
 
-impl Decider for DeciderLoopV4 {
-    fn new_decider(&self) -> Self {
-        Self::new_from_self(&self)
+impl DeciderMinimal for DeciderCyclerV4 {
+    fn decide_machine_minimal(&mut self, machine: &Machine) -> MachineStatus {
+        self.decide_machine(machine)
     }
 
+    fn name_minimal(&self) -> &str {
+        self.name()
+    }
+}
+
+impl Decider for DeciderCyclerV4 {
     // tape_long_bits in machine?
     // TODO counter: longest loop
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
@@ -161,15 +164,13 @@ impl Decider for DeciderLoopV4 {
                     };
                 }
                 // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
-                return MachineStatus::DecidedHolds(self.steps.len() as StepType);
-            } else if self.steps.len() >= self.step_limit {
-                if self.steps.len() >= self.step_limit {
-                    return MachineStatus::Undecided(
-                        UndecidedReason::StepLimit,
-                        self.step_limit as StepType,
-                        TAPE_SIZE_BIT,
-                    );
-                }
+                return MachineStatus::DecidedHolds(self.steps.len() as StepTypeBig);
+            } else if self.steps.len() as StepTypeSmall >= self.step_limit {
+                return MachineStatus::Undecided(
+                    UndecidedReason::StepLimit,
+                    self.step_limit as StepTypeBig,
+                    TAPE_SIZE_BIT,
+                );
             }
 
             // update tape: write symbol at head position into cell
@@ -193,7 +194,7 @@ impl Decider for DeciderLoopV4 {
                     }
                     return MachineStatus::Undecided(
                         UndecidedReason::TapeLimitLeftBoundReached,
-                        self.steps.len() as StepType,
+                        self.steps.len() as StepTypeBig,
                         TAPE_SIZE_BIT,
                     );
                 }
@@ -215,7 +216,7 @@ impl Decider for DeciderLoopV4 {
                     }
                     return MachineStatus::Undecided(
                         UndecidedReason::TapeLimitRightBoundReached,
-                        self.steps.len() as StepType,
+                        self.steps.len() as StepTypeBig,
                         TAPE_SIZE_BIT,
                     );
                 }
@@ -294,9 +295,9 @@ impl Decider for DeciderLoopV4 {
                         // Same, we found a loop!
                         #[cfg(all(debug_assertions, feature = "bb_debug"))]
                         println!("*** Found Loop without mask!");
-                        return MachineStatus::DecidedEndless(EndlessReason::Loop(
-                            self.steps.len() as StepType,
-                            distance as StepType,
+                        return MachineStatus::DecidedEndless(EndlessReason::Cycle(
+                            self.steps.len() as StepTypeSmall,
+                            distance as StepTypeSmall,
                         ));
                     }
 
@@ -390,9 +391,9 @@ impl Decider for DeciderLoopV4 {
                         // Same, we found a loop!#
                         #[cfg(all(debug_assertions, feature = "bb_debug"))]
                         println!("  *** Found Loop with mask!");
-                        return MachineStatus::DecidedEndless(EndlessReason::Loop(
-                            self.steps.len() as StepType,
-                            distance as StepType,
+                        return MachineStatus::DecidedEndless(EndlessReason::Cycle(
+                            self.steps.len() as StepTypeSmall,
+                            distance as StepTypeSmall,
                         ));
                     } else {
                         #[cfg(all(debug_assertions, feature = "bb_debug"))]
@@ -404,7 +405,7 @@ impl Decider for DeciderLoopV4 {
     }
 
     fn decide_single_machine(machine: &Machine, config: &Config) -> MachineStatus {
-        let mut d = Self::new(Self::step_limit(config.n_states()));
+        let mut d = Self::new(config.step_limit_cycler());
         d.decide_machine(machine)
     }
 
@@ -413,13 +414,17 @@ impl Decider for DeciderLoopV4 {
         run_predecider: PreDeciderRun,
         config: &Config,
     ) -> Option<BatchResult> {
-        let decider = Self::new(Self::step_limit(config.n_states()));
+        let decider = Self::new(config.step_limit_cycler());
         decider::decider_generic_run_batch(decider, machines, run_predecider, config)
     }
 
     fn name(&self) -> &str {
         "Decider Loop V4"
     }
+
+    // fn new_from_self(&self) -> Self {
+    //     todo!()
+    // }
 }
 
 // impl Default for DeciderLoopV4CompactP {
@@ -520,9 +525,10 @@ mod tests {
         transitions.push(("1RD", "0RA"));
         transitions.push(("0RA", "0RA"));
 
-        let p = Machine::from_string_tuple(0, &transitions);
-        let mut d = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
-        let machine_status = d.decide_machine(&p);
+        let machine = Machine::from_string_tuple(0, &transitions);
+        let config = Config::new_default(machine.n_states());
+        let mut d = DeciderCyclerV4::new(config.step_limit_cycler());
+        let machine_status = d.decide_machine(&machine);
         assert_eq!(machine_status, MachineStatus::DecidedHolds(107));
     }
 
@@ -536,7 +542,8 @@ mod tests {
         transitions.push(("1RA", "0RA"));
 
         let machine = Machine::from_string_tuple(32538705, &transitions);
-        let mut d = DeciderLoopV4::new(STEP_LIMIT_DECIDER_LOOP);
+        let config = Config::new_default(machine.n_states());
+        let mut d = DeciderCyclerV4::new(config.step_limit_cycler());
         let machine_status = d.decide_machine(&machine);
         println!("result: {}", machine_status);
         let ok = match machine_status {

@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::TAPE_SIZE_INIT_CELLS;
+use crate::config::{StepTypeSmall, TAPE_SIZE_INIT_CELLS};
 
 pub const TAPE_SIZE_BIT_U128: usize = 128;
 pub const TAPE_SIZE_HALF_128: usize = TAPE_SIZE_BIT_U128 / 2;
@@ -15,8 +15,8 @@ pub const HIGH32_SWITCH_U128: usize = MIDDLE_BIT_U128 + TAPE_SIZE_FOURTH_128;
 pub const CLEAR_LOW63_32BITS_U128: u128 = 0xFFFFFFFF_FFFFFFFF_00000000_FFFFFFFF;
 pub const CLEAR_HIGH95_64BITS_U128: u128 = 0xFFFFFFFF_00000000_FFFFFFFF_FFFFFFFF;
 
-pub const TAPE_SIZE_BIT_U64: usize = 64;
-pub const MIDDLE_BIT_U64: usize = TAPE_SIZE_BIT_U64 / 2 - 1;
+pub const TAPE_SIZE_BIT_U64: StepTypeSmall = 64;
+pub const MIDDLE_BIT_U64: StepTypeSmall = TAPE_SIZE_BIT_U64 / 2 - 1;
 pub const POS_HALF_U64: u64 = 1 << MIDDLE_BIT_U64;
 
 // #[cfg(all(debug_assertions, feature = "bb_debug"))]

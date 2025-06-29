@@ -17,9 +17,13 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [features]
 # default = ["bb_counter_stats"]
 # default = ["bb_debug"]
+# default = ["bb_generator_longest_skip_chain"]
 # default = ["bb_use_result_large"]
+# default = ["bb_print_non_pre_perm"]
 bb_debug = []
 bb_counter_stats = []
+bb_generator_longest_skip_chain = []
+bb_print_non_pre_perm = []
 # bb_use_result_large = []
 
 [[bench]]

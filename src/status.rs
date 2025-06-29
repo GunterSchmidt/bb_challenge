@@ -1,10 +1,6 @@
 use std::fmt::Display;
 
-use crate::StepType;
-
-// use crate::{machine::MachineInfo, permutation::Permutation, turing::StepType};
-
-pub const COUNTER_ARRAY_SIZE: usize = 110;
+use crate::config::{StepTypeBig, StepTypeSmall};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PreDeciderReason {
@@ -13,7 +9,7 @@ pub enum PreDeciderReason {
     NotAllStatesUsed,
     NotExactlyOneHoldCondition,
     OnlyOneDirection,
-    SimpleStartLoop,
+    SimpleStartCycle,
     StartRecursive,
     StartStateBandRight,
     WritesOnlyZero,
@@ -21,15 +17,15 @@ pub enum PreDeciderReason {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum EndlessReason {
-    /// Loop (steps run, number of steps in the loop)
-    Loop(StepType, StepType),
-    ExpandingSinus(ExpandingSinusReason),
-    ExpandingLoop,
+    /// Cycle (steps run, number of steps in the cycle)
+    Cycle(StepTypeSmall, StepTypeSmall),
+    ExpandingBouncer(ExpandingBouncerReason),
+    ExpandingCycler,
 
     // These have been moved to PreDeciderReason
     OnlyOneDirection,
     NoHoldTransition,
-    SimpleStartLoop,
+    SimpleStartCycle,
     /// Always comes back to start with left or right tape all 0, only extending to one side endlessly
     /// e.g. BB3: 84080
     StartRecursive,
@@ -48,7 +44,7 @@ pub enum UndecidedReason {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum ExpandingSinusReason {
+pub enum ExpandingBouncerReason {
     DeciderNoResult,
     StepDeltaIdentical,
     StepDelta2ndRepeating,
@@ -66,13 +62,14 @@ pub enum MachineStatus {
     // Running,
     DecidedEndless(EndlessReason),
     /// Hold for fast evaluation
-    DecidedHolds(StepType),
+    DecidedHolds(StepTypeBig),
     /// Holds after steps, tape size, ones on tape
-    DecidedHoldsDetail(StepType, usize, usize),
+    DecidedHoldsDetail(StepTypeBig, StepTypeSmall, StepTypeSmall),
     DecidedNotMaxTooManyHoldTransitions,
     DecidedNotMaxNotAllStatesUsed,
     EliminatedPreDecider(PreDeciderReason),
-    Undecided(UndecidedReason, StepType, usize),
+    /// Undecided, stopped after steps, tape size
+    Undecided(UndecidedReason, StepTypeBig, StepTypeSmall),
     // UndecidedFastTapeBoundReached,
 }
 
@@ -108,10 +105,10 @@ impl Display for MachineStatus {
                 match reason {
                             UndecidedReason::DeciderNoResult => s.push_str("Undecided: No result"),
                             UndecidedReason::TapeLimitLeftBoundReached => s.push_str(
-                                format!("Undecided: Tape bound reached (right 64 steps), {steps} steps").as_str(),
+                                format!("Undecided: Tape bound reached (right {tape_size_limit} steps) after {steps} steps").as_str(),
                             ),
                             UndecidedReason::TapeLimitRightBoundReached => s.push_str(
-                                format!("Undecided: Tape bound reached (left 64 steps), {steps} steps").as_str(),
+                                format!("Undecided: Tape bound reached (left {tape_size_limit} steps) after {steps} steps").as_str(),
                             ),
                             UndecidedReason::StepLimit => s.push_str(
                                 format!(

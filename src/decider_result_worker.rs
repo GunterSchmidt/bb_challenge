@@ -17,13 +17,12 @@ pub type ResultString = std::result::Result<(), String>;
 pub fn save_machines_undecided(batch_result: &BatchResult, config: &Config) -> ResultWorker {
     let machine_infos = batch_result.machines_undecided.to_machine_info();
 
-    let time_string;
-    if config.use_local_time() {
+    let time_string = if config.use_local_time() {
         let datetime_local: DateTime<Local> = config.creation_time().into();
-        time_string = datetime_local.format("%Y%m%d_%H%M%S").to_string();
+        datetime_local.format("%Y%m%d_%H%M%S").to_string()
     } else {
         let datetime_utc: DateTime<Utc> = config.creation_time().into();
-        time_string = datetime_utc.format("%Y%m%d_%H%M%S").to_string();
+        datetime_utc.format("%Y%m%d_%H%M%S").to_string()
     };
 
     // thread::spawn(move || {
@@ -77,19 +76,17 @@ pub fn save_machines_undecided(batch_result: &BatchResult, config: &Config) -> R
 
 fn open_file_for_append(path: &str, file_name: &str) -> Result<File, ResultWorkerError> {
     // open file for append
-    let file_path = path.to_owned() + &file_name;
+    let file_path = path.to_owned() + file_name;
     let r = std::fs::OpenOptions::new()
         .append(true)
         .create(true)
         .open(&file_path);
 
     match r {
-        Ok(file) => {
-            return Ok(file);
-        }
+        Ok(file) => Ok(file),
         Err(e) => {
             let message = e.to_string() + ":" + file_path.as_str();
-            return Err(ResultWorkerError::FileError(message));
+            Err(ResultWorkerError::FileError(message))
         }
     }
 }

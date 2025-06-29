@@ -7,5 +7,5 @@ pub trait DataProviderThreaded: DataProvider {
     fn new_from_data_provider(&self) -> Self;
 
     /// Returns the specific batch of machines (permutations) and an info if this is the last batch.
-    fn machine_batch_no(&mut self, batch_no: usize) -> DataProviderResult;
+    fn batch_no(&mut self, batch_no: usize) -> DataProviderResult;
 }

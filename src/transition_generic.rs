@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::{MAX_STATES_GENERIC, MAX_SYMBOLS_GENERIC};
+use crate::config::{MAX_STATES_GENERIC, MAX_SYMBOLS_GENERIC};
 
 pub const A: StateType = 1;
 pub const B: StateType = 2;

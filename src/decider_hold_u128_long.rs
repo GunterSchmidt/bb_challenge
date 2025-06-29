@@ -3,8 +3,10 @@ use std::fmt::Display;
 #[cfg(all(debug_assertions, feature = "bb_debug"))]
 use crate::tape_utils::{VecU32Ext, TAPE_DISPLAY_RANGE_128};
 use crate::{
-    config::Config,
-    decider::Decider,
+    config::{
+        Config, IdBig, StepTypeBig, StepTypeSmall, MAX_TAPE_GROWTH, TAPE_SIZE_INIT_CELL_BLOCKS,
+    },
+    decider::{self, Decider},
     decider_result::BatchResult,
     machine::Machine,
     pre_decider::PreDeciderRun,
@@ -15,7 +17,6 @@ use crate::{
         TL_POS_START_128,
     },
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_SYM2_START},
-    StepType, MAX_TAPE_GROWTH, TAPE_SIZE_INIT_CELL_BLOCKS,
 };
 
 /// This decider runs on a 128-Bit number and moves data out to a long tape (Vec). \
@@ -45,14 +46,14 @@ pub struct DeciderHoldU128Long {
     /// TODO low bound in bit, this is the rightmost doubleword (16-bit) in tape_shifted (bit 0), min value is 0, but will be negative when testing.
     /// Low bound in tape_long, this is the leftmost value.
     tl_low_bound: usize,
-    num_steps: StepType,
+    num_steps: StepTypeBig,
     tr: TransitionSymbol2,
     // machine id, just for debugging
-    id: u64,
+    id: IdBig,
     transition_table: TransitionTableSymbol2,
     #[allow(dead_code)]
     status: MachineStatus,
-    config: Config,
+    step_limit: StepTypeBig,
 }
 
 impl DeciderHoldU128Long {
@@ -73,7 +74,7 @@ impl DeciderHoldU128Long {
             id: 0,
             transition_table: TransitionTableSymbol2::default(),
             status: MachineStatus::NoDecision,
-            config: config.clone(),
+            step_limit: config.step_limit_hold(),
         }
     }
 
@@ -125,7 +126,11 @@ impl DeciderHoldU128Long {
         self.clear();
         self.id = machine.id();
         self.transition_table = *machine.transition_table();
-        if self.transition_table.has_self_referencing_transition() {
+        // if self.transition_table.has_self_referencing_transition() {
+        if self
+            .transition_table
+            .eval_set_has_self_referencing_transition()
+        {
             self.run_check_hold_with_self_referencing_transition()
         } else {
             self.run_check_hold_without_self_referencing_transitions()
@@ -176,7 +181,7 @@ impl DeciderHoldU128Long {
     }
 
     // TODO correct tape
-    pub fn count_ones(&self) -> u32 {
+    pub fn count_ones(&self) -> StepTypeSmall {
         let mut ones = self.tape_shifted.count_ones();
         if self.tl_high_bound - self.tl_low_bound > 3 {
             for n in self.tape_long[self.tl_low_bound..self.tl_pos].iter() {
@@ -186,7 +191,7 @@ impl DeciderHoldU128Long {
                 ones += n.count_ones();
             }
         }
-        ones
+        ones as StepTypeSmall
     }
 
     /// Shifts the pos in the long tape one to left and checks Vec dimensions
@@ -267,11 +272,9 @@ impl DeciderHoldU128Long {
     /// Returns the status of the decider and additionally written Ones on tape and Tape Size
     pub fn status_full(&self) -> MachineStatus {
         match self.status {
-            MachineStatus::DecidedHolds(steps) => MachineStatus::DecidedHoldsDetail(
-                steps,
-                self.tape_size(),
-                self.count_ones() as usize,
-            ),
+            MachineStatus::DecidedHolds(steps) => {
+                MachineStatus::DecidedHoldsDetail(steps, self.tape_size(), self.count_ones())
+            }
             _ => self.status,
         }
     }
@@ -285,8 +288,8 @@ impl DeciderHoldU128Long {
     // }
 
     // Returns the approximate tape size, which grows by 32 steps
-    fn tape_size(&self) -> usize {
-        (self.tl_high_bound - self.tl_low_bound + 1) * 32
+    fn tape_size(&self) -> StepTypeSmall {
+        ((self.tl_high_bound - self.tl_low_bound + 1) * 32) as StepTypeSmall
     }
 
     /// reads next step and updates transition
@@ -318,7 +321,7 @@ impl DeciderHoldU128Long {
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
             self.status = MachineStatus::DecidedHolds(self.num_steps);
             return false;
-        } else if self.num_steps > self.config.step_limit() {
+        } else if self.num_steps > self.step_limit {
             self.status = self.undecided_step_limit();
             return false;
         }
@@ -437,7 +440,7 @@ impl DeciderHoldU128Long {
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
             self.status = MachineStatus::DecidedHolds(self.num_steps);
             return false;
-        } else if self.num_steps > self.config.step_limit() {
+        } else if self.num_steps > self.step_limit {
             self.status = self.undecided_step_limit();
             return false;
         }
@@ -460,7 +463,7 @@ impl DeciderHoldU128Long {
                 // shift tape
                 self.set_current_symbol();
                 self.tape_shifted <<= jump;
-                self.num_steps += jump as StepType - 1;
+                self.num_steps += jump as StepTypeBig - 1;
             } else {
                 self.pos_middle += 1;
 
@@ -524,7 +527,7 @@ impl DeciderHoldU128Long {
                 self.set_current_symbol();
                 // shift tape
                 self.tape_shifted >>= jump;
-                self.num_steps += jump as StepType - 1;
+                self.num_steps += jump as StepTypeBig - 1;
             } else {
                 self.pos_middle -= 1;
 
@@ -581,7 +584,7 @@ impl DeciderHoldU128Long {
     fn undecided_step_limit(&self) -> MachineStatus {
         MachineStatus::Undecided(
             UndecidedReason::StepLimit,
-            self.num_steps as StepType,
+            self.num_steps as StepTypeBig,
             self.tape_size(),
         )
     }
@@ -666,10 +669,6 @@ impl DeciderHoldU128Long {
 }
 
 impl Decider for DeciderHoldU128Long {
-    fn new_decider(&self) -> Self {
-        Self::new(&self.config)
-    }
-
     // tape_long_bits in machine?
     // TODO counter: longest loop
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
@@ -687,12 +686,16 @@ impl Decider for DeciderHoldU128Long {
         config: &Config,
     ) -> Option<BatchResult> {
         let decider = Self::new(config);
-        crate::decider::decider_generic_run_batch(decider, machines, run_predecider, config)
+        decider::decider_generic_run_batch(decider, machines, run_predecider, config)
     }
 
     fn name(&self) -> &str {
         "Decider U128 Long"
     }
+
+    // fn new_from_self(&self) -> Self {
+    //     todo!()
+    // }
 }
 
 impl Display for DeciderHoldU128Long {

@@ -54,7 +54,6 @@ impl DeciderExpandingLoop {
         // initialize decider
 
         // num steps, same as steps, but steps can be deactivated after a while
-        // let mut steps: Vec<Step> = Vec::with_capacity(STEP_LIMIT_DECIDER_LOOP);
         self.steps.clear();
 
         // tape for storage in Step with cell before transition at position u32 top bit
@@ -302,7 +301,7 @@ impl DeciderExpandingLoop {
                                                 // step order does not match
                                                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                                                 println!(
-                                                    "  Repeat ended after {repeat_count} repititions!"
+                                                    "  Repeat ended after {repeat_count} repetitions!"
                                                 );
 
                                                 is_match = false;

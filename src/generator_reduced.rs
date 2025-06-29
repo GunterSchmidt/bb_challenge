@@ -1,7 +1,9 @@
 // TODO flip states: A0 -> 0RB,1RB, B0 -> A,B,C (not D, E?)
 
+#[cfg(feature = "bb_generator_longest_skip_chain")]
+use crate::machine_info::MachineInfo;
 use crate::{
-    config::Config,
+    config::{Config, MAX_STATES},
     data_provider::{DataProvider, DataProviderResult},
     data_provider_threaded::DataProviderThreaded,
     decider_result::{EndReason, PreDeciderCount},
@@ -13,9 +15,9 @@ use crate::{
     },
     status::PreDeciderReason,
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITIONS_FOR_A0},
-    MAX_STATES,
 };
 
+pub(crate) const GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED: usize = 5_000_000;
 const BATCH_SIZE_REQUEST_SINGLE_THREAD: usize = 1_000_000;
 
 /// This generator creates all combinations of transition sets (Turing machine) which match certain criteria for the given n_states,
@@ -39,6 +41,7 @@ pub struct GeneratorReduced {
     id_next: u64,
     // id_batch_start: u64,
     id_batch_last: u64,
+    batch_no: usize,
     /// The number of states used for this generator.
     // n_states: usize,
     /// The total number of machines to be generated.
@@ -62,7 +65,9 @@ pub struct GeneratorReduced {
     field_no: usize,
     pre_decider_count_batch: PreDeciderCount,
     // pre_decider_count_total: PreDeciderCount,
-    config: Config,
+    n_states: usize,
+    #[cfg(feature = "bb_generator_longest_skip_chain")]
+    longest_skip_chain: Counter,
 }
 
 impl GeneratorReduced {
@@ -79,8 +84,8 @@ impl GeneratorReduced {
         // set all in set to the first variant
         transition_table.transitions[2..2 + n_states * 2].fill(tr_permutations[0]);
         let n_machines = generator::num_turing_machine_permutations(n_states) as u64;
-        let limit = if config.generate_limit() > 0 {
-            config.generate_limit().min(n_machines)
+        let limit = if config.machines_limit() > 0 {
+            config.machines_limit().min(n_machines)
         } else {
             n_machines
         };
@@ -92,6 +97,7 @@ impl GeneratorReduced {
             id_next: 0,
             // id_batch_start: 0,
             id_batch_last: 0,
+            batch_no: 0,
             // n_states,
             n_machines,
             batch_size,
@@ -105,7 +111,9 @@ impl GeneratorReduced {
             field_no: 4,
             pre_decider_count_batch: Default::default(),
             // pre_decider_count_total: Default::default(),
-            config: config.clone(),
+            n_states: config.n_states(),
+            #[cfg(feature = "bb_generator_longest_skip_chain")]
+            longest_skip_chain: Default::default(),
         }
     }
 
@@ -121,7 +129,7 @@ impl GeneratorReduced {
         // fields 2 and 3 will be 0 as this is guaranteed by the batch size (status A always fully permuted)
         // calculating the remaining fields
         // let mut remain = (batch_no as u64 - 1) * self.batch_size as u64;
-        let permutations = (4 * self.n_states() + 1) as u64;
+        let permutations = (4 * self.n_states + 1) as u64;
         let mut remain = self.id_next / (permutations * permutations);
         let mut i = 4;
         loop {
@@ -145,29 +153,30 @@ impl GeneratorReduced {
     // }
 
     pub fn check_pre_decider(&self) -> PreDeciderReason {
-        let tr_used = self.transition_table.transitions_used(self.n_states());
-        if count_hold_transitions(tr_used) != 1 {
-            return PreDeciderReason::NotExactlyOneHoldCondition;
-        }
+        let tr_used = self.transition_table.transitions_used(self.n_states);
+        // if count_hold_transitions(tr_used) != 1 {
+        //     todo!("should not happen");
+        //     return PreDeciderReason::NotExactlyOneHoldCondition;
+        // }
         if check_only_one_direction(tr_used) {
             return PreDeciderReason::OnlyOneDirection;
         }
         if check_only_zero_writes(tr_used) {
             return PreDeciderReason::WritesOnlyZero;
         }
-        // let old = check_not_all_states_used(&self.transition_table, self.n_states());
-        // let new = check_not_all_states_used_new(&self.transition_table, self.n_states());
+        // let old = check_not_all_states_used(&self.transition_table, self.n_states);
+        // let new = check_not_all_states_used_new(&self.transition_table, self.n_states);
         // if old != new && old {
         //     println!(
         //         "Mismatch for {}, old: {old}, new: {new}",
         //         self.transition_table.to_standard_tm_text_format()
         //     );
         // }
-        if check_not_all_states_used(&self.transition_table, self.n_states()) {
+        if check_not_all_states_used(&self.transition_table, self.n_states) {
             return PreDeciderReason::NotAllStatesUsed;
         }
         if check_simple_start_loop(&self.transition_table) {
-            return PreDeciderReason::SimpleStartLoop;
+            return PreDeciderReason::SimpleStartCycle;
         }
 
         PreDeciderReason::None
@@ -181,30 +190,8 @@ impl GeneratorReduced {
 impl Generator for GeneratorReduced {
     /// Create new generator for random batch no. \
     /// Avoids some recalculations for e.g. batch_size, but is like new.
-    fn new_from_generator(&self) -> Self {
-        let mut transition_table = TransitionTableSymbol2::new_default(self.n_states());
-        // set all in set to the first variant
-        transition_table.transitions[2..2 + self.n_states() * 2].fill(self.tr_permutations[0]);
-
-        Self {
-            id_next: 0,
-            // id_batch_start: 0,
-            id_batch_last: 0,
-            // n_states: self.n_states,
-            n_machines: self.n_machines,
-            batch_size: self.batch_size,
-            limit: self.limit,
-            num_batches: self.num_batches,
-            tr_permutations: self.tr_permutations.clone(),
-            // tr_permutations_a0: self.tr_permutations_a0.clone(),
-            transition_table,
-            n_fields: self.n_fields,
-            fields: [0; (MAX_STATES + 1) * 2],
-            field_no: 4,
-            pre_decider_count_batch: Default::default(),
-            // pre_decider_count_total: Default::default(),
-            config: self.config.clone(),
-        }
+    fn new_from_generator_deprecated(&self) -> Self {
+        self.new_from_data_provider()
     }
 
     /// Returns the next batch of permutations and an info if this is the last batch.
@@ -218,9 +205,7 @@ impl Generator for GeneratorReduced {
         if self.id_next >= self.n_machines {
             return (Vec::new(), true);
         }
-
         // println!("Generator reduced: is_next = {}", self.id_next);
-        // self.id_batch_start = self.id_next;
         self.id_batch_last = (self.id_next + self.batch_size as u64 - 1).min(self.limit - 1);
         self.pre_decider_count_batch = PreDeciderCount::default();
 
@@ -229,6 +214,10 @@ impl Generator for GeneratorReduced {
         let num_tr_permutations = self.tr_permutations.len();
         // let ids_left_out = (self.tr_permutations.len() - self.tr_permutations_a0.len()) as u64;
         let ids_left_out = self.tr_permutations.len() as u64 - 2;
+        let mut num_hold_a1;
+        let range_3_to_n_states = 4..self.n_states * 2 + 2;
+        let mut num_hold_other_lines =
+            count_hold_transitions(&self.transition_table.transitions[range_3_to_n_states.clone()]);
         // let ids_not_generated_per_round = ids_left_out * self.tr_permutations.len() as u64;
         // TODO calc left out in one step
         // self.pre_decider_count.num_not_generated = (ids_left_out).pow(2 * self.n_states as u32);
@@ -242,6 +231,7 @@ impl Generator for GeneratorReduced {
             let mut id = self.id_next + 2;
             for v1 in self.tr_permutations.iter() {
                 self.transition_table.transitions[3] = *v1;
+                num_hold_a1 = v1.is_hold() as usize;
                 for v0 in TRANSITIONS_FOR_A0.iter() {
                     self.transition_table.transitions[2] = *v0;
                     let mut permutation = Machine::new(id, self.transition_table);
@@ -249,34 +239,95 @@ impl Generator for GeneratorReduced {
                     //     permutation.set_eval_has_self_referencing_transition();
                     //     permutations.push(permutation);
                     // }
-                    match self.check_pre_decider() {
-                        PreDeciderReason::None => {
-                            permutation.set_eval_has_self_referencing_transition();
-                            permutations.push(permutation);
+                    // check num holds
+                    // let tr_used = self.transition_table.transitions_used(self.n_states);
+                    // let test = pre_decider::check_only_one_direction(tr_used);
+                    // if !test {
+                    //     println!("First Left{}", permutation);
+                    //     // todo!()
+                    // }
+                    // There is no hold in A0
+                    if num_hold_a1 + num_hold_other_lines != 1 {
+                        self.pre_decider_count_batch
+                            .num_not_exactly_one_hold_condition += 1;
+                        // let tr_used = self.transition_table.transitions_used(self.n_states);
+                        // let old = count_hold_transitions(tr_used);
+                        // let new = num_hold_a1 + num_hold_other_lines;
+                        // if old != new {
+                        //     println!(
+                        //         "old {old}, new {new}, hold: {num_hold_other_lines}, id {id} {}",
+                        //         permutation.to_standard_tm_text_format()
+                        //     );
+                        //     let tr3_used =
+                        //         &self.transition_table.transitions[range_3_to_n_states.clone()];
+                        //     num_hold_other_lines = count_hold_transitions(tr3_used);
+                        //     println!(
+                        //         "old {old}, new {new}, hold: {num_hold_other_lines}, {}",
+                        //         permutation.to_standard_tm_text_format()
+                        //     );
+                        //     todo!();
+                        // }
+                        #[cfg(feature = "bb_generator_longest_skip_chain")]
+                        self.longest_skip_chain.add_counter(
+                            &permutation,
+                            PreDeciderReason::NotExactlyOneHoldCondition,
+                        );
+                    } else {
+                        // run pre-decider check
+                        let check_pre = self.check_pre_decider();
+                        #[cfg(feature = "bb_generator_longest_skip_chain")]
+                        match check_pre {
+                            PreDeciderReason::None => {
+                                self.longest_skip_chain.update_max(id - 1);
+                                if self.longest_skip_chain.counter > 1000 {
+                                    println!(
+                                        "Found chain: {}, {}",
+                                        self.longest_skip_chain.counter,
+                                        self.longest_skip_chain.machines_max_to_string(4)
+                                    );
+                                }
+                                self.longest_skip_chain.reset_counter();
+                            }
+                            _ => {
+                                self.longest_skip_chain.add_counter(&permutation, check_pre);
+                                println!("Pre: {id}: {}", permutation.to_standard_tm_text_format())
+                            }
                         }
-                        PreDeciderReason::NotAllStatesUsed => {
-                            self.pre_decider_count_batch.num_not_all_states_used += 1
-                        }
-                        PreDeciderReason::NotExactlyOneHoldCondition => {
-                            self.pre_decider_count_batch
-                                .num_not_exactly_one_hold_condition += 1
-                        }
-                        PreDeciderReason::OnlyOneDirection => {
-                            self.pre_decider_count_batch.num_only_one_direction += 1
-                        }
-                        PreDeciderReason::SimpleStartLoop => {
-                            self.pre_decider_count_batch.num_simple_start_loop += 1
-                        }
-                        PreDeciderReason::StartRecursive => {
-                            // This one does not happen here, it is included in "not generated".
-                            self.pre_decider_count_batch.num_start_recursive += 1
-                        }
-                        PreDeciderReason::StartStateBandRight => {
-                            // This one does not happen here, it is included in "not generated".
-                            self.pre_decider_count_batch.num_start_state_b_and_right += 1
-                        }
-                        PreDeciderReason::WritesOnlyZero => {
-                            self.pre_decider_count_batch.num_writes_only_zero += 1
+                        match check_pre {
+                            // store machine only in this case
+                            PreDeciderReason::None => {
+                                permutation.set_eval_has_self_referencing_transition();
+                                permutations.push(permutation);
+                                #[cfg(feature = "bb_print_non_pre_perm")]
+                                println!(
+                                    "Perm: {id}: {}",
+                                    permutation.to_standard_tm_text_format()
+                                );
+                            }
+                            PreDeciderReason::NotAllStatesUsed => {
+                                self.pre_decider_count_batch.num_not_all_states_used += 1;
+                            }
+                            PreDeciderReason::NotExactlyOneHoldCondition => {
+                                self.pre_decider_count_batch
+                                    .num_not_exactly_one_hold_condition += 1;
+                            }
+                            PreDeciderReason::OnlyOneDirection => {
+                                self.pre_decider_count_batch.num_only_one_direction += 1;
+                            }
+                            PreDeciderReason::SimpleStartCycle => {
+                                self.pre_decider_count_batch.num_simple_start_cycle += 1;
+                            }
+                            PreDeciderReason::StartRecursive => {
+                                // This one does not happen here, it is included in "not generated".
+                                self.pre_decider_count_batch.num_start_recursive += 1;
+                            }
+                            PreDeciderReason::StartStateBandRight => {
+                                // This one does not happen here, it is included in "not generated".
+                                self.pre_decider_count_batch.num_start_state_b_and_right += 1;
+                            }
+                            PreDeciderReason::WritesOnlyZero => {
+                                self.pre_decider_count_batch.num_writes_only_zero += 1;
+                            }
                         }
                     }
                     id += 1;
@@ -346,6 +397,8 @@ impl Generator for GeneratorReduced {
             if id >= self.id_batch_last {
                 break;
             }
+            let tr3_used = &self.transition_table.transitions[range_3_to_n_states.clone()];
+            num_hold_other_lines = count_hold_transitions(tr3_used);
         }
 
         self.pre_decider_count_batch.num_not_generated = (self.batch_size - permutations.len())
@@ -366,10 +419,9 @@ impl Generator for GeneratorReduced {
     }
 
     fn check_generator_batch_size_request_single_thread(&mut self) {
-        if self.config.generator_batch_size_request_full() != BATCH_SIZE_REQUEST_SINGLE_THREAD {
+        if self.batch_size != BATCH_SIZE_REQUEST_SINGLE_THREAD {
             // self.config.generator_batch_size_request_full = BATCH_SIZE_REQUEST_SINGLE_THREAD;
-            let batch_size =
-                Self::calc_batch_size(BATCH_SIZE_REQUEST_SINGLE_THREAD, self.n_states());
+            let batch_size = Self::calc_batch_size(BATCH_SIZE_REQUEST_SINGLE_THREAD, self.n_states);
             self.num_batches = ((self.limit + batch_size as u64 - 1) / batch_size as u64) as usize;
             self.batch_size = batch_size;
         }
@@ -383,22 +435,32 @@ impl Generator for GeneratorReduced {
 impl DataProvider for GeneratorReduced {
     fn machine_batch_next(&mut self) -> DataProviderResult {
         let (machines, is_last_batch) = self.generate_permutation_batch_next();
-        if is_last_batch {
-            return DataProviderResult::new(
-                machines,
-                Some(self.pre_decider_count_batch),
-                EndReason::IsLastBatch,
-            );
+        #[cfg(feature = "bb_generator_longest_skip_chain")]
+        {
+            self.longest_skip_chain.update_max(self.id_batch_last);
+            if self.longest_skip_chain.max > self.longest_skip_chain.max_last_info {
+                println!("New Longest Chain: {}", self.longest_skip_chain);
+                self.longest_skip_chain.max_last_info = self.longest_skip_chain.max;
+            }
+            if is_last_batch {
+                {
+                    println!("Longest Chain: {}", self.longest_skip_chain);
+                    println!("{}", self.longest_skip_chain.machines_max_to_string(0));
+                }
+            }
         }
-        // if machines.is_empty() {
-        //     return DataProviderResult::new(machines, None, EndReason::NoMoreData);
-        // }
-
-        DataProviderResult::new(
+        self.batch_no += 1;
+        let end_reason = if is_last_batch {
+            EndReason::IsLastBatch
+        } else {
+            EndReason::Working
+        };
+        DataProviderResult {
+            batch_no: self.batch_no - 1,
             machines,
-            Some(self.pre_decider_count_batch),
-            EndReason::Working,
-        )
+            pre_decider_count: Some(self.pre_decider_count_batch),
+            end_reason,
+        }
     }
 
     fn batch_size(&self) -> usize {
@@ -410,9 +472,9 @@ impl DataProvider for GeneratorReduced {
         self.num_batches
     }
 
-    fn config(&self) -> &Config {
-        &self.config
-    }
+    // fn config(&self) -> &Config {
+    //     &self.config
+    // }
 
     fn num_machines_total(&self) -> u64 {
         self.limit
@@ -436,49 +498,44 @@ impl DataProvider for GeneratorReduced {
 
 impl DataProviderThreaded for GeneratorReduced {
     fn new_from_data_provider(&self) -> Self {
-        let mut transition_table = TransitionTableSymbol2::new_default(self.n_states());
+        let mut transition_table = TransitionTableSymbol2::new_default(self.n_states);
         // set all in set to the first variant
-        transition_table.transitions[2..2 + self.n_states() * 2].fill(self.tr_permutations[0]);
+        transition_table.transitions[2..2 + self.n_states * 2].fill(self.tr_permutations[0]);
 
         Self {
             id_next: 0,
-            // id_batch_start: 0,
             id_batch_last: 0,
-            // n_states: self.n_states,
+            batch_no: 0,
             n_machines: self.n_machines,
             batch_size: self.batch_size,
             limit: self.limit,
             num_batches: self.num_batches,
             tr_permutations: self.tr_permutations.clone(),
-            // tr_permutations_a0: self.tr_permutations_a0.clone(),
             transition_table,
             n_fields: self.n_fields,
             fields: [0; (MAX_STATES + 1) * 2],
             field_no: 4,
             pre_decider_count_batch: Default::default(),
-            // pre_decider_count_total: Default::default(),
-            config: self.config.clone(),
+            n_states: self.n_states,
+            #[cfg(feature = "bb_generator_longest_skip_chain")]
+            longest_skip_chain: Default::default(),
         }
     }
 
-    fn machine_batch_no(&mut self, batch_no: usize) -> DataProviderResult {
+    fn batch_no(&mut self, batch_no: usize) -> DataProviderResult {
+        self.batch_no = batch_no;
         let (machines, is_last_batch) = self.generate_permutation_batch_no(batch_no);
-        if is_last_batch {
-            return DataProviderResult::new(
-                machines,
-                Some(self.pre_decider_count_batch),
-                EndReason::IsLastBatch,
-            );
-        }
-        // if machines.is_empty() {
-        //     return DataProviderResult::new(machines, None, EndReason::NoMoreData);
-        // }
-
-        DataProviderResult::new(
+        let end_reason = if is_last_batch {
+            EndReason::IsLastBatch
+        } else {
+            EndReason::Working
+        };
+        DataProviderResult {
+            batch_no: self.batch_no,
             machines,
-            Some(self.pre_decider_count_batch),
-            EndReason::Working,
-        )
+            pre_decider_count: Some(self.pre_decider_count_batch),
+            end_reason,
+        }
     }
 }
 
@@ -491,7 +548,7 @@ mod tests {
         decider::{
             run_decider_data_provider_single_thread, run_decider_data_provider_threaded, Decider,
         },
-        decider_loop_v4::DeciderLoopV4,
+        decider_cycler_v4::DeciderCyclerV4,
         decider_result::result_max_steps_known,
         decider_result_worker::no_worker,
         generator_full::GeneratorFull,
@@ -502,9 +559,9 @@ mod tests {
     #[test]
     fn generator_reduced_direct_access_batch_no() {
         let config = Config::builder(4)
-            .generator_batch_size_request_full(10_000)
-            .generator_batch_size_request_reduced(10_000)
-            .generate_limit(10_000_000)
+            .generator_full_batch_size_request(10_000)
+            .generator_reduced_batch_size_request(10_000)
+            .machine_limit(10_000_000)
             .build();
         let mut mr = Machine::default();
         let mut batch_no = 0;
@@ -554,7 +611,7 @@ mod tests {
 
     #[test]
     fn compare_generator_reduced_with_full_for_bb3() {
-        let config = Config::builder(3).generate_limit(500_000).build();
+        let config = Config::builder(3).machine_limit(500_000).build();
         let mut generator = GeneratorReduced::new(&config);
         let (machines_reduced, _) = generator.generate_permutation_batch_next();
         let mut generator = GeneratorFull::new(&config);
@@ -605,7 +662,7 @@ mod tests {
         let config = config_bench(n_states);
         let generator = GeneratorReduced::new(&config);
         let result = run_decider_data_provider_single_thread(
-            DeciderLoopV4::decider_run_batch,
+            DeciderCyclerV4::decider_run_batch,
             generator,
             &config,
             &no_worker,
@@ -619,7 +676,7 @@ mod tests {
         let config = config_bench(n_states);
         let generator = GeneratorReduced::new(&config);
         let result = run_decider_data_provider_threaded(
-            DeciderLoopV4::decider_run_batch,
+            DeciderCyclerV4::decider_run_batch,
             generator,
             &config,
             &no_worker,
@@ -632,8 +689,107 @@ mod tests {
         Config::builder(n_states)
             // .generator_batch_size_request_full(GENERATOR_BATCH_SIZE_REQUEST_FULL)
             // .generator_batch_size_request_reduced(GENERATOR_BATCH_SIZE_REQUEST_REDUCED)
-            .generate_limit(200_000_000)
+            .machine_limit(200_000_000)
             // .cpu_utilization(100)
             .build()
+    }
+}
+
+#[cfg(feature = "bb_generator_longest_skip_chain")]
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct Counter {
+    pub machine_id_first: u64,
+    pub machine_id_last: u64,
+    pub counter: usize,
+    pub max: usize,
+    pub max_last_info: usize,
+    pub add_max_to_total_if_higher_than: usize,
+    pub total: usize,
+    pub store_max: usize,
+    pub machines: Vec<MachineInfo>,
+    pub machines_max: Vec<MachineInfo>,
+}
+
+#[cfg(feature = "bb_generator_longest_skip_chain")]
+impl Counter {
+    pub fn add_counter(&mut self, machine: &Machine, reason: PreDeciderReason) {
+        if self.counter == 0 {
+            self.machine_id_first = machine.id();
+        }
+        self.counter += 1;
+        let status = crate::status::MachineStatus::EliminatedPreDecider(reason);
+        let mi = MachineInfo::new(machine.id(), *machine.transition_table(), status);
+        if self.machines.len() < self.store_max {
+            self.machines.push(mi);
+        } else {
+            // if full, store last machine in last position
+            self.machines[self.store_max - 1] = mi;
+        }
+    }
+
+    pub fn reset_counter(&mut self) {
+        self.counter = 0;
+        self.machines.clear();
+    }
+
+    pub fn update_max(&mut self, machine_id_last: u64) {
+        if self.counter >= self.add_max_to_total_if_higher_than {
+            self.total += self.counter;
+            self.machines_max = std::mem::take(&mut self.machines);
+        }
+        if self.counter > self.max {
+            self.max = self.counter;
+            // self.machine_id_first = machine_id_last - self.counter as u64 + 1;
+        }
+        self.machine_id_last = machine_id_last;
+    }
+
+    pub fn machines_max_to_string(&self, max_machines: usize) -> String {
+        // println!("Longest Chain: {}", self.longest_skip_chain);
+        let mut ms = Vec::new();
+        if max_machines == 0 {
+            for m in self.machines_max.iter() {
+                ms.push(m.to_string());
+            }
+        } else {
+            for m in self.machines_max.iter().take(max_machines) {
+                ms.push(m.to_string());
+            }
+        }
+        // last machine
+        if let Some(last) = self.machines_max.last() {
+            ms.push(last.to_string());
+        }
+        ms.join("\n")
+    }
+}
+
+#[cfg(feature = "bb_generator_longest_skip_chain")]
+impl Default for Counter {
+    fn default() -> Self {
+        Self {
+            machine_id_first: Default::default(),
+            machine_id_last: Default::default(),
+            counter: Default::default(),
+            max: Default::default(),
+            max_last_info: Default::default(),
+            add_max_to_total_if_higher_than: 500,
+            total: Default::default(),
+            store_max: 100,
+            machines: Default::default(),
+            machines_max: Default::default(),
+        }
+    }
+}
+
+#[cfg(feature = "bb_generator_longest_skip_chain")]
+impl std::fmt::Display for Counter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Start machine no. {}, last no. {}, max length: {}, reasonable total jump: {}",
+            self.machine_id_first, self.machine_id_last, self.max, self.total
+        )
     }
 }
