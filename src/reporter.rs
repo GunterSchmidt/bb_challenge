@@ -179,21 +179,42 @@ pub trait ReportProgress {
 pub struct ReportProgressStandard;
 
 impl ReportProgressStandard {
-    fn get_5_min_average(&self, progress_info: &ProgressInfo) -> String {
-        let average_300 = progress_info.progress_average_per_sec(300);
-        let s_avg = match average_300 {
+    fn average_for_minutes_to_string(
+        &self,
+        minutes: usize,
+        progress_info: &ProgressInfo,
+    ) -> String {
+        let average = progress_info.progress_average_per_sec(minutes as u64 * 60);
+        let s_avg = match average {
             Some(a) => {
                 let processed = progress_info.progress_data.last().unwrap().processed;
-                let remaining_300 =
+                let remaining =
                     Duration::from_secs_f64((progress_info.total - processed) as f64 / a);
                 format!(
-                    ", left 5 min avg {}",
-                    format_duration_hhmmss_ms(remaining_300, false)
+                    ", left {minutes} min avg {}",
+                    format_duration_hhmmss_ms(remaining, false)
                 )
             }
             None => String::new(),
         };
         s_avg
+    }
+
+    pub fn remaining_estimate_for_minutes(
+        &self,
+        minutes: usize,
+        progress_info: &ProgressInfo,
+    ) -> Option<Duration> {
+        let average = progress_info.progress_average_per_sec(minutes as u64 * 60);
+        match average {
+            Some(a) => {
+                let processed = progress_info.progress_data.last().unwrap().processed;
+                Some(Duration::from_secs_f64(
+                    (progress_info.total - processed) as f64 / a,
+                ))
+            }
+            None => None,
+        }
     }
 }
 
@@ -208,17 +229,38 @@ impl ReportProgress for ReportProgressStandard {
         // estimate time to run
         let dur_total = progress_info.start_time.elapsed();
         let p_per_sec = processed as f64 / dur_total.as_secs_f64();
-        let remaining =
+        let remaining_est_total =
             Duration::from_secs_f64((progress_info.total - processed) as f64 / p_per_sec);
-
-        format!(
-            "Working: {} / {} ({percent:.1}%), left {}{}, runtime {}", // , end at {:?}",
-            processed.to_formatted_string(&locale),
-            progress_info.total.to_formatted_string(&locale),
-            format_duration_hhmmss_ms(remaining, false),
-            self.get_5_min_average(&progress_info),
-            format_duration_hhmmss_ms(dur_total, false)
-        )
+        let remaining_est_1m = self.remaining_estimate_for_minutes(1, &progress_info);
+        let remaining_est_5m = self.remaining_estimate_for_minutes(5, &progress_info);
+        if remaining_est_1m.is_none() {
+            format!(
+                "Working: {} / {} ({percent:.1}%), left {}, runtime {}", // , end at {:?}",
+                processed.to_formatted_string(&locale),
+                progress_info.total.to_formatted_string(&locale),
+                format_duration_hhmmss_ms(remaining_est_total, false),
+                format_duration_hhmmss_ms(dur_total, false)
+            )
+        } else if remaining_est_5m.is_none() {
+            format!(
+                "Working: {} / {} ({percent:.1}%), left total {}, avg 1 min {}, runtime {}", // , end at {:?}",
+                processed.to_formatted_string(&locale),
+                progress_info.total.to_formatted_string(&locale),
+                format_duration_hhmmss_ms(remaining_est_total, false),
+                format_duration_hhmmss_ms(remaining_est_1m.unwrap(), false),
+                format_duration_hhmmss_ms(dur_total, false)
+            )
+        } else {
+            format!(
+                "Working: {} / {} ({percent:.1}%), left total {}, avg 1 min {}, avg 5 min {}, runtime {}", // , end at {:?}",
+                processed.to_formatted_string(&locale),
+                progress_info.total.to_formatted_string(&locale),
+                format_duration_hhmmss_ms(remaining_est_total, false),
+                format_duration_hhmmss_ms(remaining_est_1m.unwrap(), false),
+                format_duration_hhmmss_ms(remaining_est_5m.unwrap(), false),
+                format_duration_hhmmss_ms(dur_total, false)
+            )
+        }
     }
 
     fn report_progress_stats(

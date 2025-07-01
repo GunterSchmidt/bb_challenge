@@ -256,7 +256,7 @@ impl DataProvider for GeneratorFull {
     }
 
     fn requires_pre_decider_check(&self) -> PreDeciderRun {
-        PreDeciderRun::RunWithStart0rb1rbOnly
+        PreDeciderRun::RunStartBRightOnly
     }
 
     fn returns_pre_decider_count(&self) -> bool {
@@ -390,7 +390,7 @@ mod tests {
         let config = config_bench(n_states);
         let generator = GeneratorFull::new(&config);
         let result = run_decider_data_provider_single_thread(
-            DeciderCyclerV4::decider_run_batch,
+            &DeciderCyclerV4::decider_run_batch,
             generator,
             &config,
             &no_worker,

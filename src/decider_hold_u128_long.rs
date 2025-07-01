@@ -7,7 +7,7 @@ use crate::{
         Config, IdBig, StepTypeBig, StepTypeSmall, MAX_TAPE_GROWTH, TAPE_SIZE_INIT_CELL_BLOCKS,
     },
     decider::{self, Decider},
-    decider_result::BatchResult,
+    decider_result::{BatchData, BatchResult},
     machine::Machine,
     pre_decider::PreDeciderRun,
     status::{MachineStatus, UndecidedReason},
@@ -17,6 +17,7 @@ use crate::{
         TL_POS_START_128,
     },
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_SYM2_START},
+    ResultUnitEndReason, DECIDER_HOLD_ID,
 };
 
 /// This decider runs on a 128-Bit number and moves data out to a long tape (Vec). \
@@ -669,6 +670,14 @@ impl DeciderHoldU128Long {
 }
 
 impl Decider for DeciderHoldU128Long {
+    fn id(&self) -> usize {
+        DECIDER_HOLD_ID
+    }
+
+    fn name(&self) -> &str {
+        "Decider Hold Long Tape"
+    }
+
     // tape_long_bits in machine?
     // TODO counter: longest loop
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
@@ -689,8 +698,10 @@ impl Decider for DeciderHoldU128Long {
         decider::decider_generic_run_batch(decider, machines, run_predecider, config)
     }
 
-    fn name(&self) -> &str {
-        "Decider U128 Long"
+    fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {
+        let decider = Self::new(batch_data.config);
+        batch_data.decider_id = decider.id();
+        decider::decider_generic_run_batch_v2(decider, batch_data)
     }
 
     // fn new_from_self(&self) -> Self {

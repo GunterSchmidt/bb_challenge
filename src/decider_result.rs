@@ -6,6 +6,7 @@ use crate::{
     generator,
     machine::Machine,
     machine_info::MachineInfo,
+    pre_decider::PreDeciderRun,
     reporter::format_duration_hhmmss_ms,
     status::{EndlessReason, MachineStatus, PreDeciderReason},
     utils::user_locale,
@@ -17,6 +18,8 @@ const LEVEL_1_CHAR: char = '\u{2022}';
 const NUM_MAX_MACHINES_TO_DISPLAY_IN_RESULT: usize = 10;
 const NUM_UNDECIDED_MACHINES_TO_DISPLAY_IN_RESULT: usize = 10;
 
+pub type ResultDeciderStats = std::result::Result<DeciderResultStats, String>;
+
 // TODO result print undecided
 
 #[non_exhaustive]
@@ -24,29 +27,46 @@ const NUM_UNDECIDED_MACHINES_TO_DISPLAY_IN_RESULT: usize = 10;
 // TODO allow error?
 pub enum EndReason {
     AllMachinesChecked,
-    Error(String),
-    // This is a temporary state indicating the last batch needs to be evaluated, but gives a stop indication.
+    /// Error Machine Id, msg
+    Error(u64, String),
+    /// This is a temporary state indicating the last batch needs to be evaluated, but gives a stop indication.
     IsLastBatch,
     MachineLimitReached(u64),
-    // This is usually an unexpected end when the total is not reached.
+    /// This is usually an unexpected end when the total is not reached.
+    NoBatchData,
     NoMoreData,
     StopRequested(String),
     UndecidedLimitReached(usize),
     #[default]
     Undefined,
-    // not ended yet
+    /// not ended yet
     Working,
+}
+
+// Implement std::convert::From for AppError; from io::Error
+impl From<std::io::Error> for EndReason {
+    fn from(error: std::io::Error) -> Self {
+        Self::Error(0, error.to_string())
+    }
 }
 
 impl Display for EndReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EndReason::AllMachinesChecked => write!(f, "All machines checked"),
-            EndReason::Error(message) => write!(f, "Error: {message}"),
+            EndReason::Error(m_id, message) => {
+                let ms = if *m_id != 0 {
+                    format!("Machine Id: {m_id}, ")
+                } else {
+                    String::new()
+                };
+                write!(f, "{ms}Error: {message}")
+            }
             EndReason::IsLastBatch => write!(f, "Last batch indication. Should be internal only"),
             EndReason::MachineLimitReached(limit) => {
                 write!(f, "Limit of {} machines reached", limit)
             }
+            EndReason::NoBatchData => write!(f, "No data in this batch"),
             EndReason::NoMoreData => write!(f, "No more data found"),
             EndReason::StopRequested(message) => write!(f, "Stop requested: {message}"),
             EndReason::UndecidedLimitReached(limit) => {
@@ -61,6 +81,7 @@ impl Display for EndReason {
 
 /// The result of the decider. It holds a number of counters for each result type and may carry the
 /// max steps and undecided machines.
+/// This is always returned. end_reason should give error information if any.
 #[derive(Debug, Default)]
 pub struct DeciderResultStats {
     /// Number of machines which have been tested by the deciders (not pre-deciders) or have been eliminated during
@@ -214,8 +235,8 @@ impl DeciderResultStats {
                     self.pre_decider_count.num_simple_start_cycle += 1
                 }
                 PreDeciderReason::StartRecursive => self.pre_decider_count.num_start_recursive += 1,
-                PreDeciderReason::StartStateBandRight => {
-                    self.pre_decider_count.num_start_state_b_and_right += 1
+                PreDeciderReason::NotStartStateBRight => {
+                    self.pre_decider_count.num_not_start_state_b_right += 1
                 }
                 PreDeciderReason::WritesOnlyZero => {
                     self.pre_decider_count.num_writes_only_zero += 1
@@ -746,11 +767,12 @@ pub struct PreDeciderCount {
     pub num_not_all_states_used: u64,
     pub num_not_exactly_one_hold_condition: u64,
     pub num_not_generated: u64,
+    pub num_not_start_state_b_right: u64,
     pub num_only_one_direction: u64,
     pub num_simple_start_cycle: u64,
-    pub num_start_state_b_and_right: u64,
     pub num_start_recursive: u64,
     pub num_writes_only_zero: u64,
+    // TODO num_hold or DeciderStats
 }
 
 impl PreDeciderCount {
@@ -761,7 +783,7 @@ impl PreDeciderCount {
         self.num_only_one_direction += other.num_only_one_direction;
         self.num_simple_start_cycle += other.num_simple_start_cycle;
         self.num_start_recursive += other.num_start_recursive;
-        self.num_start_state_b_and_right += other.num_start_state_b_and_right;
+        self.num_not_start_state_b_right += other.num_not_start_state_b_right;
         self.num_writes_only_zero += other.num_writes_only_zero;
     }
 
@@ -771,7 +793,7 @@ impl PreDeciderCount {
             + self.num_not_generated
             + self.num_only_one_direction
             + self.num_simple_start_cycle
-            + self.num_start_state_b_and_right
+            + self.num_not_start_state_b_right
             + self.num_start_recursive
             + self.num_writes_only_zero
     }
@@ -818,8 +840,8 @@ impl Display for PreDeciderCount {
                 }
                 s.push('\n');
             }
-            if self.num_start_state_b_and_right > 0 {
-                buf.write_formatted(&self.num_start_state_b_and_right, &locale);
+            if self.num_not_start_state_b_right > 0 {
+                buf.write_formatted(&self.num_not_start_state_b_right, &locale);
                 s.push_str(
                     format!(
                         "    - Start must be 0RB or 1RB:    {:>NUM_SHORT_LEN$}\n",
@@ -1132,6 +1154,7 @@ impl Display for StepMaxResult {
     }
 }
 
+#[derive(Debug, Default)]
 pub struct MachinesUndecided {
     /// All undecided machines of one batch run. \
     /// Machines can be used directly in next batch run with undecided only.
@@ -1163,14 +1186,38 @@ impl MachinesUndecided {
     }
 }
 
+// impl Default for MachinesUndecided {
+//     fn default() -> Self {
+//         Self {
+//             machines: Default::default(),
+//             states: Default::default(),
+//         }
+//     }
+// }
+
 /// Result of a batch run with results for all machines in the batch.
 /// All undecided Turing machines are recorded in detail.
 pub struct BatchResult {
-    pub batch_no: usize,
-    pub num_batches: usize,
     pub result_decided: DeciderResultStats,
     pub machines_undecided: MachinesUndecided,
+    pub batch_no: usize,
+    pub num_batches: usize,
     pub decider_name: String,
+}
+
+/// Result of a batch run with results for all machines in the batch.
+/// All undecided Turing machines are recorded in detail.
+// TODO reduce pub fields
+pub struct BatchData<'a> {
+    pub machines: &'a [Machine],
+    pub result_decided: DeciderResultStats,
+    pub machines_undecided: MachinesUndecided,
+    /// Current batch no, first batch is 0.
+    pub batch_no: usize,
+    pub num_batches: usize,
+    pub decider_id: usize,
+    pub config: &'a Config,
+    pub run_predecider: PreDeciderRun,
 }
 
 pub fn result_max_steps_known(n_states: usize) -> StepTypeBig {

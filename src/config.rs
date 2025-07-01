@@ -103,6 +103,11 @@ impl Config {
         ConfigBuilder::new(n_states)
     }
 
+    /// Builder to initialize required values.
+    pub fn builder_from_config(config: &Config) -> ConfigBuilder {
+        ConfigBuilder::new_config(config)
+    }
+
     /// Default values for testing purposes. Better use builder.
     pub fn new_default(n_states: usize) -> Config {
         let step_limit = Self::step_limit_hold_default(n_states);
@@ -284,6 +289,12 @@ impl Default for Config {
     }
 }
 
+// impl From<&Config> for Config {
+//     fn from(value: &Config) -> Self {
+//         value.clone();
+//     }
+// }
+
 // pub struct ConfigKeyValue {
 //     key: String,
 //     value: String,
@@ -314,6 +325,26 @@ impl ConfigBuilder {
         Self {
             n_states,
             ..Default::default() // All: None,
+        }
+    }
+
+    fn new_config(config: &Config) -> ConfigBuilder {
+        Self {
+            n_states: config.n_states,
+            batch_size: Some(config.batch_size),
+            step_limit_hold: Some(config.step_limit_hold),
+            step_limit_bouncer: Some(config.step_limit_bouncer),
+            step_limit_cycler: Some(config.step_limit_cycler),
+            tape_size_limit: Some(config.tape_size_limit),
+            machines_limit: Some(config.machines_limit),
+            file_id_range: config.file_id_range.clone(),
+            generator_batch_size_request_full: Some(config.generator_full_batch_size_request),
+            generator_batch_size_request_reduced: Some(config.generator_reduced_batch_size_request),
+            limit_machines_max_steps: Some(config.limit_machines_max_steps),
+            limit_machines_undecided: Some(config.limit_machines_undecided),
+            cpu_utilization_percent: Some(config.cpu_utilization_percent),
+            config_key_value: Some(config.config_key_value.clone()),
+            use_local_time: Some(config.use_local_time),
         }
     }
 

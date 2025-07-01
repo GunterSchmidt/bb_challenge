@@ -321,9 +321,9 @@ impl Generator for GeneratorReduced {
                                 // This one does not happen here, it is included in "not generated".
                                 self.pre_decider_count_batch.num_start_recursive += 1;
                             }
-                            PreDeciderReason::StartStateBandRight => {
+                            PreDeciderReason::NotStartStateBRight => {
                                 // This one does not happen here, it is included in "not generated".
-                                self.pre_decider_count_batch.num_start_state_b_and_right += 1;
+                                self.pre_decider_count_batch.num_not_start_state_b_right += 1;
                             }
                             PreDeciderReason::WritesOnlyZero => {
                                 self.pre_decider_count_batch.num_writes_only_zero += 1;
@@ -662,7 +662,7 @@ mod tests {
         let config = config_bench(n_states);
         let generator = GeneratorReduced::new(&config);
         let result = run_decider_data_provider_single_thread(
-            DeciderCyclerV4::decider_run_batch,
+            &DeciderCyclerV4::decider_run_batch,
             generator,
             &config,
             &no_worker,

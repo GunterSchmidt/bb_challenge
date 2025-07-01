@@ -1,16 +1,18 @@
-pub mod config;
-pub mod decider;
-pub mod decider_bouncer;
 // pub mod decider_engine;
-pub mod data_provider;
-pub mod data_provider_threaded;
 // pub mod decider_expanding_loop;
-pub mod decider_cycler_v4;
-pub mod decider_hold_u128_long;
 // pub mod decider_u128;
 // pub mod decider_u128_long;
+// pub mod sub_decider;
+// pub mod sub_decider_loop_v4;
 pub mod arg_handler;
 pub mod bb_file_reader;
+pub mod config;
+pub mod data_provider;
+pub mod data_provider_threaded;
+pub mod decider;
+pub mod decider_bouncer;
+pub mod decider_cycler_v4;
+pub mod decider_hold_u128_long;
 pub mod decider_result;
 pub mod decider_result_worker;
 pub mod decider_u64;
@@ -21,12 +23,18 @@ pub mod generator_reduced;
 pub mod machine;
 pub mod machine_info;
 pub mod pre_decider;
+pub mod pre_decider_v2;
 pub mod reporter;
 pub mod status;
-// pub mod sub_decider;
-// pub mod sub_decider_loop_v4;
 pub mod tape_utils;
 pub mod test;
 pub mod transition_generic;
 pub mod transition_symbol2;
 pub mod utils;
+
+pub type ResultUnitEndReason = Result<(), decider_result::EndReason>;
+
+// Deciders in this library
+pub const DECIDER_HOLD_ID: usize = 10;
+pub const DECIDER_CYCLER_ID: usize = 20;
+pub const DECIDER_BOUNCER_ID: usize = 20;

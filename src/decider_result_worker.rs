@@ -1,17 +1,18 @@
 // TODO Function which is called for the results.
 // For performance reasons this should be done after each package and in a separate thread.
 
+use std::fs::File;
 use std::io::Write;
-use std::{fmt::Display, fs::File};
 
 use chrono::{DateTime, Local, Utc};
 
+use crate::decider_result::{BatchData, EndReason};
 use crate::{
     config::{Config, PATH_DATA},
     decider_result::BatchResult,
 };
 
-pub type ResultWorker = std::result::Result<(), ResultWorkerError>;
+pub type ResultWorker = std::result::Result<(), EndReason>;
 pub type ResultString = std::result::Result<(), String>;
 
 pub fn save_machines_undecided(batch_result: &BatchResult, config: &Config) -> ResultWorker {
@@ -74,7 +75,7 @@ pub fn save_machines_undecided(batch_result: &BatchResult, config: &Config) -> R
     Ok(())
 }
 
-fn open_file_for_append(path: &str, file_name: &str) -> Result<File, ResultWorkerError> {
+fn open_file_for_append(path: &str, file_name: &str) -> Result<File, EndReason> {
     // open file for append
     let file_path = path.to_owned() + file_name;
     let r = std::fs::OpenOptions::new()
@@ -84,10 +85,10 @@ fn open_file_for_append(path: &str, file_name: &str) -> Result<File, ResultWorke
 
     match r {
         Ok(file) => Ok(file),
-        Err(e) => {
-            let message = e.to_string() + ":" + file_path.as_str();
-            Err(ResultWorkerError::FileError(message))
-        }
+        Err(e) => Err(EndReason::Error(
+            0,
+            e.to_string() + ":" + file_path.as_str(),
+        )),
     }
 }
 
@@ -122,27 +123,35 @@ pub fn no_worker(_batch_result: &BatchResult, _config: &Config) -> ResultWorker 
     Ok(())
 }
 
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum ResultWorkerError {
-    StopRun(String),
-    FileError(String),
+/// This is a dummy function to pass when no worker is required.
+pub fn no_worker_v2(_batch_result: &BatchData) -> ResultWorker {
+    Ok(())
 }
 
-impl std::error::Error for ResultWorkerError {}
-
-// Implement std::convert::From for AppError; from io::Error
-impl From<std::io::Error> for ResultWorkerError {
-    fn from(error: std::io::Error) -> Self {
-        ResultWorkerError::FileError(error.to_string())
-    }
-}
-
-impl Display for ResultWorkerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ResultWorkerError::StopRun(message) => write!(f, "{message}"),
-            ResultWorkerError::FileError(message) => write!(f, "{message}"),
-        }
-    }
-}
+// #[derive(Debug)]
+// pub struct ResultWorkerError {
+//     machine_id: IdBig,
+//     message: String,
+// }
+//
+// impl std::error::Error for ResultWorkerError {}
+//
+// // Implement std::convert::From for AppError; from io::Error
+// impl From<std::io::Error> for ResultWorkerError {
+//     fn from(error: std::io::Error) -> Self {
+//         ResultWorkerError {
+//             machine_id: 0,
+//             message: error.to_string(),
+//         }
+//     }
+// }
+//
+// impl Display for ResultWorkerError {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         write!(
+//             f,
+//             "Machine Id: {}, Error: {}",
+//             self.machine_id, self.message
+//         )
+//     }
+// }

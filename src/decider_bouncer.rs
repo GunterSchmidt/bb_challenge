@@ -12,10 +12,12 @@ use std::io::Write;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES, N_STATES_DEFAULT},
     decider::{self, Decider},
+    decider_result::BatchData,
     machine::Machine,
     machine_info::MachineInfo,
     status::{EndlessReason, ExpandingBouncerReason, MachineStatus, UndecidedReason},
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_0RA},
+    ResultUnitEndReason, DECIDER_BOUNCER_ID,
 };
 
 #[cfg(debug_assertions)]
@@ -852,6 +854,14 @@ impl Default for DeciderBouncer {
 }
 
 impl Decider for DeciderBouncer {
+    fn id(&self) -> usize {
+        DECIDER_BOUNCER_ID
+    }
+
+    fn name(&self) -> &str {
+        "Decider Bouncer"
+    }
+
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
         self.decide_machine_main(machine)
     }
@@ -870,13 +880,11 @@ impl Decider for DeciderBouncer {
         decider::decider_generic_run_batch(decider, machines, run_predecider, config)
     }
 
-    fn name(&self) -> &str {
-        "Decider Bouncer"
+    fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {
+        let decider = Self::new(batch_data.config);
+        batch_data.decider_id = decider.id();
+        decider::decider_generic_run_batch_v2(decider, batch_data)
     }
-
-    // fn new_from_self(&self) -> Self {
-    //     todo!()
-    // }
 }
 
 /// Single Step when run, records the state before to identify loops

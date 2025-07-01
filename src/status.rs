@@ -8,10 +8,10 @@ pub enum PreDeciderReason {
     None,
     NotAllStatesUsed,
     NotExactlyOneHoldCondition,
+    NotStartStateBRight,
     OnlyOneDirection,
     SimpleStartCycle,
     StartRecursive,
-    StartStateBandRight,
     WritesOnlyZero,
 }
 

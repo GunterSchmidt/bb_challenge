@@ -7,11 +7,12 @@ use crate::tape_utils::U64Ext;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES},
     decider::{self, Decider, DeciderMinimal},
-    decider_result::BatchResult,
+    decider_result::{BatchData, BatchResult},
     machine::Machine,
     pre_decider::PreDeciderRun,
     status::{EndlessReason, MachineStatus, UndecidedReason},
     transition_symbol2::{DirectionType, TransitionSymbol2, TransitionType},
+    ResultUnitEndReason, DECIDER_CYCLER_ID,
 };
 
 // #[cfg(debug_assertions)]
@@ -40,13 +41,30 @@ pub struct DeciderCyclerV4 {
 }
 
 impl DeciderCyclerV4 {
-    pub fn new(step_limit: StepTypeSmall) -> Self {
+    pub fn new(config: &Config) -> Self {
+        // TODO reasoning for size, 510 was for BB5
+        let cap = (config.step_limit_cycler() as usize).min(MAX_INIT_CAPACITY);
+        Self {
+            steps: Vec::with_capacity(cap),
+            maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
+            step_limit: config.step_limit_cycler(),
+        }
+    }
+
+    pub fn new_step_limit(step_limit: StepTypeSmall) -> Self {
         // TODO reasoning for size, 510 was for BB5
         let cap = (step_limit as usize).min(MAX_INIT_CAPACITY);
         Self {
             steps: Vec::with_capacity(cap),
             maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
             step_limit,
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.steps.clear();
+        for map in self.maps_1d.iter_mut() {
+            map.clear();
         }
     }
 
@@ -83,6 +101,22 @@ impl DeciderMinimal for DeciderCyclerV4 {
 }
 
 impl Decider for DeciderCyclerV4 {
+    fn id(&self) -> usize {
+        DECIDER_CYCLER_ID
+    }
+
+    fn name(&self) -> &str {
+        "Decider Cycler"
+    }
+
+    //     fn new_from_config(config: &Config) -> Self {
+    //         Self::new(config)
+    //     }
+    //
+    //     fn new_from_self(&self) -> Self {
+    //         Self::new_step_limit(self.step_limit)
+    //     }
+
     // tape_long_bits in machine?
     // TODO counter: longest loop
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
@@ -99,7 +133,7 @@ impl Decider for DeciderCyclerV4 {
 
         // num steps, same as steps, but steps can be deactivated after a while
         // let mut steps: Vec<Step> = Vec::with_capacity(STEP_LIMIT_DECIDER_LOOP);
-        self.steps.clear();
+        self.clear();
 
         // tape for storage in Step with cell before transition at position u32 top bit
         // this tape shifts in every step, so that the head is always at bit 31
@@ -117,9 +151,6 @@ impl Decider for DeciderCyclerV4 {
         // let mut maps: [[Vec<usize>; 2]; MAX_STATES + 1] =
         //     core::array::from_fn(|_| [Vec::new(), Vec::new()]);
         // let mut maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)] = core::array::from_fn(|_| Vec::new());
-        for map in self.maps_1d.iter_mut() {
-            map.clear();
-        }
         // Initialize transition with A0 as start
         let mut tr = TransitionSymbol2 {
             transition: crate::transition_symbol2::TRANSITION_0RA,
@@ -405,7 +436,7 @@ impl Decider for DeciderCyclerV4 {
     }
 
     fn decide_single_machine(machine: &Machine, config: &Config) -> MachineStatus {
-        let mut d = Self::new(config.step_limit_cycler());
+        let mut d = Self::new_step_limit(config.step_limit_cycler());
         d.decide_machine(machine)
     }
 
@@ -414,12 +445,14 @@ impl Decider for DeciderCyclerV4 {
         run_predecider: PreDeciderRun,
         config: &Config,
     ) -> Option<BatchResult> {
-        let decider = Self::new(config.step_limit_cycler());
+        let decider = Self::new_step_limit(config.step_limit_cycler());
         decider::decider_generic_run_batch(decider, machines, run_predecider, config)
     }
 
-    fn name(&self) -> &str {
-        "Decider Loop V4"
+    fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {
+        let decider = Self::new(batch_data.config);
+        batch_data.decider_id = decider.id();
+        decider::decider_generic_run_batch_v2(decider, batch_data)
     }
 
     // fn new_from_self(&self) -> Self {
@@ -527,7 +560,7 @@ mod tests {
 
         let machine = Machine::from_string_tuple(0, &transitions);
         let config = Config::new_default(machine.n_states());
-        let mut d = DeciderCyclerV4::new(config.step_limit_cycler());
+        let mut d = DeciderCyclerV4::new_step_limit(config.step_limit_cycler());
         let machine_status = d.decide_machine(&machine);
         assert_eq!(machine_status, MachineStatus::DecidedHolds(107));
     }
@@ -543,7 +576,7 @@ mod tests {
 
         let machine = Machine::from_string_tuple(32538705, &transitions);
         let config = Config::new_default(machine.n_states());
-        let mut d = DeciderCyclerV4::new(config.step_limit_cycler());
+        let mut d = DeciderCyclerV4::new_step_limit(config.step_limit_cycler());
         let machine_status = d.decide_machine(&machine);
         println!("result: {}", machine_status);
         let ok = match machine_status {

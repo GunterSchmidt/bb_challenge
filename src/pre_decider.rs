@@ -7,17 +7,19 @@
 
 use crate::{
     config::MAX_STATES,
+    decider_result::BatchData,
     status::{MachineStatus, PreDeciderReason},
     transition_symbol2::{
         TransitionSymbol2, TransitionTableSymbol2, STATE_HOLD_SYM2, TRANSITIONS_FOR_A0,
     },
+    ResultUnitEndReason,
 };
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum PreDeciderRun {
     DoNotRun,
-    NormalRun,
-    RunWithStart0rb1rbOnly,
+    RunNormal,
+    RunStartBRightOnly,
 }
 
 /// This struct allows the predecider to be put in the decider chain. It is not required,
@@ -57,34 +59,45 @@ impl crate::decider::DeciderMinimal for PreDecider {
     //     }
 }
 
-impl crate::decider::Decider for PreDecider {
-    // fn new_from_self(&self) -> Self {
-    //     todo!()
-    // }
-
-    fn decide_machine(&mut self, machine: &crate::machine::Machine) -> MachineStatus {
-        todo!()
-    }
-
-    fn decide_single_machine(
-        machine: &crate::machine::Machine,
-        config: &crate::config::Config,
-    ) -> MachineStatus {
-        todo!()
-    }
-
-    fn decider_run_batch(
-        machines: &[crate::machine::Machine],
-        run_predecider: PreDeciderRun,
-        config: &crate::config::Config,
-    ) -> Option<crate::decider_result::BatchResult> {
-        todo!()
-    }
-
-    fn name(&self) -> &str {
-        todo!()
-    }
-}
+// impl crate::decider::Decider for PreDecider {
+//     // fn new_from_self(&self) -> Self {
+//     //     todo!()
+//     // }
+//
+//     fn decide_machine(&mut self, machine: &crate::machine::Machine) -> MachineStatus {
+//         todo!()
+//     }
+//
+//     fn decide_single_machine(
+//         machine: &crate::machine::Machine,
+//         config: &crate::config::Config,
+//     ) -> MachineStatus {
+//         todo!()
+//     }
+//
+//     fn decider_run_batch(
+//         machines: &[crate::machine::Machine],
+//         run_predecider: PreDeciderRun,
+//         config: &crate::config::Config,
+//     ) -> Option<crate::decider_result::BatchResult> {
+//         todo!()
+//     }
+//
+//     fn name(&self) -> &str {
+//         todo!()
+//     }
+//
+//     fn id(&self) -> usize {
+//         todo!()
+//     }
+//
+//     fn decider_run_batch_v2(
+//         machines: &[crate::machine::Machine],
+//         batch_data: &mut BatchData,
+//     ) -> ResultUnitEndReason {
+//         todo!()
+//     }
+// }
 
 // TODO same checks, e.g. only right, when not all states are used
 // TODO Hypothesis: Longest contains self referencing element, e.g. BB5 MAX B1, D1
@@ -114,7 +127,7 @@ pub fn run_pre_decider_strict(table: &TransitionTableSymbol2) -> MachineStatus {
     if table.transition_start() != TRANSITIONS_FOR_A0[0]
         && table.transition_start() != TRANSITIONS_FOR_A0[1]
     {
-        return MachineStatus::EliminatedPreDecider(PreDeciderReason::StartStateBandRight);
+        return MachineStatus::EliminatedPreDecider(PreDeciderReason::NotStartStateBRight);
     }
 
     let n_states = table.n_states();

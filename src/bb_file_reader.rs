@@ -342,7 +342,7 @@ impl DataProvider for BBDataProvider {
         let machines = match self.bb_file_reader.read_machine_range(self.id_next, count) {
             Ok(m) => m,
             Err(e) => {
-                result.end_reason = EndReason::Error(e.to_string());
+                result.end_reason = EndReason::Error(0, e.to_string());
                 return result;
             }
         };
@@ -375,7 +375,7 @@ impl DataProvider for BBDataProvider {
     }
 
     fn requires_pre_decider_check(&self) -> PreDeciderRun {
-        PreDeciderRun::NormalRun
+        PreDeciderRun::RunNormal
     }
 
     fn returns_pre_decider_count(&self) -> bool {

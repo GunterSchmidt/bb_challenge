@@ -10,18 +10,21 @@ use crate::{
     data_provider_threaded::DataProviderThreaded,
     decider_cycler_v4::DeciderCyclerV4,
     decider_result::{
-        BatchResult, DeciderResultStats, DurationDataProvider, EndReason, MachinesUndecided,
-        PreDeciderCount,
+        BatchData, BatchResult, DeciderResultStats, DurationDataProvider, EndReason,
+        MachinesUndecided, PreDeciderCount,
     },
-    decider_result_worker::{self, ResultWorker},
+    decider_result_worker::ResultWorker,
     machine::Machine,
     pre_decider::{run_pre_decider_simple, run_pre_decider_strict, PreDecider, PreDeciderRun},
     reporter::Reporter,
     status::MachineStatus,
     utils::num_cpus_percentage,
+    ResultUnitEndReason,
 };
 
 pub type ResultDecider = std::result::Result<(), DeciderError>;
+pub type FnDeciderRunBatchV2 = fn(&mut BatchData) -> ResultUnitEndReason;
+pub type FnResultWorker = fn(&BatchData) -> ResultUnitEndReason;
 
 /// The deciders need to return Self to be able to make a new decider for each thread.
 /// This makes them not object save and thus cannot be passed in a Vec.
@@ -40,11 +43,70 @@ pub enum DeciderEnumV2<'a> {
 
 // TODO implement
 pub struct DeciderConfig<'a> {
-    f_decider: fn(&[Machine], PreDeciderRun, &Config) -> Option<BatchResult>,
+    f_decider: FnDeciderRunBatchV2,
     // TODO move execution to thread, requires thread safety
-    f_result_worker:
-        &'a fn(&BatchResult, &Config) -> Result<(), decider_result_worker::ResultWorkerError>,
+    f_result_worker: FnResultWorker,
     config: &'a Config,
+}
+
+impl<'a> DeciderConfig<'a> {
+    pub fn new(
+        f_decider: FnDeciderRunBatchV2,
+        f_result_worker: FnResultWorker,
+        config: &'a Config,
+    ) -> Self {
+        Self {
+            f_decider,
+            f_result_worker,
+            config,
+        }
+    }
+
+    // pub fn new_no_result_worker(
+    //     f_decider: &'a fn(&[Machine], PreDeciderRun, &Config) -> Option<BatchResult>,
+    //     config: &'a Config,
+    // ) -> Self {
+    //     let f_result_worker = decider_result_worker::no_worker;
+    //     Self {
+    //         f_decider,
+    //         f_result_worker: &f_result_worker,
+    //         config,
+    //     }
+    // }
+
+    pub fn f_decider(&self) -> FnDeciderRunBatchV2 {
+        self.f_decider
+    }
+
+    pub fn f_result_worker(&self) -> FnResultWorker {
+        self.f_result_worker
+    }
+
+    pub fn config(&self) -> &'a Config {
+        self.config
+    }
+}
+
+pub struct DeciderConfigTest<'a> {
+    // f_decider: &'a fn(&[Machine], PreDeciderRun, &Config) -> Option<BatchResult>,
+    // // TODO move execution to thread, requires thread safety
+    pub f_decider: FnDeciderRunBatchV2,
+    pub f_result_worker: FnResultWorker,
+    pub config: &'a Config,
+}
+
+impl<'a> DeciderConfigTest<'a> {
+    pub fn new(
+        f_decider: FnDeciderRunBatchV2,
+        f_result_worker: FnResultWorker,
+        config: &'a Config,
+    ) -> Self {
+        Self {
+            f_decider,
+            f_result_worker,
+            config,
+        }
+    }
 }
 
 // pub struct DeciderConfigThreaded<'a> {
@@ -65,9 +127,25 @@ pub trait DeciderMinimal {
     fn name_minimal(&self) -> &str;
 }
 
+pub struct DeciderId {
+    pub no: u16,
+    pub name: &'static str,
+}
+
 pub trait Decider {
-    // fn new_from_self(&self, config: &Config) -> Self;
+    // TODO into id, name struct
+    /// Returns the name of this decider
+    fn id(&self) -> usize;
+
+    /// Returns the name of this decider
+    fn name(&self) -> &str;
+
+    // fn new_from_config(config: &Config) -> Self;
     // fn new_from_self(&self) -> Self;
+    // fn new_from_self(&self, config: &Config) -> Self;
+
+    // /// clears any data for a fresh batch (recycle)
+    // fn clear(&mut self);
 
     /// Returns the result of this decider for one single machine. \
     /// Each run must clear self variables as the decider is re-used for all machines (in a batch).
@@ -82,9 +160,14 @@ pub trait Decider {
         config: &Config,
     ) -> Option<BatchResult>;
 
-    /// Returns the name of this decider
-    fn name(&self) -> &str;
+    fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason;
 }
+
+// impl From<&Config> for Decider {
+//     fn from(value: &Config) -> Self {
+//         Self::new_from_config(config)
+//     }
+// }
 
 #[inline]
 pub fn decider_generic_run_batch(
@@ -122,7 +205,7 @@ pub fn decider_generic_run_batch(
                 }
             }
         }
-        PreDeciderRun::NormalRun => {
+        PreDeciderRun::RunNormal => {
             for machine in machines.iter() {
                 let mut status = run_pre_decider_simple(machine.transition_table());
                 if status == MachineStatus::NoDecision {
@@ -139,7 +222,7 @@ pub fn decider_generic_run_batch(
                 }
             }
         }
-        PreDeciderRun::RunWithStart0rb1rbOnly => {
+        PreDeciderRun::RunStartBRightOnly => {
             for machine in machines.iter() {
                 let mut status = run_pre_decider_strict(machine.transition_table());
                 if status == MachineStatus::NoDecision {
@@ -167,6 +250,82 @@ pub fn decider_generic_run_batch(
         machines_undecided,
         decider_name: decider.name().to_string(),
     })
+}
+
+#[inline]
+pub fn decider_generic_run_batch_v2(
+    mut decider: impl Decider,
+    batch_data: &mut BatchData,
+) -> ResultUnitEndReason {
+    if batch_data.machines.is_empty() {
+        return Err(EndReason::NoBatchData);
+    }
+    // let mut machines_undecided: Vec<MachineUndecided> = Vec::with_capacity(machines.len());
+    // TODO optimize undecided. Possible collect only ids, if count is same then to_vec for machines.
+    // let cap = if batch_data.run_predecider != PreDeciderRun::DoNotRun {
+    //     // loop decider should run first, which eliminates most machines
+    //     batch_data.machines.len() / 100
+    // } else {
+    //     batch_data.machines.len()
+    // };
+    // let mut machines_undecided = MachinesUndecided::new(cap);
+    // let mut result_decided = DeciderResultStats::new(config);
+    match batch_data.run_predecider {
+        PreDeciderRun::DoNotRun => {
+            for machine in batch_data.machines.iter() {
+                // TODO self_ref
+                let status = decider.decide_machine(machine);
+                match status {
+                    MachineStatus::Undecided(_, _, _) => {
+                        batch_data.machines_undecided.machines.push(*machine);
+                        batch_data.machines_undecided.states.push(status);
+                    }
+                    _ => {
+                        batch_data.result_decided.add(machine, &status);
+                    }
+                }
+            }
+        }
+        PreDeciderRun::RunNormal => {
+            for machine in batch_data.machines.iter() {
+                let mut status = run_pre_decider_simple(machine.transition_table());
+                if status == MachineStatus::NoDecision {
+                    status = decider.decide_machine(machine);
+                }
+                match status {
+                    MachineStatus::Undecided(_, _, _) => {
+                        batch_data.machines_undecided.machines.push(*machine);
+                        batch_data.machines_undecided.states.push(status);
+                    }
+                    _ => {
+                        batch_data.result_decided.add(machine, &status);
+                    }
+                }
+            }
+        }
+        PreDeciderRun::RunStartBRightOnly => {
+            for machine in batch_data.machines.iter() {
+                let mut status = run_pre_decider_strict(machine.transition_table());
+                if status == MachineStatus::NoDecision {
+                    status = decider.decide_machine(machine);
+                }
+                match status {
+                    MachineStatus::Undecided(_, _, _) => {
+                        batch_data.machines_undecided.machines.push(*machine);
+                        batch_data.machines_undecided.states.push(status);
+                    }
+                    _ => {
+                        batch_data.result_decided.add(machine, &status);
+                    }
+                }
+            }
+        }
+    }
+    batch_data
+        .result_decided
+        .add_total(batch_data.machines.len() as u64);
+
+    Ok(())
 }
 
 #[derive(Default)]
@@ -199,7 +358,7 @@ pub struct ThreadResultDecider {
 /// Runs the given decider in a single thread.
 // This is just a convenience function to avoid creating a vector of functions to call.
 pub fn run_decider_data_provider_single_thread<F, W>(
-    f_decider_run_batch: F,
+    f_decider_run_batch: &F,
     data_provider: impl DataProvider,
     config: &Config,
     f_result_worker: &W,
@@ -291,7 +450,8 @@ where
             result.add_result(&br.result_decided);
             // call user analyzer/worker so result can be dealt with individually (e.g. save)
             if let Err(e) = f_result_worker(&br, &config) {
-                result.end_reason = EndReason::Error(e.to_string());
+                result.end_reason = e;
+                // TODO remove stop_run, check on error
                 stop_run = true;
                 // eprintln!("{}", e);
             }
@@ -336,12 +496,13 @@ where
         }
         match data.end_reason {
             EndReason::AllMachinesChecked => todo!(),
-            EndReason::Error(_) => todo!(),
+            EndReason::Error(_, _) => todo!(),
             EndReason::IsLastBatch => {
                 result.end_reason = EndReason::AllMachinesChecked;
                 break;
             }
             EndReason::MachineLimitReached(_) => todo!(),
+            EndReason::NoBatchData => todo!(),
             EndReason::NoMoreData => {
                 result.end_reason = data.end_reason;
                 break;
@@ -372,6 +533,140 @@ where
 
     result
 }
+
+// pub fn run_decider_chain_data_provider_single_thread_reporting_v2<F, W>(
+//     mut data_provider: impl DataProvider,
+//     decider_config: &[DeciderConfig],
+//     mut reporter: Option<Reporter>,
+// ) -> DeciderResultStats
+// where
+//     F: Fn(&[Machine], PreDeciderRun, &Config) -> Option<BatchResult>, // + Send + Copy + 'static,
+//     W: Fn(&BatchResult, &Config) -> ResultWorker,
+// {
+//     // TODO check filled
+//     let start = Instant::now();
+//     let mut duration_data_provider = Duration::default();
+//     let mut duration_decider = Duration::default();
+//     let first_config = decider_config.first().expect("No decider given").config;
+//     let n_states = first_config.n_states();
+//     data_provider.set_batch_size_for_num_threads(1);
+//     let mut result = DeciderResultStats::new(first_config);
+//     let requires_pre_decider_check = data_provider.requires_pre_decider_check();
+//     result.set_record_machines_max_steps(first_config.limit_machines_max_steps());
+//     result.set_limit_machines_undecided(first_config.limit_machines_undecided());
+//     // copy config so init steps can be updated
+//     // TODO maybe handle init_steps differently?
+//     // required to have individual update of init steps (really?)
+//     // let mut config = first_config.clone();
+//     // loop over batch_next()
+//     loop {
+//         // Generator or Data Provider: get next batch
+//         let start_gen = Instant::now();
+//         let data = data_provider.machine_batch_next();
+//         // if batch_no % 100 == 0 {
+//         // println!("Batch no. {batch_no} / {}", data_provider.num_batches());
+//         // }
+//         if let Some(pre) = data.pre_decider_count {
+//             result.add_pre_decider_count(&pre);
+//             result.add_total(pre.num_total());
+//         }
+//         duration_data_provider += start_gen.elapsed();
+//
+//         // Run deciders on batch
+//         let start_decider = Instant::now();
+//         // run first decider which includes pre-decider elimination
+//         let mut undecided_available = true;
+//         let mut stop_run = false;
+//         for dc in decider_config {
+//             if let Some(br) =
+//                 dc.f_decider()(&data.machines, requires_pre_decider_check, dc.config())
+//             {
+//                 result.add_result(&br.result_decided);
+//                 // call user analyzer/worker so result can be dealt with individually (e.g. save)
+//                 if let Err(e) = dc.f_result_worker()(&br, dc.config()) {
+//                     result.end_reason = EndReason::Error(e.to_string());
+//                     stop_run = true;
+//                     // eprintln!("{}", e);
+//                 }
+//                 config.increase_steps_max_init(br.result_decided.steps_max());
+//                 let mut m_undecided = br.machines_undecided;
+//
+//                 if !stop_run {
+//                     // run other deciders
+//                     for f in fs_decider_run_batch.iter().skip(1) {
+//                         if !m_undecided.machines.is_empty() {
+//                             if let Some(br) =
+//                                 f(&m_undecided.machines, PreDeciderRun::DoNotRun, &config)
+//                             {
+//                                 result.add_result(&br.result_decided);
+//                                 m_undecided = br.machines_undecided;
+//                             }
+//                         }
+//                     }
+//                 }
+//
+//                 // add remaining undecided to final result
+//                 for (i, m) in m_undecided.machines.iter().enumerate() {
+//                     if !result.add(m, &m_undecided.states[i]) {
+//                         result.end_reason =
+//                             EndReason::UndecidedLimitReached(result.limit_machines_undecided());
+//                         undecided_available = false;
+//                         break;
+//                     }
+//                 }
+//             }
+//         }
+//         // println!(
+//         //     "batch {batch_no}: total {}, should be {}",
+//         //     result.num_checked_total(),
+//         //     batch_no * data_provider.batch_size()
+//         // );
+//
+//         // let undecided_available = result.add_result(&br.result_decided);
+//         duration_decider += start_decider.elapsed();
+//
+//         // end if undecided limit has been reached
+//         if stop_run || !undecided_available {
+//             break;
+//         }
+//         match data.end_reason {
+//             EndReason::AllMachinesChecked => todo!(),
+//             EndReason::Error(_) => todo!(),
+//             EndReason::IsLastBatch => {
+//                 result.end_reason = EndReason::AllMachinesChecked;
+//                 break;
+//             }
+//             EndReason::MachineLimitReached(_) => todo!(),
+//             EndReason::NoMoreData => {
+//                 result.end_reason = data.end_reason;
+//                 break;
+//             }
+//             EndReason::StopRequested(_) => todo!(),
+//             EndReason::UndecidedLimitReached(_) => todo!(),
+//             EndReason::Undefined => {}
+//             EndReason::Working => {}
+//         }
+//
+//         // Output info on progress
+//         if let Some(reporter) = reporter.as_mut() {
+//             if reporter.is_due_progress() {
+//                 let s = reporter.report_stats(result.num_processed_total(), &result);
+//                 println!("{s}");
+//             }
+//         }
+//     }
+//     result.duration = DurationDataProvider {
+//         duration_data_provider,
+//         duration_decider,
+//         duration_total: start.elapsed(),
+//     };
+//
+//     // Add the name at the end or it will result in a little performance loss. Reason unknown.
+//     // TODO name
+//     result.set_name(format!("BB{}: '{}'", n_states, "decider.name()"));
+//
+//     result
+// }
 
 /// Runs the given decider in a single thread.
 // This is just a convenience function to avoid creating a vector.
@@ -500,9 +795,10 @@ where
             let data = data_provider.machine_batch_next();
             match data.end_reason {
                 EndReason::AllMachinesChecked => todo!(),
-                EndReason::Error(_) => todo!(),
+                EndReason::Error(_, _) => todo!(),
                 EndReason::IsLastBatch => is_gen_finished = true,
                 EndReason::MachineLimitReached(_) => todo!(),
+                EndReason::NoBatchData => todo!(),
                 EndReason::NoMoreData => todo!(),
                 EndReason::StopRequested(_) => todo!(),
                 EndReason::UndecidedLimitReached(_) => todo!(),

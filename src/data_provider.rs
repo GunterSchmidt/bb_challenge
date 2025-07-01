@@ -41,7 +41,9 @@ pub trait DataProvider {
 }
 
 #[derive(Debug, Default)]
+// TODO rename to DataProviderBatch
 pub struct DataProviderResult {
+    /// Current batch no, first batch is 0.
     pub batch_no: usize,
     /// Machines for Decider
     pub machines: Vec<Machine>,
