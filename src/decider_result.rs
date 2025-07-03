@@ -161,10 +161,7 @@ impl DeciderResultStats {
             num_total_turing_machines: generator::num_turing_machine_permutations_u64(
                 config.n_states(),
             ),
-            steps_max: StepMaxResult::new(
-                if config.n_states() == 1 { 0 } else { 2 },
-                config.limit_machines_max_steps(),
-            ),
+            steps_max: StepMaxResult::new(if config.n_states() == 1 { 0 } else { 2 }),
             limit_machines_undecided: config.limit_machines_undecided(),
             ..Default::default()
         }
@@ -173,7 +170,7 @@ impl DeciderResultStats {
     pub fn new_init_steps_max(config: &Config, init_steps_max: StepTypeBig) -> Self {
         DeciderResultStats {
             n_states: config.n_states(),
-            steps_max: StepMaxResult::new(init_steps_max, config.limit_machines_max_steps()),
+            steps_max: StepMaxResult::new(init_steps_max),
             limit_machines_undecided: config.limit_machines_undecided(),
             ..Default::default()
         }
@@ -187,10 +184,6 @@ impl DeciderResultStats {
     //         _ => 25,
     //     }
     // }
-
-    pub fn set_record_machines_max_steps(&mut self, limit: usize) {
-        self.steps_max.set_record_machines_max_steps(limit);
-    }
 
     pub fn limit_machines_undecided(&self) -> usize {
         self.limit_machines_undecided
@@ -939,19 +932,14 @@ pub struct StepMaxResult {
     steps_max: StepTypeBig,
     // steps_min: StepTypeBig,
     num_machines_steps_max: usize,
-    machine_max_steps: Option<MachineInfo>,
     machines_max_steps: Option<Vec<MachineInfo>>,
-    // #[deprecated]
-    /// Store all machines with max steps up to this limit.
-    limit_machines_max_steps: usize,
 }
 
 impl StepMaxResult {
-    pub fn new(steps_min: StepTypeBig, limit_machines_max_steps: usize) -> Self {
+    pub fn new(steps_min: StepTypeBig) -> Self {
         Self {
             // steps_min,
             steps_max: steps_min,
-            limit_machines_max_steps,
             ..Default::default()
         }
     }
@@ -960,35 +948,18 @@ impl StepMaxResult {
         if other.steps_max >= self.steps_max {
             if other.steps_max == self.steps_max {
                 self.num_machines_steps_max += other.num_machines_steps_max;
-                if self.limit_machines_max_steps > 0
-                    && self.limit_machines_max_steps > self.len_machines_max_steps()
-                {
-                    let max_len = self.limit_machines_max_steps - self.len_machines_max_steps();
-                    if max_len > 0 {
-                        if let Some(machines) = other.machines_max_steps.as_ref() {
-                            if self.machines_max_steps.is_none() {
-                                self.machines_max_steps = Some(machines.clone());
-                            } else {
-                                let end = machines.len().min(max_len);
-                                self.machines_max_steps
-                                    .as_mut()
-                                    .unwrap()
-                                    .extend_from_slice(&machines[0..end]);
-                            }
-                        }
+                if let Some(machines) = other.machines_max_steps.as_ref() {
+                    if self.machines_max_steps.is_none() {
+                        self.machines_max_steps = Some(machines.clone());
+                    } else {
+                        self.machines_max_steps.as_mut().unwrap().extend(machines);
                     }
                 }
             } else {
                 // new max
                 self.steps_max = other.steps_max;
                 self.num_machines_steps_max = other.num_machines_steps_max;
-                if self.limit_machines_max_steps == 0 {
-                    if other.machine_max_steps.is_some() {
-                        self.machine_max_steps = other.machine_max_steps;
-                    }
-                } else {
-                    self.machines_max_steps = other.machines_max_steps.clone();
-                }
+                self.machines_max_steps = other.machines_max_steps.clone();
             }
         }
     }
@@ -997,19 +968,15 @@ impl StepMaxResult {
         // Check biggerThan to avoid two ifs on every check as it occurs rarely
         if steps >= self.steps_max {
             if steps == self.steps_max {
-                // store additional max step machine only if requested
-                if self.limit_machines_max_steps > 0
-                    && self.num_machines_steps_max < self.limit_machines_max_steps
-                {
-                    if self.machines_max_steps.is_none() {
-                        self.machines_max_steps = Some(Vec::with_capacity(4));
-                    }
-                    self.machines_max_steps
-                        .as_mut()
-                        .unwrap()
-                        .push(MachineInfo::from_machine(machine, status));
-                    // println!("  Added machine for max step {steps}");
+                // store additional max step machine
+                if self.machines_max_steps.is_none() {
+                    self.machines_max_steps = Some(Vec::with_capacity(4));
                 }
+                self.machines_max_steps
+                    .as_mut()
+                    .unwrap()
+                    .push(MachineInfo::from_machine(machine, status));
+                // println!("  Added machine for max step {steps}");
                 self.num_machines_steps_max += 1;
             } else {
                 // new max, clear the list of machines and add new first
@@ -1023,36 +990,28 @@ impl StepMaxResult {
                 // }
                 self.steps_max = steps;
                 self.num_machines_steps_max = 1;
-                if self.limit_machines_max_steps > 0 {
-                    if self.machines_max_steps.is_none() {
-                        self.machines_max_steps = Some(Vec::with_capacity(8));
-                    } else {
-                        self.machines_max_steps.as_mut().unwrap().clear();
-                    }
-                    self.machines_max_steps
-                        .as_mut()
-                        .unwrap()
-                        .push(MachineInfo::from_machine(machine, status));
-                    // #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                    // {
-                    // println!("  New max steps {}", self.steps_max);
-                    //     let p = Permutation::new(machine.id, machine.transitions);
-                    //     println!("Transitions\n{}", &p);
-                    // }
+                if self.machines_max_steps.is_none() {
+                    self.machines_max_steps = Some(Vec::with_capacity(8));
                 } else {
-                    self.machine_max_steps = Some(MachineInfo::from_machine(machine, status))
+                    self.machines_max_steps.as_mut().unwrap().clear();
                 }
+                self.machines_max_steps
+                    .as_mut()
+                    .unwrap()
+                    .push(MachineInfo::from_machine(machine, status));
+                // #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                // {
+                // println!("  New max steps {}", self.steps_max);
+                //     let p = Permutation::new(machine.id, machine.transitions);
+                //     println!("Transitions\n{}", &p);
+                // }
             }
         }
     }
 
     /// Returns the first machine with max steps.
     pub fn machine_max_steps(&self) -> Option<MachineInfo> {
-        if self.limit_machines_max_steps == 0 {
-            if let Some(m) = self.machine_max_steps.as_ref() {
-                return Some(*m);
-            }
-        } else if let Some(machines) = self.machines_max_steps.as_ref() {
+        if let Some(machines) = self.machines_max_steps.as_ref() {
             return machines.first().cloned();
         };
         None
@@ -1100,21 +1059,12 @@ impl StepMaxResult {
         }
     }
 
-    fn len_machines_max_steps(&self) -> usize {
-        match self.machines_max_steps.as_ref() {
-            Some(m) => m.len(),
-            None => 0,
-        }
-    }
-
-    pub fn set_record_machines_max_steps(&mut self, limit: usize) {
-        if limit <= 1 {
-            self.machines_max_steps = None;
-            self.limit_machines_max_steps = 0;
-        } else {
-            self.limit_machines_max_steps = limit;
-        }
-    }
+    // fn len_machines_max_steps(&self) -> usize {
+    //     match self.machines_max_steps.as_ref() {
+    //         Some(m) => m.len(),
+    //         None => 0,
+    //     }
+    // }
 
     pub fn sort_machines(&mut self) {
         if let Some(v) = self.machines_max_steps.as_mut() {

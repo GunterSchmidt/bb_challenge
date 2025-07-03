@@ -19,7 +19,6 @@ pub(crate) const N_STATES_DEFAULT: usize = 5;
 /// Default tape size limit if not changed in working machine.
 const BATCH_SIZE_FILE: usize = 200;
 const TAPE_SIZE_LIMIT_DEFAULT: usize = 20000;
-const RECORD_MACHINES_MAX_STEPS_DEFAULT: usize = 10;
 const CPU_UTILIZATION_DEFAULT: usize = 100;
 
 const GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION: usize = 500_000;
@@ -79,9 +78,6 @@ pub struct Config {
     generator_full_batch_size_request: usize,
     /// Specific to the GeneratorReduced: desired batch_size. One needs to test different sizes for max performance.
     generator_reduced_batch_size_request: usize,
-    // TODO remove, there are not many machines, possibly by replace record = true, but does it make a performance difference?
-    // #[deprecated]
-    limit_machines_max_steps: usize,
     /// This many undecided machines are stored in the ResultDecider. If full, the decider exits.
     limit_machines_undecided: usize,
     /// CPU utilization in percent, e.g. 75 -> 6 of 8 cores used. 0-150 allowed.
@@ -119,7 +115,6 @@ impl Config {
             generator_full_batch_size_request: GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION,
             generator_reduced_batch_size_request: GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION,
             file_id_range: None,
-            limit_machines_max_steps: RECORD_MACHINES_MAX_STEPS_DEFAULT,
             limit_machines_undecided: 0,
             cpu_utilization_percent: CPU_UTILIZATION_DEFAULT,
             config_key_value: HashMap::new(),
@@ -228,10 +223,6 @@ impl Config {
         self.generator_reduced_batch_size_request
     }
 
-    pub fn limit_machines_max_steps(&self) -> usize {
-        self.limit_machines_max_steps
-    }
-
     pub fn limit_machines_undecided(&self) -> usize {
         self.limit_machines_undecided
     }
@@ -310,7 +301,6 @@ pub struct ConfigBuilder {
     step_limit_cycler: Option<StepTypeSmall>,
     tape_size_limit: Option<usize>,
     machines_limit: Option<u64>,
-    limit_machines_max_steps: Option<usize>,
     limit_machines_undecided: Option<usize>,
     cpu_utilization_percent: Option<usize>,
     config_key_value: Option<HashMap<String, String>>,
@@ -337,7 +327,6 @@ impl ConfigBuilder {
             file_id_range: config.file_id_range.clone(),
             generator_batch_size_request_full: Some(config.generator_full_batch_size_request),
             generator_batch_size_request_reduced: Some(config.generator_reduced_batch_size_request),
-            limit_machines_max_steps: Some(config.limit_machines_max_steps),
             limit_machines_undecided: Some(config.limit_machines_undecided),
             cpu_utilization_percent: Some(config.cpu_utilization_percent),
             config_key_value: Some(config.config_key_value.clone()),
@@ -367,11 +356,6 @@ impl ConfigBuilder {
 
     pub fn generator_reduced_batch_size_request(mut self, batch_size_request: usize) -> Self {
         self.generator_batch_size_request_reduced = Some(batch_size_request);
-        self
-    }
-
-    pub fn limit_machines_max_steps(mut self, value: usize) -> Self {
-        self.limit_machines_max_steps = Some(value);
         self
     }
 
@@ -435,9 +419,6 @@ impl ConfigBuilder {
                 .generator_batch_size_request_reduced
                 .unwrap_or(GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION),
             file_id_range: self.file_id_range,
-            limit_machines_max_steps: self
-                .limit_machines_max_steps
-                .unwrap_or(RECORD_MACHINES_MAX_STEPS_DEFAULT),
             limit_machines_undecided: self.limit_machines_undecided.unwrap_or(0),
             cpu_utilization_percent: self
                 .cpu_utilization_percent
