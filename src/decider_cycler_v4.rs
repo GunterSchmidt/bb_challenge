@@ -6,10 +6,9 @@
 use crate::tape_utils::U64Ext;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES},
-    decider::{self, Decider, DeciderMinimal},
-    decider_result::{BatchData, BatchResult},
+    decider::{self, Decider},
+    decider_result::BatchData,
     machine::Machine,
-    pre_decider::PreDeciderRun,
     status::{EndlessReason, MachineStatus, UndecidedReason},
     transition_symbol2::{DirectionType, TransitionSymbol2, TransitionType},
     ResultUnitEndReason, DECIDER_CYCLER_ID,
@@ -90,15 +89,15 @@ impl DeciderCyclerV4 {
     }
 }
 
-impl DeciderMinimal for DeciderCyclerV4 {
-    fn decide_machine_minimal(&mut self, machine: &Machine) -> MachineStatus {
-        self.decide_machine(machine)
-    }
-
-    fn name_minimal(&self) -> &str {
-        self.name()
-    }
-}
+// impl DeciderMinimalTest for DeciderCyclerV4 {
+//     fn decide_machine_minimal(&mut self, machine: &Machine) -> MachineStatus {
+//         self.decide_machine(machine)
+//     }
+//
+//     fn name_minimal(&self) -> &str {
+//         self.name()
+//     }
+// }
 
 impl Decider for DeciderCyclerV4 {
     fn id(&self) -> usize {
@@ -440,14 +439,14 @@ impl Decider for DeciderCyclerV4 {
         d.decide_machine(machine)
     }
 
-    fn decider_run_batch(
-        machines: &[Machine],
-        run_predecider: PreDeciderRun,
-        config: &Config,
-    ) -> Option<BatchResult> {
-        let decider = Self::new_step_limit(config.step_limit_cycler());
-        decider::decider_generic_run_batch(decider, machines, run_predecider, config)
-    }
+    // fn decider_run_batch(
+    //     machines: &[Machine],
+    //     run_predecider: PreDeciderRun,
+    //     config: &Config,
+    // ) -> Option<BatchResult> {
+    //     let decider = Self::new_step_limit(config.step_limit_cycler());
+    //     decider::decider_generic_run_batch(decider, machines, run_predecider, config)
+    // }
 
     fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {
         let decider = Self::new(batch_data.config);

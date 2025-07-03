@@ -4,7 +4,7 @@
 use crate::machine_info::MachineInfo;
 use crate::{
     config::{Config, MAX_STATES},
-    data_provider::{DataProvider, DataProviderResult},
+    data_provider::{DataProvider, DataProviderBatch, ResultDataProvider},
     data_provider_threaded::DataProviderThreaded,
     decider_result::{EndReason, PreDeciderCount},
     generator::{self, create_all_transition_permutations, Generator},
@@ -17,7 +17,6 @@ use crate::{
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITIONS_FOR_A0},
 };
 
-pub(crate) const GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED: usize = 5_000_000;
 const BATCH_SIZE_REQUEST_SINGLE_THREAD: usize = 1_000_000;
 
 /// This generator creates all combinations of transition sets (Turing machine) which match certain criteria for the given n_states,
@@ -433,7 +432,11 @@ impl Generator for GeneratorReduced {
 }
 
 impl DataProvider for GeneratorReduced {
-    fn machine_batch_next(&mut self) -> DataProviderResult {
+    fn name(&self) -> &str {
+        "Generator Reduced"
+    }
+
+    fn machine_batch_next(&mut self) -> ResultDataProvider {
         let (machines, is_last_batch) = self.generate_permutation_batch_next();
         #[cfg(feature = "bb_generator_longest_skip_chain")]
         {
@@ -455,12 +458,12 @@ impl DataProvider for GeneratorReduced {
         } else {
             EndReason::Working
         };
-        DataProviderResult {
+        Ok(DataProviderBatch {
             batch_no: self.batch_no - 1,
             machines,
             pre_decider_count: Some(self.pre_decider_count_batch),
             end_reason,
-        }
+        })
     }
 
     fn batch_size(&self) -> usize {
@@ -522,7 +525,7 @@ impl DataProviderThreaded for GeneratorReduced {
         }
     }
 
-    fn batch_no(&mut self, batch_no: usize) -> DataProviderResult {
+    fn batch_no(&mut self, batch_no: usize) -> DataProviderBatch {
         self.batch_no = batch_no;
         let (machines, is_last_batch) = self.generate_permutation_batch_no(batch_no);
         let end_reason = if is_last_batch {
@@ -530,7 +533,7 @@ impl DataProviderThreaded for GeneratorReduced {
         } else {
             EndReason::Working
         };
-        DataProviderResult {
+        DataProviderBatch {
             batch_no: self.batch_no,
             machines,
             pre_decider_count: Some(self.pre_decider_count_batch),
@@ -545,12 +548,14 @@ impl DataProviderThreaded for GeneratorReduced {
 mod tests {
     use crate::{
         config::Config,
-        decider::{
-            run_decider_data_provider_single_thread, run_decider_data_provider_threaded, Decider,
-        },
+        decider::Decider,
         decider_cycler_v4::DeciderCyclerV4,
+        decider_engine::{
+            run_decider_data_provider_single_thread,
+            run_decider_threaded_data_provider_multi_thread,
+        },
         decider_result::result_max_steps_known,
-        decider_result_worker::no_worker,
+        decider_result_worker::no_worker_v2,
         generator_full::GeneratorFull,
     };
 
@@ -662,10 +667,10 @@ mod tests {
         let config = config_bench(n_states);
         let generator = GeneratorReduced::new(&config);
         let result = run_decider_data_provider_single_thread(
-            &DeciderCyclerV4::decider_run_batch,
             generator,
+            DeciderCyclerV4::decider_run_batch_v2,
+            no_worker_v2,
             &config,
-            &no_worker,
         );
         println!("{}", result);
         println!("{}", result.machines_max_steps_to_string(10));
@@ -675,11 +680,11 @@ mod tests {
     fn run_test_decider_generator_reduced_threaded(n_states: usize) {
         let config = config_bench(n_states);
         let generator = GeneratorReduced::new(&config);
-        let result = run_decider_data_provider_threaded(
-            DeciderCyclerV4::decider_run_batch,
+        let result = run_decider_threaded_data_provider_multi_thread(
             generator,
+            DeciderCyclerV4::decider_run_batch_v2,
+            no_worker_v2,
             &config,
-            &no_worker,
         );
         // println!("{}", result);
         assert_eq!(result_max_steps_known(n_states), result.steps_max());

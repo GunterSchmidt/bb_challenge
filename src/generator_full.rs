@@ -2,7 +2,7 @@
 
 use crate::{
     config::{Config, MAX_STATES},
-    data_provider::{DataProvider, DataProviderResult},
+    data_provider::{DataProvider, DataProviderBatch, ResultDataProvider},
     data_provider_threaded::DataProviderThreaded,
     decider_result::{EndReason, PreDeciderCount},
     generator::{self, create_all_transition_permutations, Generator},
@@ -11,7 +11,6 @@ use crate::{
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2},
 };
 
-pub(crate) const GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION: usize = 500_000;
 const BATCH_SIZE_REQUEST_SINGLE_THREAD_MAX: usize = 500_000;
 
 /// This generator creates all permutations of transition sets (Turing machine) possible for the given n_states,
@@ -222,7 +221,11 @@ impl Generator for GeneratorFull {
 }
 
 impl DataProvider for GeneratorFull {
-    fn machine_batch_next(&mut self) -> DataProviderResult {
+    fn name(&self) -> &str {
+        "Generator Full"
+    }
+
+    fn machine_batch_next(&mut self) -> ResultDataProvider {
         let (machines, is_last_batch) = self.generate_permutation_batch_next();
         self.batch_no += 1;
         let end_reason = if is_last_batch {
@@ -230,12 +233,12 @@ impl DataProvider for GeneratorFull {
         } else {
             EndReason::Working
         };
-        DataProviderResult {
+        Ok(DataProviderBatch {
             batch_no: self.batch_no - 1,
             machines,
             pre_decider_count: None,
             end_reason,
-        }
+        })
     }
 
     fn batch_size(&self) -> usize {
@@ -294,7 +297,7 @@ impl DataProviderThreaded for GeneratorFull {
         }
     }
 
-    fn batch_no(&mut self, batch_no: usize) -> DataProviderResult {
+    fn batch_no(&mut self, batch_no: usize) -> DataProviderBatch {
         self.batch_no = batch_no;
         let (machines, is_last_batch) = self.generate_permutation_batch_no(batch_no);
         let end_reason = if is_last_batch {
@@ -302,7 +305,7 @@ impl DataProviderThreaded for GeneratorFull {
         } else {
             EndReason::Working
         };
-        DataProviderResult {
+        DataProviderBatch {
             batch_no: self.batch_no,
             machines,
             pre_decider_count: None,
@@ -316,12 +319,14 @@ impl DataProviderThreaded for GeneratorFull {
 #[cfg(test)]
 mod tests {
     use crate::{
-        decider::{
-            run_decider_data_provider_single_thread, run_decider_data_provider_threaded, Decider,
-        },
+        decider::Decider,
         decider_cycler_v4::DeciderCyclerV4,
+        decider_engine::{
+            run_decider_data_provider_single_thread,
+            run_decider_threaded_data_provider_multi_thread,
+        },
         decider_result::result_max_steps_known,
-        decider_result_worker::no_worker,
+        decider_result_worker::no_worker_v2,
     };
 
     use super::*;
@@ -389,11 +394,12 @@ mod tests {
     fn run_test_decider_generator_full(n_states: usize) {
         let config = config_bench(n_states);
         let generator = GeneratorFull::new(&config);
+        // TODO no clue why this does not work
         let result = run_decider_data_provider_single_thread(
-            &DeciderCyclerV4::decider_run_batch,
             generator,
+            DeciderCyclerV4::decider_run_batch_v2,
+            no_worker_v2,
             &config,
-            &no_worker,
         );
         println!("{}", result);
         println!("{}", result.machines_max_steps_to_string(10));
@@ -403,11 +409,11 @@ mod tests {
     fn run_test_decider_generator_full_threaded(n_states: usize) {
         let config = config_bench(n_states);
         let generator = GeneratorFull::new(&config);
-        let result = run_decider_data_provider_threaded(
-            DeciderCyclerV4::decider_run_batch,
+        let result = run_decider_threaded_data_provider_multi_thread(
             generator,
+            DeciderCyclerV4::decider_run_batch_v2,
+            no_worker_v2,
             &config,
-            &no_worker,
         );
         // println!("{}", result);
         assert_eq!(result_max_steps_known(n_states), result.steps_max());

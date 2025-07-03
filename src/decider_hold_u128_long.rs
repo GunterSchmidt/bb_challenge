@@ -7,9 +7,8 @@ use crate::{
         Config, IdBig, StepTypeBig, StepTypeSmall, MAX_TAPE_GROWTH, TAPE_SIZE_INIT_CELL_BLOCKS,
     },
     decider::{self, Decider},
-    decider_result::{BatchData, BatchResult},
+    decider_result::BatchData,
     machine::Machine,
-    pre_decider::PreDeciderRun,
     status::{MachineStatus, UndecidedReason},
     tape_utils::{
         CLEAR_HIGH95_64BITS_U128, CLEAR_LOW63_32BITS_U128, HIGH32_SWITCH_U128, LOW64_SWITCH_U128,
@@ -687,15 +686,6 @@ impl Decider for DeciderHoldU128Long {
     fn decide_single_machine(machine: &Machine, config: &Config) -> MachineStatus {
         let mut d = Self::new(config);
         d.decide_machine(machine)
-    }
-
-    fn decider_run_batch(
-        machines: &[Machine],
-        run_predecider: PreDeciderRun,
-        config: &Config,
-    ) -> Option<BatchResult> {
-        let decider = Self::new(config);
-        decider::decider_generic_run_batch(decider, machines, run_predecider, config)
     }
 
     fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {

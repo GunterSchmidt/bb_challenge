@@ -179,27 +179,6 @@ pub trait ReportProgress {
 pub struct ReportProgressStandard;
 
 impl ReportProgressStandard {
-    fn average_for_minutes_to_string(
-        &self,
-        minutes: usize,
-        progress_info: &ProgressInfo,
-    ) -> String {
-        let average = progress_info.progress_average_per_sec(minutes as u64 * 60);
-        let s_avg = match average {
-            Some(a) => {
-                let processed = progress_info.progress_data.last().unwrap().processed;
-                let remaining =
-                    Duration::from_secs_f64((progress_info.total - processed) as f64 / a);
-                format!(
-                    ", left {minutes} min avg {}",
-                    format_duration_hhmmss_ms(remaining, false)
-                )
-            }
-            None => String::new(),
-        };
-        s_avg
-    }
-
     pub fn remaining_estimate_for_minutes(
         &self,
         minutes: usize,
@@ -224,18 +203,18 @@ impl ReportProgress for ReportProgressStandard {
     }
 
     fn report_progress(&self, processed: IdBig, progress_info: &ProgressInfo) -> String {
-        let locale = crate::utils::user_locale();
+        let locale = crate::config::user_locale();
         let percent = (processed as f64 / progress_info.total as f64 * 1000.0).round() / 10.0;
         // estimate time to run
         let dur_total = progress_info.start_time.elapsed();
         let p_per_sec = processed as f64 / dur_total.as_secs_f64();
         let remaining_est_total =
             Duration::from_secs_f64((progress_info.total - processed) as f64 / p_per_sec);
-        let remaining_est_1m = self.remaining_estimate_for_minutes(1, &progress_info);
-        let remaining_est_5m = self.remaining_estimate_for_minutes(5, &progress_info);
+        let remaining_est_1m = self.remaining_estimate_for_minutes(1, progress_info);
+        let remaining_est_5m = self.remaining_estimate_for_minutes(5, progress_info);
         if remaining_est_1m.is_none() {
             format!(
-                "Working: {} / {} ({percent:.1}%), left {}, runtime {}", // , end at {:?}",
+                "Working: {} / {} ({percent:.1}%), remaining {}, runtime {}", // , end at {:?}",
                 processed.to_formatted_string(&locale),
                 progress_info.total.to_formatted_string(&locale),
                 format_duration_hhmmss_ms(remaining_est_total, false),
@@ -243,7 +222,7 @@ impl ReportProgress for ReportProgressStandard {
             )
         } else if remaining_est_5m.is_none() {
             format!(
-                "Working: {} / {} ({percent:.1}%), left total {}, avg 1 min {}, runtime {}", // , end at {:?}",
+                "Working: {} / {} ({percent:.1}%), remaining: total {}, avg 1 min {}, runtime {}", // , end at {:?}",
                 processed.to_formatted_string(&locale),
                 progress_info.total.to_formatted_string(&locale),
                 format_duration_hhmmss_ms(remaining_est_total, false),
@@ -252,7 +231,7 @@ impl ReportProgress for ReportProgressStandard {
             )
         } else {
             format!(
-                "Working: {} / {} ({percent:.1}%), left total {}, avg 1 min {}, avg 5 min {}, runtime {}", // , end at {:?}",
+                "Working: {} / {} ({percent:.1}%), remaining: total {}, avg 1 min {}, avg 5 min {}, runtime {}", // , end at {:?}",
                 processed.to_formatted_string(&locale),
                 progress_info.total.to_formatted_string(&locale),
                 format_duration_hhmmss_ms(remaining_est_total, false),
@@ -268,7 +247,7 @@ impl ReportProgress for ReportProgressStandard {
         decider_result: &DeciderResultStats,
         progress_info: &ProgressInfo,
     ) -> String {
-        let locale = crate::utils::user_locale();
+        let locale = crate::config::user_locale();
         let percent = (decider_result.num_processed_total() as f64
             / decider_result.num_total_turing_machines() as f64
             * 1000.0)
@@ -283,7 +262,7 @@ impl ReportProgress for ReportProgressStandard {
                 / p_per_sec,
         );
         format!(
-            "Working: {} / {} ({percent:.1}%), left {}, runtime {}", // , end at {:?}",
+            "Working: {} / {} ({percent:.1}%), remaining {}, runtime {}", // , end at {:?}",
             decider_result
                 .num_processed_total()
                 .to_formatted_string(&locale),
@@ -424,17 +403,22 @@ pub fn fmt_duration(duration_sec: f64) -> String {
 /// # Examples
 /// ```
 /// use std::time::Duration;
-/// use bb_challenge::utils::format_duration_hhmmss_ms;
+/// use bb_challenge::reporter::format_duration_hhmmss_ms;
 ///
-/// assert_eq!(format_duration_hhmmss_ms(Duration::from_secs(3661)), "01:01:01.000");
-/// assert_eq!(format_duration_hhmmss_ms(Duration::from_millis(123456)), "00:02:03.456");
+/// assert_eq!(format_duration_hhmmss_ms(Duration::from_secs(3661), true), "01:01:01.000");
+/// assert_eq!(format_duration_hhmmss_ms(Duration::from_millis(123456), true), "00:02:03.456");
+/// assert_eq!(format_duration_hhmmss_ms(Duration::from_millis(123456), false), "00:02:03");
+/// assert_eq!(format_duration_hhmmss_ms(Duration::from_millis(123556), false), "00:02:04");
 /// ```
 pub fn format_duration_hhmmss_ms(duration: Duration, display_millis: bool) -> String {
     let total_milliseconds = duration.as_millis();
     let hours = total_milliseconds / (1000 * 60 * 60);
     let minutes = (total_milliseconds % (1000 * 60 * 60)) / (1000 * 60);
-    let seconds = ((total_milliseconds % (1000 * 60 * 60)) % (1000 * 60)) / 1000;
+    let mut seconds = ((total_milliseconds % (1000 * 60 * 60)) % (1000 * 60)) / 1000;
     let milliseconds = total_milliseconds % 1000;
+    if milliseconds >= 500 {
+        seconds += 1;
+    }
 
     if display_millis {
         format!(

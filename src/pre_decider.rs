@@ -7,15 +7,13 @@
 
 use crate::{
     config::MAX_STATES,
-    decider_result::BatchData,
     status::{MachineStatus, PreDeciderReason},
     transition_symbol2::{
         TransitionSymbol2, TransitionTableSymbol2, STATE_HOLD_SYM2, TRANSITIONS_FOR_A0,
     },
-    ResultUnitEndReason,
 };
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PreDeciderRun {
     DoNotRun,
     RunNormal,
@@ -26,38 +24,19 @@ pub enum PreDeciderRun {
 /// run_pre_decider(&machine) can be used separately.
 pub struct PreDecider;
 
-impl crate::decider::DeciderMinimal for PreDecider {
-    // fn new_decider(&self) -> Self {
-    //     PreDecider
-    // }
-
-    fn decide_machine_minimal(&mut self, machine: &crate::machine::Machine) -> MachineStatus {
-        let r = run_pre_decider_simple(machine.transition_table());
-        if r == MachineStatus::NoDecision {
-            return MachineStatus::Undecided(crate::status::UndecidedReason::Undefined, 0, 0);
-        }
-        r
-    }
-
-    fn name_minimal(&self) -> &str {
-        "PreDecider"
-    }
-
-    //     fn decider_run_batch(
-    //         _machines: &[crate::machine::Machine],
-    //         _run_predecider: PreDeciderRun,
-    //         _config: &crate::config::Config,
-    //     ) -> Option<crate::decider_result::BatchResult> {
-    //         panic!("Not build for this!")
-    //     }
-    //
-    //     fn decide_single_machine(
-    //         machine: &crate::machine::Machine,
-    //         config: &crate::config::Config,
-    //     ) -> MachineStatus {
-    //         todo!()
-    //     }
-}
+// impl crate::decider::DeciderMinimalTest for PreDecider {
+//     fn decide_machine_minimal(&mut self, machine: &crate::machine::Machine) -> MachineStatus {
+//         let r = run_pre_decider_simple(machine.transition_table());
+//         if r == MachineStatus::NoDecision {
+//             return MachineStatus::Undecided(crate::status::UndecidedReason::Undefined, 0, 0);
+//         }
+//         r
+//     }
+//
+//     fn name_minimal(&self) -> &str {
+//         "PreDecider"
+//     }
+// }
 
 // impl crate::decider::Decider for PreDecider {
 //     // fn new_from_self(&self) -> Self {

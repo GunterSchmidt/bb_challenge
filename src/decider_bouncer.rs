@@ -14,9 +14,8 @@ use crate::{
     decider::{self, Decider},
     decider_result::BatchData,
     machine::Machine,
-    machine_info::MachineInfo,
     status::{EndlessReason, ExpandingBouncerReason, MachineStatus, UndecidedReason},
-    transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_0RA},
+    transition_symbol2::{TransitionSymbol2, TRANSITION_0RA},
     ResultUnitEndReason, DECIDER_BOUNCER_ID,
 };
 
@@ -59,7 +58,7 @@ pub struct DeciderBouncer {
     #[cfg(debug_assertions)]
     // TODO remove in final run
     // used in debugging to see which machine is currently worked on in sub-function
-    machine_info: MachineInfo,
+    machine_info: crate::machine_info::MachineInfo,
 }
 
 impl DeciderBouncer {
@@ -86,7 +85,8 @@ impl DeciderBouncer {
         if IS_DEBUG {
             println!("\nDecider Expanding Sinus for {}", machine);
             // TODO why not simply machine?
-            self.machine_info = MachineInfo::from_machine(machine, &MachineStatus::NoDecision);
+            self.machine_info =
+                crate::machine_info::MachineInfo::from_machine(machine, &MachineStatus::NoDecision);
             file = Some(std::fs::File::create("debug_info.txt").unwrap());
         }
 
@@ -167,7 +167,7 @@ impl DeciderBouncer {
                 let s = format!(
                     "Step {:3}: {}{} {} before: Tape shifted {} H{high_bound}{} L{low_bound}{} P{pos_middle_bit:>3}{} {}", // , next {}{} {}",
                     self.steps.len() -1,
-                    (step.for_state() + 64) as u8 as char,
+                    (step.for_state() + 64)  as char,
                     step.for_symbol(),
                     tr,
                     crate::tape_utils::U128Ext::to_binary_split_string_half(&tape_shifted),
@@ -843,9 +843,9 @@ impl Default for DeciderBouncer {
             sync_low_bit: 0,
             expanding_sinus_reason: ExpandingBouncerReason::DeciderNoResult,
             #[cfg(debug_assertions)]
-            machine_info: MachineInfo::new(
+            machine_info: crate::machine_info::MachineInfo::new(
                 0,
-                TransitionTableSymbol2::new_default(0),
+                crate::transition_symbol2::TransitionTableSymbol2::new_default(0),
                 MachineStatus::NoDecision,
             ),
             step_limit,
@@ -869,15 +869,6 @@ impl Decider for DeciderBouncer {
     fn decide_single_machine(machine: &Machine, config: &crate::config::Config) -> MachineStatus {
         let mut d = Self::new(config);
         d.decide_machine_main(machine)
-    }
-
-    fn decider_run_batch(
-        machines: &[Machine],
-        run_predecider: crate::pre_decider::PreDeciderRun,
-        config: &crate::config::Config,
-    ) -> Option<crate::decider_result::BatchResult> {
-        let decider = Self::new(config);
-        decider::decider_generic_run_batch(decider, machines, run_predecider, config)
     }
 
     fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {
@@ -967,10 +958,10 @@ impl StepExpanding {
         let state = if for_state & Self::FILTER_STATE == 0 {
             'Z'
         } else {
-            ((((for_state & Self::FILTER_STATE) as u8) >> 1) + b'A' - 1) as char
+            (((for_state & Self::FILTER_STATE) >> 1) + b'A' - 1) as char
         };
 
-        [state, (for_symbol as u8 + b'0') as char, dir]
+        [state, (for_symbol + b'0') as char, dir]
     }
 }
 

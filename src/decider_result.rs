@@ -2,14 +2,13 @@ use num_format::{Buffer, ToFormattedString};
 use std::{fmt::Display, time::Duration};
 
 use crate::{
-    config::{Config, IdBig, StepTypeBig, StepTypeSmall},
+    config::{user_locale, Config, IdBig, StepTypeBig, StepTypeSmall},
     generator,
     machine::Machine,
     machine_info::MachineInfo,
     pre_decider::PreDeciderRun,
     reporter::format_duration_hhmmss_ms,
     status::{EndlessReason, MachineStatus, PreDeciderReason},
-    utils::user_locale,
 };
 
 const NUM_LONG_LEN: usize = 18;
@@ -26,20 +25,26 @@ pub type ResultDeciderStats = std::result::Result<DeciderResultStats, String>;
 #[derive(Debug, Default, Clone, PartialEq)]
 // TODO allow error?
 pub enum EndReason {
+    /// Final end reason of the decider(s).
     AllMachinesChecked,
     /// Error Machine Id, msg
+    // TODO Option<MachineInfo>
     Error(u64, String),
-    /// This is a temporary state indicating the last batch needs to be evaluated, but gives a stop indication.
+    /// The data provider needs to mark the last batch so the caller knows it can end requesting batches.
     IsLastBatch,
     MachineLimitReached(u64),
-    /// This is usually an unexpected end when the total is not reached.
+    /// A legit result of the data provider, e.g. when all machines have been pre-decided and none are to decide.
     NoBatchData,
+    /// Usually an unexpected end when the total is not reached.
     NoMoreData,
-    StopRequested(String),
+    /// Machine Id, msg. ResultWorker can use this to end processing without marking it as an error.
+    StopRequested(u64, String),
+    /// When the maximum number of recorded undecided machines is reached. For analyzing undecided.
     UndecidedLimitReached(usize),
+    /// Default state indicating no action has been taken yet.
     #[default]
     Undefined,
-    /// not ended yet
+    /// The data provider needs to have this state when working.
     Working,
 }
 
@@ -62,13 +67,22 @@ impl Display for EndReason {
                 };
                 write!(f, "{ms}Error: {message}")
             }
-            EndReason::IsLastBatch => write!(f, "Last batch indication. Should be internal only"),
+            EndReason::IsLastBatch => {
+                write!(f, "Last batch indication. Should be internal only")
+            }
             EndReason::MachineLimitReached(limit) => {
                 write!(f, "Limit of {} machines reached", limit)
             }
             EndReason::NoBatchData => write!(f, "No data in this batch"),
             EndReason::NoMoreData => write!(f, "No more data found"),
-            EndReason::StopRequested(message) => write!(f, "Stop requested: {message}"),
+            EndReason::StopRequested(m_id, message) => {
+                let ms = if *m_id != 0 {
+                    format!("Machine Id: {m_id}, ")
+                } else {
+                    String::new()
+                };
+                write!(f, "{ms}Stop requested: {message}")
+            }
             EndReason::UndecidedLimitReached(limit) => {
                 write!(f, "Limit of {} undecided machines reached", limit)
             }
@@ -79,6 +93,8 @@ impl Display for EndReason {
     }
 }
 
+// TODO record times per decider
+// TODO record decided, undecided per decider
 /// The result of the decider. It holds a number of counters for each result type and may carry the
 /// max steps and undecided machines.
 /// This is always returned. end_reason should give error information if any.
@@ -145,10 +161,8 @@ impl DeciderResultStats {
             num_total_turing_machines: generator::num_turing_machine_permutations_u64(
                 config.n_states(),
             ),
-            // #[cfg(feature = "bb_use_result_large")]
-            // is_result_large: true,
             steps_max: StepMaxResult::new(
-                config.steps_max_init(),
+                if config.n_states() == 1 { 0 } else { 2 },
                 config.limit_machines_max_steps(),
             ),
             limit_machines_undecided: config.limit_machines_undecided(),
@@ -159,22 +173,20 @@ impl DeciderResultStats {
     pub fn new_init_steps_max(config: &Config, init_steps_max: StepTypeBig) -> Self {
         DeciderResultStats {
             n_states: config.n_states(),
-            // #[cfg(feature = "bb_use_result_large")]
-            // is_result_large: true,
             steps_max: StepMaxResult::new(init_steps_max, config.limit_machines_max_steps()),
             limit_machines_undecided: config.limit_machines_undecided(),
             ..Default::default()
         }
     }
 
-    /// Set steps_max a bit higher to avoid saving a lot of machines with low steps
-    pub fn init_steps_max(n_states: usize) -> StepTypeBig {
-        match n_states {
-            1 => 0,
-            2 | 3 => 4,
-            _ => 25,
-        }
-    }
+    // /// Set steps_max a bit higher to avoid saving a lot of machines with low steps
+    // pub fn init_steps_max(n_states: usize) -> StepTypeBig {
+    //     match n_states {
+    //         1 => 0,
+    //         2 | 3 => 4,
+    //         _ => 25,
+    //     }
+    // }
 
     pub fn set_record_machines_max_steps(&mut self, limit: usize) {
         self.steps_max.set_record_machines_max_steps(limit);
@@ -348,7 +360,7 @@ impl DeciderResultStats {
                     if let Some(machines) = self.machines_undecided.as_mut() {
                         let max = new_machines
                             .len()
-                            .min(self.limit_machines_undecided as usize - machines.len());
+                            .min(self.limit_machines_undecided - machines.len());
                         machines.extend_from_slice(&new_machines[0..max]);
                     } else {
                         self.machines_undecided = result.machines_undecided.clone();
@@ -373,11 +385,16 @@ impl DeciderResultStats {
         self.num_processed_total += value;
     }
 
-    pub fn steps_max(&self) -> StepTypeBig {
-        self.steps_max.steps_max
+    /// Clears the total which is required if multiple deciders run as this would result in a double count.
+    pub fn clear_total(&mut self) {
+        self.num_processed_total = 0;
     }
 
     /// Returns the first machine with max steps.
+    pub fn endless_count(&self) -> &EndlessCount {
+        &self.endless_count
+    }
+
     pub fn machine_max_steps(&self) -> Option<MachineInfo> {
         self.steps_max.machine_max_steps()
     }
@@ -457,6 +474,10 @@ impl DeciderResultStats {
         }
     }
 
+    pub fn n_states(&self) -> usize {
+        self.n_states
+    }
+
     pub fn num_processed_total(&self) -> u64 {
         if self.num_processed_total != 0 {
             self.num_processed_total
@@ -496,18 +517,6 @@ impl DeciderResultStats {
         }
     }
 
-    pub fn pre_decider_count(&self) -> PreDeciderCount {
-        self.pre_decider_count
-    }
-
-    pub fn endless_count(&self) -> &EndlessCount {
-        &self.endless_count
-    }
-
-    pub fn n_states(&self) -> usize {
-        self.n_states
-    }
-
     pub fn num_total_turing_machines(&self) -> u64 {
         self.num_total_turing_machines
     }
@@ -516,12 +525,20 @@ impl DeciderResultStats {
         self.num_not_max_too_many_hold_transitions
     }
 
+    pub fn pre_decider_count(&self) -> PreDeciderCount {
+        self.pre_decider_count
+    }
+
+    pub fn steps_max(&self) -> StepTypeBig {
+        self.steps_max.steps_max()
+    }
+
     pub fn to_string_with_duration(&self) -> String {
         let names;
         let name = if self.names.len() == 1 {
             names = String::new();
             // single name
-            format!("{}", self.names.first().unwrap())
+            self.names.first().unwrap().to_string()
         } else {
             names = "\n".to_string() + self.names.join(", ").as_str();
             String::new()
@@ -555,7 +572,7 @@ impl Display for DeciderResultStats {
         s.push_str(format!("Turing machines:    {:>NUM_LONG_LEN$}\n", buf.as_str()).as_str());
         if self.num_processed_total() != self.num_evaluated {
             buf.write_formatted(&self.num_processed_total, &locale);
-            s.push_str(format!("Total checked:      {:>NUM_LONG_LEN$}\n", buf.as_str()).as_str());
+            s.push_str(format!("Total processed:    {:>NUM_LONG_LEN$}\n", buf.as_str()).as_str());
         }
         buf.write_formatted(&self.num_evaluated, &locale);
         s.push_str(format!("  Total evaluated:    {:>NUM_LONG_LEN$}\n", buf.as_str()).as_str());
@@ -618,7 +635,7 @@ impl Display for DeciderResultStats {
 
 pub struct ResultBatchInfo {
     pub n_states: usize,
-    pub steps_max_init: StepTypeBig,
+    pub steps_min: StepTypeBig,
     pub limit_machines_max_steps: usize,
     pub limit_machines_undecided: usize,
 }
@@ -919,8 +936,9 @@ pub struct DurationDataProvider {
 
 #[derive(Debug, Default)]
 pub struct StepMaxResult {
-    pub steps_max: StepTypeBig,
-    pub num_machines_steps_max: usize,
+    steps_max: StepTypeBig,
+    // steps_min: StepTypeBig,
+    num_machines_steps_max: usize,
     machine_max_steps: Option<MachineInfo>,
     machines_max_steps: Option<Vec<MachineInfo>>,
     // #[deprecated]
@@ -929,15 +947,10 @@ pub struct StepMaxResult {
 }
 
 impl StepMaxResult {
-    pub fn new(steps_max_init: StepTypeBig, limit_machines_max_steps: usize) -> Self {
+    pub fn new(steps_min: StepTypeBig, limit_machines_max_steps: usize) -> Self {
         Self {
-            // // Machines with only one step are not recorded, there are too many
-            // steps_max: if steps_max_init > 2 {
-            //     steps_max_init
-            // } else {
-            //     2
-            // },
-            steps_max: steps_max_init,
+            // steps_min,
+            steps_max: steps_min,
             limit_machines_max_steps,
             ..Default::default()
         }
@@ -948,10 +961,9 @@ impl StepMaxResult {
             if other.steps_max == self.steps_max {
                 self.num_machines_steps_max += other.num_machines_steps_max;
                 if self.limit_machines_max_steps > 0
-                    && self.limit_machines_max_steps as usize > self.len_machines_max_steps()
+                    && self.limit_machines_max_steps > self.len_machines_max_steps()
                 {
-                    let max_len =
-                        self.limit_machines_max_steps as usize - self.len_machines_max_steps();
+                    let max_len = self.limit_machines_max_steps - self.len_machines_max_steps();
                     if max_len > 0 {
                         if let Some(machines) = other.machines_max_steps.as_ref() {
                             if self.machines_max_steps.is_none() {
@@ -1110,6 +1122,15 @@ impl StepMaxResult {
             v.sort();
         }
     }
+
+    /// Returns the recorded steps max. If steps_min is given, steps_max may not hold the correct value.
+    pub fn steps_max(&self) -> StepTypeBig {
+        if self.num_machines_steps_max == 0 {
+            0
+        } else {
+            self.steps_max
+        }
+    }
 }
 
 impl Display for StepMaxResult {
@@ -1118,7 +1139,7 @@ impl Display for StepMaxResult {
         writeln!(
             f,
             "  Max Steps:      {:>10} (Number of machines: {})",
-            self.steps_max.to_formatted_string(&locale),
+            self.steps_max().to_formatted_string(&locale),
             self.num_machines_steps_max,
         )?;
         // print first max step machines
@@ -1208,6 +1229,7 @@ pub struct BatchResult {
 /// Result of a batch run with results for all machines in the batch.
 /// All undecided Turing machines are recorded in detail.
 // TODO reduce pub fields
+#[derive(Debug)]
 pub struct BatchData<'a> {
     pub machines: &'a [Machine],
     pub result_decided: DeciderResultStats,
@@ -1216,8 +1238,24 @@ pub struct BatchData<'a> {
     pub batch_no: usize,
     pub num_batches: usize,
     pub decider_id: usize,
-    pub config: &'a Config,
     pub run_predecider: PreDeciderRun,
+    pub config: &'a Config,
+}
+
+/// Result of a batch run with results for all machines in the batch.
+/// All undecided Turing machines are recorded in detail.
+// TODO reduce pub fields
+#[derive(Debug)]
+pub struct BatchDataThread<'a> {
+    pub machines: Vec<Machine>,
+    pub result_decided: DeciderResultStats,
+    pub machines_undecided: MachinesUndecided,
+    /// Current batch no, first batch is 0.
+    pub batch_no: usize,
+    pub num_batches: usize,
+    pub decider_id: usize,
+    pub run_predecider: PreDeciderRun,
+    pub config: &'a Config,
 }
 
 pub fn result_max_steps_known(n_states: usize) -> StepTypeBig {

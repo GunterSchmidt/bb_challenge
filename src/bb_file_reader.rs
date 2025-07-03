@@ -5,7 +5,9 @@ use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 
 use crate::config::FILE_PATH_BB5_CHALLENGE_DATA_FILE;
-use crate::data_provider::{DataProvider, DataProviderResult};
+use crate::data_provider::{
+    DataProvider, DataProviderBatch, DataProviderError, ResultDataProvider,
+};
 #[allow(unused)]
 use crate::data_provider_threaded::DataProviderThreaded;
 use crate::decider_result::EndReason;
@@ -109,7 +111,7 @@ impl BBFileReader {
         }
     }
 
-    // TODO multiple machines
+    // TODO multiple machines, ids in a vector
     // pub fn read_machines(machine_ids: &[u64]) -> io::Result<Vec<TM>> {}
 
     // id starts with 0
@@ -322,28 +324,43 @@ pub struct BBDataProvider {
 // }
 
 impl DataProvider for BBDataProvider {
-    fn machine_batch_next(&mut self) -> DataProviderResult {
-        let mut result = DataProviderResult::new(self.batch_no);
-        result.end_reason = EndReason::Working;
+    fn name(&self) -> &str {
+        "BB Challenge File Reader"
+    }
+
+    fn machine_batch_next(&mut self) -> ResultDataProvider {
+        let mut batch = DataProviderBatch::new(self.batch_no);
+        batch.end_reason = EndReason::Working;
 
         // already done, but this should not happen
         if self.num_machines_read >= self.num_machines_total() {
-            result.end_reason = EndReason::NoMoreData;
-            return result;
+            batch.end_reason = EndReason::NoMoreData;
+            let dpe = DataProviderError {
+                name: self.name().to_string(),
+                msg: "Logic error, too many machines.".to_string(),
+                ..Default::default()
+            };
+            return Err(Box::new(dpe));
         }
 
         let mut end = self.id_next + self.batch_size as u64;
         if end >= self.id_end {
             end = self.id_end;
-            result.end_reason = EndReason::IsLastBatch;
+            batch.end_reason = EndReason::IsLastBatch;
         };
         let count = (end - self.id_next) as usize;
 
         let machines = match self.bb_file_reader.read_machine_range(self.id_next, count) {
             Ok(m) => m,
             Err(e) => {
-                result.end_reason = EndReason::Error(0, e.to_string());
-                return result;
+                batch.end_reason = EndReason::Error(0, e.to_string());
+                let dpe = DataProviderError {
+                    name: self.name().to_string(),
+                    batch: Some(batch),
+                    msg: e.to_string(),
+                    ..Default::default()
+                };
+                return Err(Box::new(dpe));
             }
         };
         self.id_next += machines.len() as u64;
@@ -353,9 +370,9 @@ impl DataProvider for BBDataProvider {
         //     "Machine first: {}",
         //     machines[0].to_standard_tm_text_format()
         // );
-        result.machines = machines;
+        batch.machines = machines;
 
-        result
+        Ok(batch)
     }
 
     fn batch_size(&self) -> usize {

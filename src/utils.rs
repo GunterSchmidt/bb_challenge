@@ -2,13 +2,6 @@ pub fn duration_as_ms_rounded(duration: std::time::Duration) -> f64 {
     (duration.as_nanos() as f64 / 1000.0).round() / 1000.0
 }
 
-pub fn user_locale() -> num_format::Locale {
-    // TODO get user locale
-    // let locale = SystemLocale::default().unwrap(); // does not work on windows
-
-    num_format::Locale::en
-}
-
 /// Returns the number of CPUs to use. \
 /// Percent needs to be between 0 and 150%. \  
 /// Returns number of cpus to use; at least 1 cpu, at most 1.5 * available CPUs (110% can be better to actually utilize 100%).

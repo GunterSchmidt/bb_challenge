@@ -53,8 +53,8 @@ pub fn standard_args(args: &[String]) -> ArgValue {
         _ => {}
     }
 
+    #[allow(clippy::single_match)]
     match args.len() {
-        #[allow(clippy::single_match)]
         3 => match args[1].as_str() {
             "-b" | "--name" => {
                 // if let Ok(no) = args[1].parse::<u64>() {}

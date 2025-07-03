@@ -5,13 +5,20 @@ use std::fmt::Display;
 use crate::{
     decider_result::{EndReason, PreDeciderCount},
     machine::Machine,
+    machine_info::MachineInfo,
     pre_decider::PreDeciderRun,
 };
 
+pub type ResultDataProvider = Result<DataProviderBatch, Box<DataProviderError>>;
+
 // TODO BatchInfo with batch_no, num_batches, machine_no_first, machines_total
 pub trait DataProvider {
+    /// Returns the name of this data provider.
+    fn name(&self) -> &str;
+
     /// Returns the next batch of machines. DataProviderResult may have end_reason: IsLastBatch on last batch.
-    fn machine_batch_next(&mut self) -> DataProviderResult;
+    // TODO make real result
+    fn machine_batch_next(&mut self) -> ResultDataProvider;
 
     /// The actual used batch size (number of Turing machines generated in each call).
     fn batch_size(&self) -> usize;
@@ -42,7 +49,7 @@ pub trait DataProvider {
 
 #[derive(Debug, Default)]
 // TODO rename to DataProviderBatch
-pub struct DataProviderResult {
+pub struct DataProviderBatch {
     /// Current batch no, first batch is 0.
     pub batch_no: usize,
     /// Machines for Decider
@@ -53,7 +60,7 @@ pub struct DataProviderResult {
     pub end_reason: EndReason,
 }
 
-impl DataProviderResult {
+impl DataProviderBatch {
     pub fn new(batch_no: usize) -> Self {
         Self {
             batch_no,
@@ -88,7 +95,7 @@ impl DataProviderResult {
     //     }
 }
 
-impl Display for DataProviderResult {
+impl Display for DataProviderBatch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,
@@ -103,25 +110,35 @@ impl Display for DataProviderResult {
     }
 }
 
-// #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum DataProviderError {
-    NoMoreData,
+#[derive(Debug, Default)]
+pub struct DataProviderError {
+    pub name: String,
+    pub machine: Option<MachineInfo>,
+    pub batch: Option<DataProviderBatch>,
+    pub msg: String,
 }
+
 impl std::error::Error for DataProviderError {}
 
 impl Display for DataProviderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            // DataProviderError::InvalidSymbol(s) => {
-            //     write!(f, "Invalid symbol: '{}'", *s as char)
-            // }
-            DataProviderError::NoMoreData => write!(
-                f,
-                "No more data returned. This may be a legit end, \
-                but usually indicates not all data has been read."
-            ),
+        write!(f, "{}: {}", self.name, self.msg)?;
+        if let Some(machine) = &self.machine {
+            write!(f, "\n{machine}")?;
         }
+        if let Some(batch) = &self.batch {
+            write!(f, "\n{batch}")?;
+        }
+        Ok(())
+        // match self {
+        //     // DataProviderError::InvalidSymbol(s) => {
+        //     //     write!(f, "Invalid symbol: '{}'", *s as char)
+        //     // }
+        //     DataProviderError::NoMoreData => write!(
+        //         f,
+        //         "No more data returned. This may be a legit end, \
+        //         but usually indicates not all data has been read."
+        //     ),
+        // }
     }
 }

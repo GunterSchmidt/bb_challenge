@@ -3,11 +3,6 @@ use std::{fmt::Display, time::SystemTime};
 use hashbrown::HashMap;
 use num_format::ToFormattedString;
 
-use crate::{
-    generator_full::GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION,
-    generator_reduced::GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED, utils::user_locale,
-};
-
 // File path, can always be passed as parameter.
 pub(crate) const PATH_DATA: &str = "./data/";
 pub(crate) const FILE_PATH_BB5_CHALLENGE_DATA_FILE: &str =
@@ -27,9 +22,11 @@ const TAPE_SIZE_LIMIT_DEFAULT: usize = 20000;
 const RECORD_MACHINES_MAX_STEPS_DEFAULT: usize = 10;
 const CPU_UTILIZATION_DEFAULT: usize = 100;
 
+const GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION: usize = 500_000;
+const GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION: usize = 5_000_000;
+
 // --- Below are program defining definitions, where changes may have a serious impact. ---
 
-// TODO use these StepTypes instead of StepType
 /// Number type used for step counters which may exceed u64 and are not used as collection index.
 pub type StepTypeBig = u32;
 /// Number type used for step counters which are used as collection index.
@@ -51,8 +48,8 @@ pub const MAX_STATES: usize = 5;
 pub(crate) const MAX_STATES_GENERIC: usize = 10;
 pub(crate) const MAX_SYMBOLS_GENERIC: usize = 10;
 
-// TODO make config reference with lifetime
-// TODO then include file path?
+// TODO make config reference with lifetime,
+// TODO include file path?
 // Display for Config
 /// This sets the configuration for the decider run. \
 /// Use new_default(n_states) or the builder to create a Config.
@@ -69,7 +66,7 @@ pub struct Config {
     /// The init value determines if machines with less steps are recorded.
     /// This can be updated as previous batch runs max can be used as init value for next batches,
     /// reducing updates because a new machine with higher max steps was found.
-    steps_max_init: StepTypeBig,
+    steps_min: StepTypeBig,
     /// Unclear usage, if any. Should be the size of the tape, but the tape grows in packages.
     tape_size_limit: usize,
     /// For data provider: Return max this many machines.
@@ -115,12 +112,12 @@ impl Config {
             n_states,
             batch_size: BATCH_SIZE_FILE,
             step_limit_hold: step_limit,
-            steps_max_init: if n_states == 1 { 0 } else { 2 },
+            steps_min: if n_states == 1 { 0 } else { 2 },
             // TODO depending on n_states
             tape_size_limit: TAPE_SIZE_LIMIT_DEFAULT,
             machines_limit: Self::generate_limit_default(n_states),
             generator_full_batch_size_request: GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION,
-            generator_reduced_batch_size_request: GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED,
+            generator_reduced_batch_size_request: GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION,
             file_id_range: None,
             limit_machines_max_steps: RECORD_MACHINES_MAX_STEPS_DEFAULT,
             limit_machines_undecided: 0,
@@ -251,16 +248,16 @@ impl Config {
         self.n_states
     }
 
-    pub fn steps_max_init(&self) -> StepTypeBig {
-        self.steps_max_init
+    pub fn steps_min(&self) -> StepTypeBig {
+        self.steps_min
     }
 
-    // increases the value if new_max is larger
-    pub fn increase_steps_max_init(&mut self, new_max: StepTypeBig) {
-        if new_max > self.steps_max_init {
-            self.steps_max_init = new_max;
-        }
-    }
+    // // increases the value if new_max is larger
+    // pub fn increase_steps_min(&mut self, new_max: StepTypeBig) {
+    //     if new_max > self.steps_min {
+    //         self.steps_min = new_max;
+    //     }
+    // }
 
     pub fn step_limit_hold(&self) -> StepTypeBig {
         self.step_limit_hold
@@ -305,14 +302,14 @@ impl Default for Config {
 pub struct ConfigBuilder {
     n_states: usize,
     batch_size: Option<usize>,
+    file_id_range: Option<std::ops::Range<IdBig>>,
+    generator_batch_size_request_full: Option<usize>,
+    generator_batch_size_request_reduced: Option<usize>,
     step_limit_hold: Option<StepTypeBig>,
     step_limit_bouncer: Option<StepTypeSmall>,
     step_limit_cycler: Option<StepTypeSmall>,
     tape_size_limit: Option<usize>,
     machines_limit: Option<u64>,
-    file_id_range: Option<std::ops::Range<IdBig>>,
-    generator_batch_size_request_full: Option<usize>,
-    generator_batch_size_request_reduced: Option<usize>,
     limit_machines_max_steps: Option<usize>,
     limit_machines_undecided: Option<usize>,
     cpu_utilization_percent: Option<usize>,
@@ -426,7 +423,7 @@ impl ConfigBuilder {
             step_limit_cycler: self
                 .step_limit_cycler
                 .unwrap_or_else(|| Config::step_limit_cycler_default(self.n_states)),
-            steps_max_init: if self.n_states == 1 { 0 } else { 2 },
+            steps_min: if self.n_states == 1 { 0 } else { 2 },
             tape_size_limit: self.tape_size_limit.unwrap_or(TAPE_SIZE_LIMIT_DEFAULT),
             machines_limit: self
                 .machines_limit
@@ -436,7 +433,7 @@ impl ConfigBuilder {
                 .unwrap_or(GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION),
             generator_reduced_batch_size_request: self
                 .generator_batch_size_request_reduced
-                .unwrap_or(GENERATOR_BATCH_SIZE_RECOMMENDATION_REDUCED),
+                .unwrap_or(GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION),
             file_id_range: self.file_id_range,
             limit_machines_max_steps: self
                 .limit_machines_max_steps
@@ -478,4 +475,11 @@ impl Display for Config {
                 .to_formatted_string(&locale)
         )
     }
+}
+
+pub fn user_locale() -> num_format::Locale {
+    // TODO get user locale
+    // let locale = SystemLocale::default().unwrap(); // does not work on windows
+
+    num_format::Locale::en
 }
