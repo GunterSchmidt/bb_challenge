@@ -121,7 +121,7 @@ pub fn run_pre_decider_strict(table: &TransitionTableSymbol2) -> MachineStatus {
         return MachineStatus::EliminatedPreDecider(PreDeciderReason::OnlyOneDirection);
     }
 
-    if check_simple_start_loop(table) {
+    if check_simple_start_cycle(table) {
         // return MachineStatus::DecidedEndless(EndlessReason::SimpleStartLoop);
         return MachineStatus::EliminatedPreDecider(PreDeciderReason::SimpleStartCycle);
     }
@@ -161,7 +161,7 @@ pub fn run_pre_decider_simple(table: &TransitionTableSymbol2) -> MachineStatus {
         return MachineStatus::EliminatedPreDecider(PreDeciderReason::OnlyOneDirection);
     }
 
-    if check_simple_start_loop(table) {
+    if check_simple_start_cycle(table) {
         // return MachineStatus::DecidedEndless(EndlessReason::SimpleStartLoop);
         return MachineStatus::EliminatedPreDecider(PreDeciderReason::SimpleStartCycle);
     }
@@ -235,26 +235,45 @@ pub fn count_hold_transitions(tr_used: &[TransitionSymbol2]) -> usize {
 
 /// Elimination Rule 6: Simple start loop
 /// A simple start loop consists of two elements, the start transition and the following  
-/// transition to go back to start, e.g. A0:0RC and C0:0LA.  
-/// Case 1: 0RBxxx_0RAxxx: Writes only 0 repeatedly and goes right endless.
-/// Case 2: 0RBxxx_1RAxxx: Writes only 01 repeatedly and goes right endless.
-/// Case 3: 1RBxxx_0RAxxx: Writes only 10 repeatedly and goes right endless.
-/// Case 4: 1RBxxx_1RAxxx: Writes only 1 repeatedly and goes right endless.
-/// Case 5: 0RBxxx_0LAxxx: Writes only 00 and cycles endless.
-/// Case 6: 0RBxxx_1LAxxx: Writes 01 and step 4 require A1, not a simple start loop.
-/// Case 7: 1RBxxx_0LAxxx: Writes 01 and step 4 require A1, not a simple start loop.
-/// TODO extend to step 4?
+/// transition to go back to start, e.g. A0:0RC and C0:0LA.  \
+/// Case 1: 0RBxxx_0RAxxx: Writes only 0 repeatedly and goes right endless. \
+/// Case 2: 0RBxxx_1RAxxx: Writes only 01 repeatedly and goes right endless. \
+/// Case 3: 1RBxxx_0RAxxx: Writes only 10 repeatedly and goes right endless. \
+/// Case 4: 1RBxxx_1RAxxx: Writes only 1 repeatedly and goes right endless. \
+/// Case 5: 0RBxxx_0LAxxx: Writes only 00 and cycles endless. \
+/// Case 6: 0RBxxx_1LAxxx: Writes 01 and step 4 requires A1, not a simple start loop. \
+/// Case 7: 1RBxxx_0LAxxx: Writes 10 and step 2 requires A1, not a simple start loop. \
+/// Case 8: 1RBxxx_1LAxxx: Writes 11 and step 2 requires A1, not a simple start loop. \
 /// If in both cases the 0 is written (direction irrelevant), then this is endless.
+// TODO extend to step 4?
 #[inline]
-pub fn check_simple_start_loop(table: &TransitionTableSymbol2) -> bool {
-    if table.transition_start().is_symbol_one() {
-        return false;
-    }
-
+pub fn check_simple_start_cycle(table: &TransitionTableSymbol2) -> bool {
     let start_state = table.transition_start().state_x2();
-    // now compare if it goes back to state 1
-    table.transition(start_state).has_next_state_a() && table.transition(start_state).symbol() == 0
+    let tr_2nd = table.transition(start_state);
+    // 2nd needs to point back to A0 (0 is always the case)
+    if tr_2nd.has_next_state_a() {
+        if table.transition_start().is_symbol_one() {
+            // case 3 and 4, also to left: true, else case 7, 8
+            return tr_2nd.direction() == table.transition_start().direction();
+        } else {
+            // case 1, 2, 5: true, 6: false
+            return tr_2nd.direction() == table.transition_start().direction()
+                || tr_2nd.is_symbol_zero();
+        }
+    }
+    false
 }
+
+// #[inline]
+// pub(crate) fn check_simple_start_cycle_old(table: &TransitionTableSymbol2) -> bool {
+//     if table.transition_start().is_symbol_one() {
+//         return false;
+//     }
+//
+//     let start_state = table.transition_start().state_x2();
+//     // now compare if it goes back to state 1
+//     table.transition(start_state).has_next_state_a() && table.transition(start_state).symbol() == 0
+// }
 
 // /// This check will validate the actually used states by following the used states starting from A0.
 // /// It requires that A0 is not hold.
@@ -784,14 +803,11 @@ mod tests {
     }
 
     #[test]
-    fn check_pre_decider_simple_start_loop() {
+    fn check_pre_decider_simple_start_cycle() {
         // check does not apply
-        let mut transitions: Vec<(&str, &str)> = Vec::new();
-        transitions.push(("1RB", "1RB"));
-        transitions.push(("1LA", "---"));
-
-        let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = check_simple_start_loop(&tc);
+        let tm = "1RB1RB_1LA---";
+        let tc = TransitionTableSymbol2::from_standard_tm_text_format(tm).unwrap();
+        let check_result = check_simple_start_cycle(&tc);
         assert_eq!(check_result, false);
 
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -800,7 +816,7 @@ mod tests {
         transitions.push(("0LB", "1LA"));
 
         let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = check_simple_start_loop(&tc);
+        let check_result = check_simple_start_cycle(&tc);
         assert_eq!(check_result, false);
 
         // check applies
@@ -810,7 +826,7 @@ mod tests {
         transitions.push(("0LA", "1LA"));
 
         let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = check_simple_start_loop(&tc);
+        let check_result = check_simple_start_cycle(&tc);
         assert_eq!(check_result, true);
     }
 

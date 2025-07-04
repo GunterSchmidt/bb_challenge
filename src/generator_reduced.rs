@@ -11,7 +11,7 @@ use crate::{
     machine::Machine,
     pre_decider::{
         check_not_all_states_used, check_only_one_direction, check_only_zero_writes,
-        check_simple_start_loop, count_hold_transitions, PreDeciderRun,
+        check_simple_start_cycle, count_hold_transitions, PreDeciderRun,
     },
     status::PreDeciderReason,
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITIONS_FOR_A0},
@@ -174,7 +174,7 @@ impl GeneratorReduced {
         if check_not_all_states_used(&self.transition_table, self.n_states) {
             return PreDeciderReason::NotAllStatesUsed;
         }
-        if check_simple_start_loop(&self.transition_table) {
+        if check_simple_start_cycle(&self.transition_table) {
             return PreDeciderReason::SimpleStartCycle;
         }
 

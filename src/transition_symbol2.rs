@@ -317,6 +317,10 @@ impl TransitionSymbol2 {
         self.transition & FILTER_SYMBOL_0_1 != 0
     }
 
+    pub fn is_symbol_zero(&self) -> bool {
+        self.transition & FILTER_SYMBOL_0_1 == 0
+    }
+
     pub fn is_symbol_undefined(&self) -> bool {
         // Filter on direction is correct, as direction and symbol are always together defined or undefined.
         self.transition & FILTER_DIR == 0
