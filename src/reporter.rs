@@ -83,15 +83,17 @@ impl<'a> Reporter<'a> {
     pub fn report_stats(&mut self, processed: IdBig, result: &DeciderResultStats) -> String {
         // store progress with time stamp in progress_info
         self.progress_info.add_progress(processed);
-        let mut s = self
-            .report_progress
-            .report_progress(processed, &self.progress_info);
-        self.reset_last_report_progress_time();
-
+        let mut s = String::new();
         if self.is_due_detail() {
             s.push_str(self.report_progress.report_detail(result).as_str());
             self.reset_last_report_detail_time();
         }
+        s.push_str(
+            self.report_progress
+                .report_progress(processed, &self.progress_info)
+                .as_str(),
+        );
+        self.reset_last_report_progress_time();
 
         s
     }

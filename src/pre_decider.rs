@@ -9,7 +9,8 @@ use crate::{
     config::MAX_STATES,
     status::{MachineStatus, PreDeciderReason},
     transition_symbol2::{
-        TransitionSymbol2, TransitionTableSymbol2, STATE_HOLD_SYM2, TRANSITIONS_FOR_A0,
+        TransitionSymbol2, TransitionTableSymbol2, TransitionType, STATE_HOLD_SYM2,
+        TRANSITIONS_FOR_A0,
     },
 };
 
@@ -235,6 +236,14 @@ pub fn count_hold_transitions(tr_used: &[TransitionSymbol2]) -> usize {
 /// Elimination Rule 6: Simple start loop
 /// A simple start loop consists of two elements, the start transition and the following  
 /// transition to go back to start, e.g. A0:0RC and C0:0LA.  
+/// Case 1: 0RBxxx_0RAxxx: Writes only 0 repeatedly and goes right endless.
+/// Case 2: 0RBxxx_1RAxxx: Writes only 01 repeatedly and goes right endless.
+/// Case 3: 1RBxxx_0RAxxx: Writes only 10 repeatedly and goes right endless.
+/// Case 4: 1RBxxx_1RAxxx: Writes only 1 repeatedly and goes right endless.
+/// Case 5: 0RBxxx_0LAxxx: Writes only 00 and cycles endless.
+/// Case 6: 0RBxxx_1LAxxx: Writes 01 and step 4 require A1, not a simple start loop.
+/// Case 7: 1RBxxx_0LAxxx: Writes 01 and step 4 require A1, not a simple start loop.
+/// TODO extend to step 4?
 /// If in both cases the 0 is written (direction irrelevant), then this is endless.
 #[inline]
 pub fn check_simple_start_loop(table: &TransitionTableSymbol2) -> bool {
@@ -431,12 +440,38 @@ pub fn check_straight_to_end(table: &TransitionTableSymbol2, n_states: usize) ->
 /// Machine No. 5,721,093,031: 1RB1LB_1LA0LD_1RC0RA_---1LC \
 /// These machines are identical, only the states C and D are flipped. \
 /// The following logic applies: \
+/// States must appear in ascending order, no state can be skipped.
 /// TODO this is not quite right
 /// State A: A0 is 0RB or 1RB anyway. A1 can be anything.
 /// State B: B0 or B1: At least one must be A, B or C.
 /// State C: C0 or C1: At least one must be A, B or C or D.
+/// Pre-Conditions
+/// * A0 must to be 0RB or 1RB (strict test)
+/// * Only one direction is eliminated
 #[inline]
-pub fn check_states_can_be_switched(_table: &TransitionTableSymbol2, _n_states: usize) -> bool {
+pub fn check_states_can_be_switched(
+    // tr_used: &[TransitionSymbol2],
+    table: &TransitionTableSymbol2,
+    n_states: usize,
+) -> bool {
+    // for (i, tr) in tr_used.iter().enumerate().skip(2){
+    // This check requires A0 to be 0RB or 1RB, so A0 is always state B (=2).
+    let mut max_state = 2; // table.transitions[2].state();
+    let mut jump_to_a = 0;
+    // first step always goes to B0
+    // match table.transitions[4].state()
+
+    for i in 2..n_states {
+        // starts with state B
+        let max_state_allowed = (i + 1) as TransitionType;
+        // let mut has_one_correct = false;
+        if table.transitions[i * 2].state() > max_state_allowed {
+            if table.transitions[i * 2 + 1].state() > max_state_allowed {
+                return true;
+            }
+        }
+    }
+
     false
 }
 
@@ -446,6 +481,20 @@ mod tests {
     use crate::machine::Machine;
 
     use super::*;
+
+    #[test]
+    fn check_pre_decider_states_can_be_switched() {
+        // BB4 Max Steps:             107 (Number of machines: 2)
+        // Machine No.   191,658,921: 1RB1LB_1LA0LC_---1LD_1RD0RA
+        // Machine No. 5,721,093,031: 1RB1LB_1LA0LD_1RC0RA_---1LC
+        // Second is identical and does not need to be checked.
+        let tm = "1RB1LB_1LA0LD_1RC0RA_---1LC";
+        let table = TransitionTableSymbol2::from_standard_tm_text_format(&tm).unwrap();
+        // println!("{}", tc.to_standard_tm_text_format());
+        let check_result = check_states_can_be_switched(&table, table.n_states());
+        println!("check result: {}", check_result);
+        // assert_eq!(check_result, true);
+    }
 
     #[test]
     fn check_pre_decider_straight_to_end() {
@@ -552,7 +601,7 @@ mod tests {
         let check_result = check_not_all_states_used(&table, table.n_states());
         assert_eq!(check_result, true);
 
-        // This case just caused an error because of an programming error.
+        // This case just caused an error because of a programming error.
         let tm = "1RB---_0LB0RA_0RA0RA";
         let table = TransitionTableSymbol2::from_standard_tm_text_format(&tm).unwrap();
         // println!("{}", tc.to_standard_tm_text_format());
@@ -617,7 +666,7 @@ mod tests {
         transitions.push(("1LA", "---"));
 
         let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = check_only_zero_writes(&tc.transitions_used_self());
+        let check_result = check_only_zero_writes(&tc.transitions_used_eval());
         assert_eq!(check_result, false);
 
         // check applies
@@ -627,7 +676,7 @@ mod tests {
         transitions.push(("---", "1LA"));
 
         let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = check_only_zero_writes(&tc.transitions_used_self());
+        let check_result = check_only_zero_writes(&tc.transitions_used_eval());
         assert_eq!(check_result, true);
     }
 
@@ -689,7 +738,7 @@ mod tests {
         let tm = "1RB0RB_1RC0RC_---0LC";
         let table = TransitionTableSymbol2::from_standard_tm_text_format(&tm).unwrap();
         // println!("{}", tc.to_standard_tm_text_format());
-        let check_result = check_not_all_states_used(&table, table.n_states());
+        let check_result = check_only_one_direction(&table.transitions_used_eval());
         assert_eq!(check_result, true);
 
         // check does not apply
@@ -699,7 +748,7 @@ mod tests {
         // transitions.push(("---", "---"));
 
         let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = check_only_one_direction(&tc.transitions_used_self());
+        let check_result = check_only_one_direction(&tc.transitions_used_eval());
         assert_eq!(check_result, false);
 
         // check applies
@@ -709,7 +758,7 @@ mod tests {
         // transitions.push(("---", "---"));
 
         let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = check_only_one_direction(&tc.transitions_used_self());
+        let check_result = check_only_one_direction(&tc.transitions_used_eval());
         assert_eq!(check_result, true);
     }
 
@@ -721,7 +770,7 @@ mod tests {
         transitions.push(("1LA", "---"));
 
         let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = check_no_hold_transition(&tc.transitions_used_self());
+        let check_result = check_no_hold_transition(&tc.transitions_used_eval());
         assert_eq!(check_result, false);
 
         // check applies
@@ -730,7 +779,7 @@ mod tests {
         transitions.push(("1LA", "1LA"));
 
         let tc = TransitionTableSymbol2::from_string_tuple(&transitions);
-        let check_result = check_no_hold_transition(&tc.transitions_used_self());
+        let check_result = check_no_hold_transition(&tc.transitions_used_eval());
         assert_eq!(check_result, true);
     }
 

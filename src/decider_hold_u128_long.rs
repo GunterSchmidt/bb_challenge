@@ -6,7 +6,7 @@ use crate::{
     config::{
         Config, IdBig, StepTypeBig, StepTypeSmall, MAX_TAPE_GROWTH, TAPE_SIZE_INIT_CELL_BLOCKS,
     },
-    decider::{self, Decider},
+    decider::{self, Decider, DECIDER_HOLD_ID},
     decider_result::BatchData,
     machine::Machine,
     status::{MachineStatus, UndecidedReason},
@@ -16,7 +16,7 @@ use crate::{
         TL_POS_START_128,
     },
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_SYM2_START},
-    ResultUnitEndReason, DECIDER_HOLD_ID,
+    ResultUnitEndReason,
 };
 
 /// This decider runs on a 128-Bit number and moves data out to a long tape (Vec). \
@@ -27,6 +27,8 @@ use crate::{
 /// # Run run_check_hold to check if the machine holds
 // TODO Longer jump if multiple u32 in tape_long are FFFF
 // TODO Multiple repeating steps, e.g 3 on 001
+// TODO version with output tape, visualize
+// TO DO speedup u64 than handover? Probably only very small gain
 // pub struct DeciderU128Long<'a> {
 pub struct DeciderHoldU128Long {
     /// Partial fast Turing tape which shifts in every step, so that the head is always at the MIDDLE_BIT.
@@ -669,12 +671,8 @@ impl DeciderHoldU128Long {
 }
 
 impl Decider for DeciderHoldU128Long {
-    fn id(&self) -> usize {
-        DECIDER_HOLD_ID
-    }
-
-    fn name(&self) -> &str {
-        "Decider Hold Long Tape"
+    fn decider_id() -> &'static decider::DeciderId {
+        &DECIDER_HOLD_ID
     }
 
     // tape_long_bits in machine?
@@ -690,7 +688,6 @@ impl Decider for DeciderHoldU128Long {
 
     fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {
         let decider = Self::new(batch_data.config);
-        batch_data.decider_id = decider.id();
         decider::decider_generic_run_batch_v2(decider, batch_data)
     }
 

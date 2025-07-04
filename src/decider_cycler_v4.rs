@@ -6,12 +6,12 @@
 use crate::tape_utils::U64Ext;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES},
-    decider::{self, Decider},
+    decider::{self, Decider, DECIDER_CYCLER_ID},
     decider_result::BatchData,
     machine::Machine,
     status::{EndlessReason, MachineStatus, UndecidedReason},
     transition_symbol2::{DirectionType, TransitionSymbol2, TransitionType},
-    ResultUnitEndReason, DECIDER_CYCLER_ID,
+    ResultUnitEndReason,
 };
 
 // #[cfg(debug_assertions)]
@@ -100,13 +100,16 @@ impl DeciderCyclerV4 {
 // }
 
 impl Decider for DeciderCyclerV4 {
-    fn id(&self) -> usize {
-        DECIDER_CYCLER_ID
+    fn decider_id() -> &'static decider::DeciderId {
+        &DECIDER_CYCLER_ID
     }
-
-    fn name(&self) -> &str {
-        "Decider Cycler"
-    }
+    //     fn id(&self) -> usize {
+    //         DECIDER_CYCLER_ID
+    //     }
+    //
+    //     fn name(&self) -> &str {
+    //         "Decider Cycler"
+    //     }
 
     //     fn new_from_config(config: &Config) -> Self {
     //         Self::new(config)
@@ -450,7 +453,7 @@ impl Decider for DeciderCyclerV4 {
 
     fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {
         let decider = Self::new(batch_data.config);
-        batch_data.decider_id = decider.id();
+        // batch_data.decider_id = decider.decider_id();
         decider::decider_generic_run_batch_v2(decider, batch_data)
     }
 

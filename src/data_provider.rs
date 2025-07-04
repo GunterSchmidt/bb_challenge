@@ -9,6 +9,7 @@ use crate::{
     pre_decider::PreDeciderRun,
 };
 
+// Returning DataProviderBatch in a box degrades performance.
 pub type ResultDataProvider = Result<DataProviderBatch, Box<DataProviderError>>;
 
 // TODO BatchInfo with batch_no, num_batches, machine_no_first, machines_total

@@ -5,12 +5,10 @@ use std::time::Duration;
 
 use bb_challenge::{
     config::{Config, StepTypeBig},
-    decider::{Decider, DeciderConfig},
-    decider_cycler_v4::DeciderCyclerV4,
-    decider_engine::{self, run_decider_threaded_data_provider_multi_thread},
+    decider::{Decider, DeciderStandard},
+    decider_engine::{self, run_decider_chain_threaded_data_provider_multi_thread_reporting},
     decider_hold_u128_long::DeciderHoldU128Long,
     decider_result::result_max_steps_known,
-    decider_result_worker::{self, no_worker_v2},
     generator::Generator,
     generator_full::GeneratorFull,
     generator_reduced::GeneratorReduced,
@@ -278,12 +276,7 @@ fn bench_generate_reduced() {
 }
 
 fn bench_decider_data_provider_gen_v2(config: &Config, run_reduced: bool) {
-    let dc_cycler = DeciderConfig::new(
-        DeciderCyclerV4::decider_run_batch_v2,
-        decider_result_worker::no_worker_v2,
-        &config,
-    );
-    // let dp: dyn DataProvider = data_provider;
+    let dc_cycler = DeciderStandard::Cycler.decider_config(config);
     let result = if run_reduced {
         decider_engine::run_decider_chain_data_provider_single_thread_reporting(
             &vec![dc_cycler],
@@ -305,12 +298,12 @@ fn bench_decider_data_provider_gen_v2(config: &Config, run_reduced: bool) {
 }
 
 fn bench_decider_data_provider_gen_full_threaded(config: &Config) {
+    let dc_cycler = DeciderStandard::Cycler.decider_config(config);
     let data_provider = GeneratorFull::new(config);
-    let result = run_decider_threaded_data_provider_multi_thread(
+    let result = run_decider_chain_threaded_data_provider_multi_thread_reporting(
+        &vec![dc_cycler],
         data_provider,
-        DeciderCyclerV4::decider_run_batch_v2,
-        no_worker_v2,
-        config,
+        None,
     );
     // println!("{}", result);
     let n_states = config.n_states();
@@ -320,12 +313,12 @@ fn bench_decider_data_provider_gen_full_threaded(config: &Config) {
 }
 
 fn bench_decider_data_provider_gen_reduced_threaded(config: &Config) {
+    let dc_cycler = DeciderStandard::Cycler.decider_config(config);
     let data_provider = GeneratorReduced::new(config);
-    let result = run_decider_threaded_data_provider_multi_thread(
+    let result = run_decider_chain_threaded_data_provider_multi_thread_reporting(
+        &vec![dc_cycler],
         data_provider,
-        DeciderCyclerV4::decider_run_batch_v2,
-        no_worker_v2,
-        config,
+        None,
     );
     // println!("{}", result);
     let n_states = config.n_states();

@@ -21,6 +21,7 @@ pub mod error;
 pub mod generator;
 pub mod generator_full;
 pub mod generator_reduced;
+pub mod html;
 pub mod machine;
 pub mod machine_info;
 pub mod pre_decider;
@@ -32,8 +33,3 @@ pub mod transition_symbol2;
 pub mod utils;
 
 pub type ResultUnitEndReason = Result<(), decider_result::EndReason>;
-
-// Deciders in this library
-pub const DECIDER_HOLD_ID: usize = 10;
-pub const DECIDER_CYCLER_ID: usize = 20;
-pub const DECIDER_BOUNCER_ID: usize = 20;

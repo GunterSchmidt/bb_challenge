@@ -319,14 +319,12 @@ impl DataProviderThreaded for GeneratorFull {
 #[cfg(test)]
 mod tests {
     use crate::{
-        decider::Decider,
-        decider_cycler_v4::DeciderCyclerV4,
+        decider::DeciderStandard,
         decider_engine::{
-            run_decider_data_provider_single_thread,
-            run_decider_threaded_data_provider_multi_thread,
+            run_decider_chain_data_provider_single_thread,
+            run_decider_chain_threaded_data_provider_multi_thread,
         },
         decider_result::result_max_steps_known,
-        decider_result_worker::no_worker_v2,
     };
 
     use super::*;
@@ -393,14 +391,10 @@ mod tests {
 
     fn run_test_decider_generator_full(n_states: usize) {
         let config = config_bench(n_states);
+        let dc = DeciderStandard::Cycler.decider_config(&config);
         let generator = GeneratorFull::new(&config);
         // TODO no clue why this does not work
-        let result = run_decider_data_provider_single_thread(
-            generator,
-            DeciderCyclerV4::decider_run_batch_v2,
-            no_worker_v2,
-            &config,
-        );
+        let result = run_decider_chain_data_provider_single_thread(&vec![dc], generator);
         println!("{}", result);
         println!("{}", result.machines_max_steps_to_string(10));
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
@@ -408,13 +402,9 @@ mod tests {
 
     fn run_test_decider_generator_full_threaded(n_states: usize) {
         let config = config_bench(n_states);
+        let dc = DeciderStandard::Cycler.decider_config(&config);
         let generator = GeneratorFull::new(&config);
-        let result = run_decider_threaded_data_provider_multi_thread(
-            generator,
-            DeciderCyclerV4::decider_run_batch_v2,
-            no_worker_v2,
-            &config,
-        );
+        let result = run_decider_chain_threaded_data_provider_multi_thread(&vec![dc], generator);
         // println!("{}", result);
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
     }

@@ -500,7 +500,7 @@ impl TransitionTableSymbol2 {
     pub fn to_standard_tm_text_format(&self) -> String {
         let mut transition_texts = Vec::new();
         // let n_states = self.n_states();
-        for (i, transition) in self.transitions_used_self().iter().enumerate().step_by(2) {
+        for (i, transition) in self.transitions_used_eval().iter().enumerate().step_by(2) {
             let s = format!("{transition}{}", self.transition(i + 3));
             transition_texts.push(s);
         }
@@ -541,6 +541,7 @@ impl TransitionTableSymbol2 {
         s
     }
 
+    /// Returns the transition for the array id, which is state * 2 + symbol.
     pub fn transition(&self, array_id: usize) -> TransitionSymbol2 {
         self.transitions[array_id]
     }
@@ -563,7 +564,7 @@ impl TransitionTableSymbol2 {
     }
 
     /// This is minimal slower than with provided n_states
-    pub fn transitions_used_self(&self) -> &[TransitionSymbol2] {
+    pub fn transitions_used_eval(&self) -> &[TransitionSymbol2] {
         let last = self.n_states() * 2 + 2;
         &self.transitions[2..last]
     }
@@ -613,7 +614,7 @@ impl TransitionTableSymbol2 {
     }
 
     pub fn eval_set_has_self_referencing_transition(&mut self) -> bool {
-        for (id, t) in self.transitions_used_self().iter().enumerate() {
+        for (id, t) in self.transitions_used_eval().iter().enumerate() {
             if t.array_id() == id + 2 {
                 self.transitions[0].transition |= FILTER_TABLE_SELF_REF;
                 return true;

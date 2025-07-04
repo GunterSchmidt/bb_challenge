@@ -4,13 +4,9 @@ use std::{
 };
 
 use crate::{
-    config::Config,
     data_provider::DataProvider,
     data_provider_threaded::DataProviderThreaded,
-    decider::{
-        DeciderConfig, FnDeciderRunBatchV2, FnResultWorker, ResultDecider,
-        ThreadResultDataProvider, ThreadResultDecider,
-    },
+    decider::{DeciderConfig, ResultDecider, ThreadResultDataProvider, ThreadResultDecider},
     decider_result::{BatchData, DeciderResultStats, DurationDataProvider, EndReason},
     pre_decider::PreDeciderRun,
     reporter::Reporter,
@@ -25,12 +21,12 @@ pub fn run_decider_chain_batch(
     // data: DataProviderResult,
     // num_batches: usize,
     // run_predecider: PreDeciderRun,
-    decider_config: &[DeciderConfig],
+    decider_configs: &[DeciderConfig],
 ) -> ResultDecider {
     let start_decider = Instant::now();
     // interestingly this is required
     let mut batch_data = batch_data;
-    let first_decider = decider_config.first().expect("No decider!");
+    let first_decider = decider_configs.first().expect("No decider!");
     let mut result_batch = DeciderResultStats::new_init_steps_max(
         first_decider.config(),
         batch_data.result_decided.steps_max(),
@@ -53,7 +49,7 @@ pub fn run_decider_chain_batch(
             let batch_no = batch_data.batch_no;
             let num_batches = batch_data.num_batches;
             // run other deciders
-            for d in decider_config.iter().skip(1) {
+            for d in decider_configs.iter().skip(1) {
                 if !stop_run && !batch_data.machines_undecided.machines.is_empty() {
                     m_undecided = batch_data.machines_undecided.machines;
                     // borrow checker requires new object instead of just updating ref to machines
@@ -66,7 +62,7 @@ pub fn run_decider_chain_batch(
                         machines_undecided: Default::default(),
                         batch_no,
                         num_batches,
-                        decider_id: 0,
+                        decider_id: d.decider_id(),
                         config: d.config(),
                         run_predecider: PreDeciderRun::DoNotRun,
                     };
@@ -108,47 +104,18 @@ pub fn run_decider_chain_batch(
         ..Default::default()
     };
 
-    // Add the name at the end or it will result in a little performance loss. Reason unknown.
-    // TODO name
-    result_batch.set_name(format!(
-        "BB{}: '{}'",
-        first_decider.config().n_states(),
-        "decider.name()"
-    ));
-
     Ok(result_batch)
-}
-
-/// Runs the data provider and the decider both on the main thread
-/// using the standard reporter.
-pub fn run_decider_data_provider_single_thread(
-    data_provider: impl DataProvider,
-    f_decider_run_batch: FnDeciderRunBatchV2,
-    f_result_worker: FnResultWorker,
-    config: &Config,
-) -> DeciderResultStats {
-    let total = data_provider.num_machines_total();
-    let dc = vec![DeciderConfig::new(
-        f_decider_run_batch,
-        f_result_worker,
-        config,
-    )];
-    run_decider_chain_data_provider_single_thread_reporting(
-        &dc,
-        data_provider,
-        Some(Reporter::new_default(total)),
-    )
 }
 
 /// Runs the data provider and the deciders both on the main thread
 /// using the standard reporter.
 pub fn run_decider_chain_data_provider_single_thread(
-    decider_config: &[DeciderConfig],
+    decider_configs: &[DeciderConfig],
     data_provider: impl DataProvider,
 ) -> DeciderResultStats {
     let total = data_provider.num_machines_total();
     run_decider_chain_data_provider_single_thread_reporting(
-        decider_config,
+        decider_configs,
         data_provider,
         Some(Reporter::new_default(total)),
     )
@@ -157,11 +124,11 @@ pub fn run_decider_chain_data_provider_single_thread(
 /// Runs the data provider and the deciders both on the main thread
 /// using a custom reporter (or None to omit reporting).
 pub fn run_decider_chain_data_provider_single_thread_reporting(
-    decider_config: &[DeciderConfig],
+    decider_configs: &[DeciderConfig],
     mut data_provider: impl DataProvider,
     mut reporter: Option<Reporter>,
 ) -> DeciderResultStats {
-    let first_config = decider_config.first().expect("No decider given").config();
+    let first_config = decider_configs.first().expect("No decider given").config();
 
     let start = Instant::now();
     let mut duration_data_provider = Duration::default();
@@ -198,11 +165,11 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
                         machines_undecided: Default::default(),
                         batch_no: data.batch_no,
                         num_batches: data_provider.num_batches(),
-                        decider_id: 0,
+                        decider_id: decider_configs[0].decider_id(),
                         config: first_config,
                         run_predecider: data_provider.requires_pre_decider_check(),
                     };
-                    let dc_result = run_decider_chain_batch(batch_data, decider_config);
+                    let dc_result = run_decider_chain_batch(batch_data, decider_configs);
                     match dc_result {
                         Ok(r_stats) => {
                             result_main.add_result(&r_stats);
@@ -276,36 +243,15 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
     result_main
 }
 
-/// Runs the data provider and the decider in separate threads (deciders can have multiple threads)
-/// using the standard reporter.
-pub fn run_decider_threaded_data_provider_single_thread(
-    data_provider: impl DataProvider,
-    f_decider_run_batch: FnDeciderRunBatchV2,
-    f_result_worker: FnResultWorker,
-    config: &Config,
-) -> DeciderResultStats {
-    let total = data_provider.num_machines_total();
-    let dc = vec![DeciderConfig::new(
-        f_decider_run_batch,
-        f_result_worker,
-        config,
-    )];
-    run_decider_chain_threaded_data_provider_single_thread_reporting(
-        &dc,
-        data_provider,
-        Some(Reporter::new_default(total)),
-    )
-}
-
 /// Runs the data provider and the deciders in separate threads (deciders can have multiple threads)
 /// using the standard reporter.
 pub fn run_decider_chain_threaded_data_provider_single_thread(
-    decider_config: &[DeciderConfig],
+    decider_configs: &[DeciderConfig],
     data_provider: impl DataProvider,
 ) -> DeciderResultStats {
     let total = data_provider.num_machines_total();
     run_decider_chain_threaded_data_provider_single_thread_reporting(
-        decider_config,
+        decider_configs,
         data_provider,
         Some(Reporter::new_default(total)),
     )
@@ -314,17 +260,17 @@ pub fn run_decider_chain_threaded_data_provider_single_thread(
 /// Runs the data provider and the deciders in separate threads (deciders can have multiple threads)
 /// using a custom reporter (or None to omit reporting).
 pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
-    decider_config: &[DeciderConfig],
+    decider_configs: &[DeciderConfig],
     mut data_provider: impl DataProvider,
     mut reporter: Option<Reporter>,
 ) -> DeciderResultStats {
     let start = Instant::now();
-    let first_config = decider_config.first().expect("No decider given").config();
+    let first_config = decider_configs.first().expect("No decider given").config();
     let max_threads = num_cpus_percentage(first_config.cpu_utilization_percent());
     // if single thread run single
     if max_threads == 1 {
         return run_decider_chain_data_provider_single_thread_reporting(
-            decider_config,
+            decider_configs,
             data_provider,
             reporter,
         );
@@ -428,11 +374,11 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
                         machines_undecided: Default::default(),
                         batch_no: gen_result.batch_no,
                         num_batches,
-                        decider_id: 0,
+                        decider_id: decider_configs[0].decider_id(),
                         config: &config,
                         run_predecider,
                     };
-                    let dr = run_decider_chain_batch(batch_data, decider_config);
+                    let dr = run_decider_chain_batch(batch_data, decider_configs);
                     let decider_result = ThreadResultDecider {
                         batch_no: gen_result.batch_no,
                         result: dr,
@@ -506,45 +452,27 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
         duration_decider,
         duration_total: start.elapsed(),
     };
-    result_main.set_name(format!(
-        "BB{}: '{}' threaded",
-        first_config.n_states(),
-        "decider.name()"
-    ));
+
+    for d in decider_configs {
+        result_main.add_name(&format!(
+            "BB{} threaded: {}",
+            first_config.n_states(),
+            d.decider_id().name
+        ));
+    }
 
     result_main
-}
-
-/// Runs the data provider and the decider in separate threads (both can have multiple threads)
-/// using the standard reporter.
-pub fn run_decider_threaded_data_provider_multi_thread(
-    data_provider: impl DataProviderThreaded + std::marker::Send,
-    f_decider_run_batch: FnDeciderRunBatchV2,
-    f_result_worker: FnResultWorker,
-    config: &Config,
-) -> DeciderResultStats {
-    let total = data_provider.num_machines_total();
-    let dc = vec![DeciderConfig::new(
-        f_decider_run_batch,
-        f_result_worker,
-        config,
-    )];
-    run_decider_chain_threaded_data_provider_multi_thread_reporting(
-        &dc,
-        data_provider,
-        Some(Reporter::new_default(total)),
-    )
 }
 
 /// Runs the data provider and the deciders in separate threads (both can have multiple threads)
 /// using the standard reporter.
 pub fn run_decider_chain_threaded_data_provider_multi_thread(
-    decider_config: &[DeciderConfig],
+    decider_configs: &[DeciderConfig],
     data_provider: impl DataProviderThreaded + std::marker::Send,
 ) -> DeciderResultStats {
     let total = data_provider.num_machines_total();
     run_decider_chain_threaded_data_provider_multi_thread_reporting(
-        decider_config,
+        decider_configs,
         data_provider,
         Some(Reporter::new_default(total)),
     )
@@ -566,17 +494,17 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread(
 // Contains a lot of code to optimize thread usage.
 // TODO thread recycling.
 pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
-    decider_config: &[DeciderConfig],
+    decider_configs: &[DeciderConfig],
     data_provider: impl DataProviderThreaded + std::marker::Send,
     mut reporter: Option<Reporter>,
 ) -> DeciderResultStats {
     let start = Instant::now();
-    let first_config = decider_config.first().expect("No decider given").config();
+    let first_config = decider_configs.first().expect("No decider given").config();
     let max_threads = num_cpus_percentage(first_config.cpu_utilization_percent());
     // if single thread run single
     if max_threads == 1 {
         return run_decider_chain_data_provider_single_thread_reporting(
-            decider_config,
+            decider_configs,
             data_provider,
             reporter,
         );
@@ -738,7 +666,7 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
                         machines_undecided: Default::default(),
                         batch_no: gen_result.batch_no,
                         num_batches,
-                        decider_id: 0,
+                        decider_id: decider_configs[0].decider_id(),
                         config: &config,
                         run_predecider,
                     };
@@ -748,7 +676,7 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
                     //     num_batches,
                     //     batch_data.machines.len(),
                     // );
-                    let dr = run_decider_chain_batch(batch_data, decider_config);
+                    let dr = run_decider_chain_batch(batch_data, decider_configs);
                     let decider_result = ThreadResultDecider {
                         batch_no: gen_result.batch_no,
                         result: dr,

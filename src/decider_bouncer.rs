@@ -3,6 +3,11 @@ use std::io::Write;
 
 /// This decider finds repeating machines, which do not have a loop, but a repeating rhythm on tape, which endlessly expands.
 /// It is working on a 128 Bit tape.
+// TODO identify non-bouncer to end quickly.
+// TODO document logic
+// TODO is this final?
+// TODO Why so many steps required?
+// TODO speed up by repeating rhythm
 // #[cfg(debug_assertions)]
 // #[cfg(all(debug_assertions, feature = "bb_debug"))]
 // use crate::machine::EndlessReason;
@@ -11,12 +16,12 @@ use std::io::Write;
 // use crate::utils::U64Ext;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES, N_STATES_DEFAULT},
-    decider::{self, Decider},
+    decider::{self, Decider, DECIDER_BOUNCER_ID},
     decider_result::BatchData,
     machine::Machine,
     status::{EndlessReason, ExpandingBouncerReason, MachineStatus, UndecidedReason},
     transition_symbol2::{TransitionSymbol2, TRANSITION_0RA},
-    ResultUnitEndReason, DECIDER_BOUNCER_ID,
+    ResultUnitEndReason,
 };
 
 #[cfg(debug_assertions)]
@@ -854,12 +859,8 @@ impl Default for DeciderBouncer {
 }
 
 impl Decider for DeciderBouncer {
-    fn id(&self) -> usize {
-        DECIDER_BOUNCER_ID
-    }
-
-    fn name(&self) -> &str {
-        "Decider Bouncer"
+    fn decider_id() -> &'static decider::DeciderId {
+        &DECIDER_BOUNCER_ID
     }
 
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
@@ -873,7 +874,6 @@ impl Decider for DeciderBouncer {
 
     fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {
         let decider = Self::new(batch_data.config);
-        batch_data.decider_id = decider.id();
         decider::decider_generic_run_batch_v2(decider, batch_data)
     }
 }

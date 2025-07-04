@@ -3,6 +3,7 @@ use std::{fmt::Display, time::Duration};
 
 use crate::{
     config::{user_locale, Config, IdBig, StepTypeBig, StepTypeSmall},
+    decider::DeciderId,
     generator,
     machine::Machine,
     machine_info::MachineInfo,
@@ -93,11 +94,10 @@ impl Display for EndReason {
     }
 }
 
-// TODO record times per decider
-// TODO record decided, undecided per decider
 /// The result of the decider. It holds a number of counters for each result type and may carry the
 /// max steps and undecided machines.
 /// This is always returned. end_reason should give error information if any.
+// TODO list of deciders with id, name, config, runtime, evaluated and decided (= and undecided)
 #[derive(Debug, Default)]
 pub struct DeciderResultStats {
     /// Number of machines which have been tested by the deciders (not pre-deciders) or have been eliminated during
@@ -1187,7 +1187,7 @@ pub struct BatchData<'a> {
     /// Current batch no, first batch is 0.
     pub batch_no: usize,
     pub num_batches: usize,
-    pub decider_id: usize,
+    pub decider_id: &'a DeciderId,
     pub run_predecider: PreDeciderRun,
     pub config: &'a Config,
 }

@@ -2,7 +2,11 @@ use std::{fmt::Display, time::Duration};
 
 use crate::{
     config::Config,
+    decider_bouncer::DeciderBouncer,
+    decider_cycler_v4::DeciderCyclerV4,
+    decider_hold_u128_long::DeciderHoldU128Long,
     decider_result::{BatchData, DeciderResultStats, EndReason, PreDeciderCount},
+    decider_result_worker::no_worker_v2,
     machine::Machine,
     machine_info::MachineInfo,
     pre_decider::{run_pre_decider_simple, run_pre_decider_strict, PreDeciderRun},
@@ -32,23 +36,130 @@ pub type FnResultWorker = fn(&BatchData) -> ResultUnitEndReason;
 //     // HoldLong(Box<crate::decider_hold_u128_long::DeciderHoldU128Long>),
 // }
 
+pub enum DeciderStandard {
+    Bouncer,
+    Cycler,
+    Hold,
+}
+
+impl DeciderStandard {
+    pub fn decider_caller(&self) -> DeciderCaller<'_> {
+        match self {
+            DeciderStandard::Bouncer => {
+                DeciderCaller::new(&DECIDER_BOUNCER_ID, DeciderBouncer::decider_run_batch_v2)
+            }
+            DeciderStandard::Cycler => {
+                DeciderCaller::new(&DECIDER_CYCLER_ID, DeciderCyclerV4::decider_run_batch_v2)
+            }
+            DeciderStandard::Hold => {
+                DeciderCaller::new(&DECIDER_HOLD_ID, DeciderHoldU128Long::decider_run_batch_v2)
+            }
+        }
+    }
+
+    pub fn decider_config<'a>(&self, config: &'a Config) -> DeciderConfig<'a> {
+        match self {
+            DeciderStandard::Bouncer => DeciderConfig::new(
+                &DECIDER_BOUNCER_ID,
+                DeciderBouncer::decider_run_batch_v2,
+                config,
+            ),
+            DeciderStandard::Cycler => DeciderConfig::new(
+                &DECIDER_CYCLER_ID,
+                DeciderCyclerV4::decider_run_batch_v2,
+                config,
+            ),
+            DeciderStandard::Hold => DeciderConfig::new(
+                &DECIDER_HOLD_ID,
+                DeciderHoldU128Long::decider_run_batch_v2,
+                config,
+            ),
+        }
+    }
+}
+
+// Deciders in this library
+pub const DECIDER_HOLD_ID: DeciderId = DeciderId {
+    id: 10,
+    name: "Decider Hold",
+};
+pub const DECIDER_CYCLER_ID: DeciderId = DeciderId {
+    id: 20,
+    name: "Decider Cycler",
+};
+pub const DECIDER_BOUNCER_ID: DeciderId = DeciderId {
+    id: 20,
+    name: "Decider Bouncer",
+};
+
+#[derive(Debug, Clone, Copy)]
+pub struct DeciderCaller<'a> {
+    decider_id: &'a DeciderId,
+    f_decider: FnDeciderRunBatchV2,
+}
+
+impl<'a> DeciderCaller<'a> {
+    pub fn new(decider_id: &'a DeciderId, f_decider: FnDeciderRunBatchV2) -> Self {
+        Self {
+            decider_id,
+            f_decider,
+        }
+    }
+
+    pub fn decider_id(&self) -> &'a DeciderId {
+        self.decider_id
+    }
+
+    pub fn f_decider(&self) -> fn(&mut BatchData<'_>) -> Result<(), EndReason> {
+        self.f_decider
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct DeciderConfig<'a> {
+    decider_id: &'a DeciderId,
     f_decider: FnDeciderRunBatchV2,
-    // TODO move execution to thread, requires thread safety
     f_result_worker: FnResultWorker,
+    fo_result_worker: Option<FnResultWorker>,
     config: &'a Config,
 }
 
 impl<'a> DeciderConfig<'a> {
     pub fn new(
+        decider_id: &'a DeciderId,
+        f_decider: FnDeciderRunBatchV2,
+        config: &'a Config,
+    ) -> Self {
+        Self {
+            decider_id,
+            f_decider,
+            f_result_worker: no_worker_v2,
+            fo_result_worker: None,
+            config,
+        }
+    }
+
+    pub fn new_caller(decider_caller: &'a DeciderCaller, config: &'a Config) -> Self {
+        Self {
+            decider_id: decider_caller.decider_id,
+            f_decider: decider_caller.f_decider,
+            f_result_worker: no_worker_v2,
+            fo_result_worker: None,
+            config,
+        }
+    }
+
+    pub fn new_with_worker(
+        decider_id: &'a DeciderId,
         f_decider: FnDeciderRunBatchV2,
         f_result_worker: FnResultWorker,
         config: &'a Config,
     ) -> Self {
         Self {
+            decider_id,
             f_decider,
             f_result_worker,
+            fo_result_worker: None,
             config,
         }
     }
@@ -61,8 +172,16 @@ impl<'a> DeciderConfig<'a> {
         self.f_result_worker
     }
 
+    pub fn fo_result_worker(&self) -> Option<FnResultWorker> {
+        self.fo_result_worker
+    }
+
     pub fn config(&self) -> &'a Config {
         self.config
+    }
+
+    pub fn decider_id(&self) -> &DeciderId {
+        self.decider_id
     }
 }
 
@@ -75,18 +194,38 @@ impl<'a> DeciderConfig<'a> {
 //     fn name_minimal(&self) -> &str;
 // }
 
-// pub struct DeciderId {
-//     pub no: u16,
-//     pub name: &'static str,
+/// Decider identification. As only the function to run the decider is passed, the id can not be requested
+/// and needs to be part of the DeciderConfig.
+
+#[derive(Debug, Clone, Copy)]
+pub struct DeciderId {
+    pub id: usize,
+    pub name: &'static str,
+}
+
+// impl DeciderId {
+//     pub fn new(id: usize, name: &'static str) -> Self {
+//         Self { id, name }
+//     }
+//
+//     pub fn id(&self) -> usize {
+//         self.id
+//     }
+//
+//     pub fn name(&self) -> &'static str {
+//         self.name
+//     }
 // }
 
 pub trait Decider {
     // TODO into id, name struct
-    /// Returns the name of this decider
-    fn id(&self) -> usize;
+    fn decider_id() -> &'static DeciderId;
 
-    /// Returns the name of this decider
-    fn name(&self) -> &str;
+    //     /// Returns the name of this decider
+    //     fn id(&self) -> usize;
+    //
+    //     /// Returns the name of this decider
+    //     fn name(&self) -> &str;
 
     // fn new_from_config(config: &Config) -> Self;
     // fn new_from_self(&self) -> Self;
