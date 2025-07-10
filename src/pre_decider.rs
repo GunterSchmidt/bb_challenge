@@ -245,6 +245,9 @@ pub fn count_hold_transitions(tr_used: &[TransitionSymbol2]) -> usize {
 /// Case 7: 1RBxxx_0LAxxx: Writes 10 and step 2 requires A1, not a simple start loop. \
 /// Case 8: 1RBxxx_1LAxxx: Writes 11 and step 2 requires A1, not a simple start loop. \
 /// If in both cases the 0 is written (direction irrelevant), then this is endless.
+///
+/// 2nd recursion
+/// 0RB---_1LB0RA -> 0RB, 1RB, 1RB endless
 // TODO extend to step 4?
 #[inline]
 pub fn check_simple_start_cycle(table: &TransitionTableSymbol2) -> bool {
@@ -252,15 +255,24 @@ pub fn check_simple_start_cycle(table: &TransitionTableSymbol2) -> bool {
     let tr_2nd = table.transition(start_state);
     // 2nd needs to point back to A0 (0 is always the case)
     if tr_2nd.has_next_state_a() {
-        if table.transition_start().is_symbol_one() {
+        if table.transition_start().is_symbol_one()
+            && tr_2nd.direction() == table.transition_start().direction()
+        {
             // case 3 and 4, also to left: true, else case 7, 8
-            return tr_2nd.direction() == table.transition_start().direction();
-        } else {
+            return true;
+        } else if tr_2nd.direction() == table.transition_start().direction()
+            || tr_2nd.is_symbol_zero()
+        {
             // case 1, 2, 5: true, 6: false
-            return tr_2nd.direction() == table.transition_start().direction()
-                || tr_2nd.is_symbol_zero();
+            return true;
         }
     }
+
+    // 2nd is a recursion
+    if table.transition_start().is_symbol_zero() && tr_2nd.state_x2() == start_state {
+        return true;
+    }
+
     false
 }
 

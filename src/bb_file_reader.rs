@@ -330,7 +330,6 @@ impl DataProvider for BBDataProvider {
 
     fn machine_batch_next(&mut self) -> ResultDataProvider {
         let mut batch = DataProviderBatch::new(self.batch_no);
-        batch.end_reason = EndReason::Working;
 
         // already done, but this should not happen
         if self.num_machines_read >= self.num_machines_total() {

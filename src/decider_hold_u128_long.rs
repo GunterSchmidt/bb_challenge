@@ -1,5 +1,9 @@
 use std::fmt::Display;
+#[cfg(feature = "bb_enable_html_reports")]
+use std::{fs::File, io::Write, path::MAIN_SEPARATOR_STR};
 
+#[cfg(feature = "bb_enable_html_reports")]
+use crate::html;
 #[cfg(all(debug_assertions, feature = "bb_debug"))]
 use crate::tape_utils::{VecU32Ext, TAPE_DISPLAY_RANGE_128};
 use crate::{
@@ -28,6 +32,8 @@ use crate::{
 // TODO Longer jump if multiple u32 in tape_long are FFFF
 // TODO Multiple repeating steps, e.g 3 on 001
 // TODO version with output tape, visualize
+// TODO performance html: keep 1000 lines in memory, then write
+// TO DO many steps: stop after limit, but write last 1000 lines (this is difficult without creating the lines anyway)
 // TO DO speedup u64 than handover? Probably only very small gain
 // pub struct DeciderU128Long<'a> {
 pub struct DeciderHoldU128Long {
@@ -49,6 +55,7 @@ pub struct DeciderHoldU128Long {
     /// Low bound in tape_long, this is the leftmost value.
     tl_low_bound: usize,
     num_steps: StepTypeBig,
+    tr_field_id: usize,
     tr: TransitionSymbol2,
     // machine id, just for debugging
     id: IdBig,
@@ -56,6 +63,12 @@ pub struct DeciderHoldU128Long {
     #[allow(dead_code)]
     status: MachineStatus,
     step_limit: StepTypeBig,
+    #[cfg(feature = "bb_enable_html_reports")]
+    write_html_step_limit: u32,
+    #[cfg(feature = "bb_enable_html_reports")]
+    path: String,
+    #[cfg(feature = "bb_enable_html_reports")]
+    file: Option<File>,
 }
 
 impl DeciderHoldU128Long {
@@ -70,6 +83,7 @@ impl DeciderHoldU128Long {
             tl_high_bound: TL_POS_START_128 + 3,
 
             num_steps: 0,
+            tr_field_id: 2,
             // Initialize transition with A0 as start
             tr: TRANSITION_SYM2_START,
             // copy the transition table as this runs faster
@@ -77,6 +91,16 @@ impl DeciderHoldU128Long {
             transition_table: TransitionTableSymbol2::default(),
             status: MachineStatus::NoDecision,
             step_limit: config.step_limit_hold(),
+            #[cfg(feature = "bb_enable_html_reports")]
+            write_html_step_limit: if config.write_html_file() {
+                config.write_html_step_limit()
+            } else {
+                0
+            },
+            #[cfg(feature = "bb_enable_html_reports")]
+            path: Self::get_html_path(config.write_html_file(), config.n_states()),
+            #[cfg(feature = "bb_enable_html_reports")]
+            file: None,
         }
     }
 
@@ -92,6 +116,7 @@ impl DeciderHoldU128Long {
         self.tl_high_bound = TL_POS_START_128 + 3;
 
         self.num_steps = 0;
+        self.tr_field_id = 2;
         self.tr = TRANSITION_SYM2_START;
         self.status = MachineStatus::NoDecision;
         // keep step_limit
@@ -121,23 +146,25 @@ impl DeciderHoldU128Long {
     //     self.decider = Some(decider);
     // }
 
-    /// Returns the MachineStatus:Hold with steps if steps were found within limits of tape and max steps. \
-    /// This version has a long tape, so it is not restricted to the 128 bit range.
-    /// This will use self_referencing_transition speed-up if available.
-    fn run_check_hold(&mut self, machine: &Machine) -> MachineStatus {
-        self.clear();
-        self.id = machine.id();
-        self.transition_table = *machine.transition_table();
-        // if self.transition_table.has_self_referencing_transition() {
-        if self
-            .transition_table
-            .eval_set_has_self_referencing_transition()
-        {
-            self.run_check_hold_with_self_referencing_transition()
-        } else {
-            self.run_check_hold_without_self_referencing_transitions()
-        }
-    }
+    // /// Returns the MachineStatus:Hold with steps if steps were found within limits of tape and max steps. \
+    // /// This version has a long tape, so it is not restricted to the 128 bit range.
+    // /// This will use self_referencing_transition speed-up if available.
+    // fn decide_machine_hold(&mut self, machine: &Machine) -> MachineStatus {
+    //     self.clear();
+    //     self.id = machine.id();
+    //     self.transition_table = *machine.transition_table();
+    //     let result = if cfg!(feature = "bb_no_self_ref") {
+    //         self.run_check_hold_without_self_referencing_transitions()
+    //     } else if self
+    //         .transition_table
+    //         .eval_set_has_self_referencing_transition()
+    //     {
+    //         self.run_check_hold_with_self_referencing_transition()
+    //     } else {
+    //         self.run_check_hold_without_self_referencing_transitions()
+    //     };
+    //     result
+    // }
 
     fn run_check_hold_with_self_referencing_transition(&mut self) -> MachineStatus {
         // loop over transitions to write tape
@@ -194,6 +221,22 @@ impl DeciderHoldU128Long {
             }
         }
         ones as StepTypeSmall
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn get_html_path(write_html: bool, n_states: usize) -> String {
+        if write_html {
+            let p = format!(
+                "{}{}{}{n_states}",
+                Config::get_result_path(),
+                MAIN_SEPARATOR_STR,
+                "hold_bb",
+            );
+            html::create_css(&p).expect("CSS files could not be created.");
+            p
+        } else {
+            String::new()
+        }
     }
 
     /// Shifts the pos in the long tape one to left and checks Vec dimensions
@@ -298,33 +341,36 @@ impl DeciderHoldU128Long {
     #[inline(always)]
     fn next_step(&mut self) -> bool {
         self.num_steps += 1;
-        let curr_read_symbol = self.current_symbol();
-        let arr_id = self.tr.state_x2() + curr_read_symbol;
-        self.tr = self.transition_table.transition(arr_id);
+        self.tr_field_id = self.tr.state_x2() + self.current_symbol();
+        self.tr = self.transition_table.transition(self.tr_field_id);
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
         println!("{}", self.step_to_string());
 
         // check if done
         if self.tr.is_hold() {
-            // if self.id == 331136 {
-            //     println!("{}", self.id);
-            //     println!("{}", self.status);
-            //     let machine = Machine::new(self.id, self.transition_table);
-            //     let s =
-            //         DeciderU128Long::<crate::sub_decider::SubDeciderDummy>::run_decider(&machine);
-            //     let rf = machine.has_self_referencing_transition();
-            //     println!("{s}");
-            //     println!();
-            // }
             // write last symbol
             if !self.tr.is_symbol_undefined() {
                 self.set_current_symbol();
             }
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
             self.status = MachineStatus::DecidedHolds(self.num_steps);
+            #[cfg(feature = "bb_enable_html_reports")]
+            if self.write_html_step_limit > 0 {
+                self.write_step_html();
+                self.write_html_p(
+                    format!("Decided: Holds after {} steps.", self.num_steps).as_str(),
+                );
+            }
             return false;
         } else if self.num_steps > self.step_limit {
             self.status = self.undecided_step_limit();
+            #[cfg(feature = "bb_enable_html_reports")]
+            if self.write_html_step_limit > 0 {
+                self.write_step_html();
+                self.write_html_p(
+                    format!("Undecided: Limit of {} steps reached.", self.step_limit).as_str(),
+                );
+            }
             return false;
         }
 
@@ -416,8 +462,15 @@ impl DeciderHoldU128Long {
             }
         };
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
-        if self.num_steps % 100 == 0 {
-            println!();
+        {
+            if self.num_steps % 100 == 0 {
+                println!();
+            }
+            println!("{}", self.step_to_string());
+        }
+        #[cfg(feature = "bb_enable_html_reports")]
+        if self.write_html_step_limit > 0 && self.num_steps <= self.write_html_step_limit {
+            self.write_step_html();
         }
 
         true
@@ -427,9 +480,8 @@ impl DeciderHoldU128Long {
     #[inline(always)]
     fn next_step_self_ref(&mut self) -> bool {
         self.num_steps += 1;
-        let curr_read_symbol = self.current_symbol();
-        let arr_id = self.tr.state_x2() + curr_read_symbol;
-        self.tr = self.transition_table.transition(arr_id);
+        self.tr_field_id = self.tr.state_x2() + self.current_symbol();
+        self.tr = self.transition_table.transition(self.tr_field_id);
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
         println!("{}", self.step_to_string());
 
@@ -441,9 +493,23 @@ impl DeciderHoldU128Long {
             }
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
             self.status = MachineStatus::DecidedHolds(self.num_steps);
+            #[cfg(feature = "bb_enable_html_reports")]
+            if self.write_html_step_limit > 0 {
+                self.write_step_html();
+                self.write_html_p(
+                    format!("Decided: Holds after {} steps.", self.num_steps).as_str(),
+                );
+            }
             return false;
         } else if self.num_steps > self.step_limit {
             self.status = self.undecided_step_limit();
+            #[cfg(feature = "bb_enable_html_reports")]
+            if self.write_html_step_limit > 0 {
+                self.write_step_html();
+                self.write_html_p(
+                    format!("Undecided: Limit of {} steps reached.", self.step_limit).as_str(),
+                );
+            }
             return false;
         }
 
@@ -451,8 +517,8 @@ impl DeciderHoldU128Long {
             // normal shift RIGHT -> tape moves left
 
             // Check if self referencing, which speeds up the shift greatly.
-            if self.tr.array_id() == arr_id {
-                let mut jump = self.count_right(curr_read_symbol) as usize;
+            if self.tr.array_id() == self.tr_field_id {
+                let mut jump = self.count_right(self.tr_field_id % 2) as usize;
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 println!("  jump right {jump}");
                 if self.pos_middle + jump > HIGH32_SWITCH_U128 {
@@ -515,8 +581,8 @@ impl DeciderHoldU128Long {
             // normal shift LEFT -> tape moves left
 
             // Check if self referencing, which speeds up the shift greatly.
-            if self.tr.array_id() == arr_id {
-                let mut jump = self.count_left(curr_read_symbol) as usize;
+            if self.tr.array_id() == self.tr_field_id {
+                let mut jump = self.count_left(self.tr_field_id % 2) as usize;
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 println!("  jump left {jump}");
                 if self.pos_middle < LOW64_SWITCH_U128 + jump {
@@ -576,8 +642,15 @@ impl DeciderHoldU128Long {
             }
         };
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
-        if self.num_steps % 100 == 0 {
-            println!();
+        {
+            if self.num_steps % 100 == 0 {
+                println!();
+            }
+            println!("{}", self.step_to_string());
+        }
+        #[cfg(feature = "bb_enable_html_reports")]
+        if self.write_html_step_limit > 0 && self.num_steps <= self.write_html_step_limit {
+            self.write_step_html();
         }
 
         true
@@ -648,6 +721,29 @@ impl DeciderHoldU128Long {
     //     // MachineStatus::DecidedHoldsOld(num_steps as StepType, tape_shifted.count_ones() as usize)
     // }
 
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn write_html_p(&self, text: &str) {
+        writeln!(self.file.as_ref().unwrap(), "<p>{text}</p>",).expect("Html write error");
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn write_file_end(&mut self) {
+        if let Some(file) = self.file.as_mut() {
+            html::write_file_end(file).expect("Html file could not be written")
+        }
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn write_step_html(&mut self) {
+        html::write_step_html_128(
+            self.file.as_mut().unwrap(),
+            self.num_steps as usize,
+            self.tr_field_id,
+            &self.tr,
+            self.tape_shifted,
+        );
+    }
+
     /// Debug info on current step
     fn step_to_string(&self) -> String {
         format!(
@@ -662,12 +758,6 @@ impl DeciderHoldU128Long {
             self.current_symbol(),
         )
     }
-
-    pub fn run_decider(machine: &Machine) -> MachineStatus {
-        let config = Config::new_default(machine.n_states());
-        let mut d = Self::new(&config);
-        d.decide_machine(machine)
-    }
 }
 
 impl Decider for DeciderHoldU128Long {
@@ -678,7 +768,56 @@ impl Decider for DeciderHoldU128Long {
     // tape_long_bits in machine?
     // TODO counter: longest loop
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
-        self.run_check_hold(machine)
+        self.clear();
+        self.id = machine.id();
+        self.transition_table = *machine.transition_table();
+
+        #[cfg(feature = "bb_enable_html_reports")]
+        if self.write_html_step_limit > 0 {
+            let (file, _f_name) =
+                html::create_html_file_start(&self.path, Self::decider_id().name, machine)
+                    .expect("Html file could not be written");
+            self.file = Some(file);
+            // file_name = f_name;
+            self.write_html_p(
+                "Note: Here only the 128 Bit Tape is shown. Whenever the tape 'jumps' a few bytes \
+                    the working area needed to be shifted. 'tape_long' stores the remaining tape.",
+            );
+            if self
+                .transition_table
+                .eval_set_has_self_referencing_transition()
+            {
+                self.write_html_p("Note: This machine has self-referencing transitions (e.g. Field A1: 1RA) \
+                which leads to repeatedly calling itself in case of tape head reads 1. This is used to speed up the \
+                decider by jumping over these repeated steps. Max jump is currently 32 steps.");
+            }
+        }
+
+        let result = if cfg!(feature = "bb_no_self_ref") {
+            self.run_check_hold_without_self_referencing_transitions()
+        } else if self
+            .transition_table
+            .eval_set_has_self_referencing_transition()
+        {
+            self.run_check_hold_with_self_referencing_transition()
+        } else {
+            self.run_check_hold_without_self_referencing_transitions()
+        };
+
+        #[cfg(feature = "bb_enable_html_reports")]
+        if self.write_html_step_limit > 0 {
+            if self.num_steps >= self.write_html_step_limit {
+                self.write_html_p(
+                    format!(
+                        "HTML Step Limit ({}) reached, total steps: {}.",
+                        self.write_html_step_limit, self.num_steps
+                    )
+                    .as_str(),
+                );
+            }
+            self.write_file_end();
+        }
+        result
     }
 
     fn decide_single_machine(machine: &Machine, config: &Config) -> MachineStatus {
@@ -734,7 +873,9 @@ mod tests {
 
     #[test]
     fn decider_hold_u128_applies_bb4_max() {
-        let config = Config::new_default(4);
+        // let config = Config::new_default(4);
+        let config = Config::builder(4).write_html_file(true).build();
+
         // BB4 Max
         let machine = Machine::build_machine("BB4_MAX").unwrap();
         let mut d = DeciderHoldU128Long::new(&config);
@@ -746,7 +887,8 @@ mod tests {
     #[test]
     /// This test runs 50 mio steps, so turn off default = ["bb_debug"].
     fn decider_hold_u128_applies_bb5_max() {
-        let config = Config::new_default(5);
+        // let config = Config::new_default(5);
+        let config = Config::builder(5).write_html_file(true).build();
         // BB5 Max
         let machine = Machine::build_machine("BB5_MAX").unwrap();
         let mut d = DeciderHoldU128Long::new(&config);

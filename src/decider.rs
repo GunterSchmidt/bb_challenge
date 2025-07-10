@@ -6,7 +6,7 @@ use crate::{
     decider_cycler_v4::DeciderCyclerV4,
     decider_hold_u128_long::DeciderHoldU128Long,
     decider_result::{BatchData, DeciderResultStats, EndReason, PreDeciderCount},
-    decider_result_worker::no_worker_v2,
+    decider_result_worker::FnResultWorker,
     machine::Machine,
     machine_info::MachineInfo,
     pre_decider::{run_pre_decider_simple, run_pre_decider_strict, PreDeciderRun},
@@ -19,7 +19,6 @@ pub type ResultDecider = Result<DeciderResultStats, Box<DeciderError>>;
 
 // pub type ResultDecider = std::result::Result<(), DeciderError>;
 pub type FnDeciderRunBatchV2 = fn(&mut BatchData) -> ResultUnitEndReason;
-pub type FnResultWorker = fn(&BatchData) -> ResultUnitEndReason;
 
 // /// The deciders need to return Self to be able to make a new decider for each thread.
 // /// This makes them not object save and thus cannot be passed in a Vec.
@@ -92,6 +91,7 @@ pub const DECIDER_BOUNCER_ID: DeciderId = DeciderId {
     name: "Decider Bouncer",
 };
 
+/// This struct defines the call to the decider and its name.
 #[derive(Debug, Clone, Copy)]
 pub struct DeciderCaller<'a> {
     decider_id: &'a DeciderId,
@@ -115,12 +115,12 @@ impl<'a> DeciderCaller<'a> {
     }
 }
 
+/// This struct is used to chain the deciders.
 #[derive(Debug, Clone, Copy)]
 pub struct DeciderConfig<'a> {
     decider_id: &'a DeciderId,
     f_decider: FnDeciderRunBatchV2,
-    f_result_worker: FnResultWorker,
-    fo_result_worker: Option<FnResultWorker>,
+    pub fo_result_worker: Option<FnResultWorker>,
     config: &'a Config,
 }
 
@@ -133,7 +133,6 @@ impl<'a> DeciderConfig<'a> {
         Self {
             decider_id,
             f_decider,
-            f_result_worker: no_worker_v2,
             fo_result_worker: None,
             config,
         }
@@ -143,7 +142,6 @@ impl<'a> DeciderConfig<'a> {
         Self {
             decider_id: decider_caller.decider_id,
             f_decider: decider_caller.f_decider,
-            f_result_worker: no_worker_v2,
             fo_result_worker: None,
             config,
         }
@@ -158,8 +156,7 @@ impl<'a> DeciderConfig<'a> {
         Self {
             decider_id,
             f_decider,
-            f_result_worker,
-            fo_result_worker: None,
+            fo_result_worker: Some(f_result_worker),
             config,
         }
     }
@@ -168,9 +165,9 @@ impl<'a> DeciderConfig<'a> {
         self.f_decider
     }
 
-    pub fn f_result_worker(&self) -> FnResultWorker {
-        self.f_result_worker
-    }
+    // pub fn f_result_worker(&self) -> FnResultWorker {
+    //     self.f_result_worker
+    // }
 
     pub fn fo_result_worker(&self) -> Option<FnResultWorker> {
         self.fo_result_worker
@@ -197,7 +194,7 @@ impl<'a> DeciderConfig<'a> {
 /// Decider identification. As only the function to run the decider is passed, the id can not be requested
 /// and needs to be part of the DeciderConfig.
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct DeciderId {
     pub id: usize,
     pub name: &'static str,
@@ -258,27 +255,25 @@ pub fn decider_generic_run_batch_v2(
     if batch_data.machines.is_empty() {
         return Err(EndReason::NoBatchData);
     }
-    // let mut machines_undecided: Vec<MachineUndecided> = Vec::with_capacity(machines.len());
-    // TODO optimize undecided. Possible collect only ids, if count is same then to_vec for machines.
-    // let cap = if batch_data.run_predecider != PreDeciderRun::DoNotRun {
-    //     // loop decider should run first, which eliminates most machines
-    //     batch_data.machines.len() / 100
-    // } else {
-    //     batch_data.machines.len()
-    // };
-    // let mut machines_undecided = MachinesUndecided::new(cap);
-    // let mut result_decided = DeciderResultStats::new(config);
+
+    let limit_decided = batch_data.config.limit_machines_decided();
     match batch_data.run_predecider {
         PreDeciderRun::DoNotRun => {
             for machine in batch_data.machines.iter() {
-                // TODO self_ref
                 let status = decider.decide_machine(machine);
+                // This part is identical for all branches
                 match status {
                     MachineStatus::Undecided(_, _, _) => {
                         batch_data.machines_undecided.machines.push(*machine);
                         batch_data.machines_undecided.states.push(status);
                     }
                     _ => {
+                        if limit_decided > 0
+                            && batch_data.machines_decided.machines.len() < limit_decided
+                        {
+                            batch_data.machines_decided.machines.push(*machine);
+                            batch_data.machines_decided.states.push(status);
+                        }
                         batch_data.result_decided.add(machine, &status);
                     }
                 }
@@ -290,12 +285,19 @@ pub fn decider_generic_run_batch_v2(
                 if status == MachineStatus::NoDecision {
                     status = decider.decide_machine(machine);
                 }
+                // This part is identical for all branches
                 match status {
                     MachineStatus::Undecided(_, _, _) => {
                         batch_data.machines_undecided.machines.push(*machine);
                         batch_data.machines_undecided.states.push(status);
                     }
                     _ => {
+                        if limit_decided > 0
+                            && batch_data.machines_decided.machines.len() < limit_decided
+                        {
+                            batch_data.machines_decided.machines.push(*machine);
+                            batch_data.machines_decided.states.push(status);
+                        }
                         batch_data.result_decided.add(machine, &status);
                     }
                 }
@@ -307,12 +309,19 @@ pub fn decider_generic_run_batch_v2(
                 if status == MachineStatus::NoDecision {
                     status = decider.decide_machine(machine);
                 }
+                // This part is identical for all branches
                 match status {
                     MachineStatus::Undecided(_, _, _) => {
                         batch_data.machines_undecided.machines.push(*machine);
                         batch_data.machines_undecided.states.push(status);
                     }
                     _ => {
+                        if limit_decided > 0
+                            && batch_data.machines_decided.machines.len() < limit_decided
+                        {
+                            batch_data.machines_decided.machines.push(*machine);
+                            batch_data.machines_decided.states.push(status);
+                        }
                         batch_data.result_decided.add(machine, &status);
                     }
                 }
@@ -336,13 +345,13 @@ pub struct ThreadResultDataProvider {
 
 pub struct ThreadResultDecider {
     pub batch_no: usize,
-    pub result: ResultDecider,
+    pub result: DeciderResultStats,
     pub duration: Duration,
 }
 
 #[derive(Debug, Default)]
 pub struct DeciderError {
-    pub name: String,
+    pub decider_id: DeciderId,
     pub machine: Option<MachineInfo>,
     pub decider_result: Option<DeciderResultStats>,
     pub msg: String,
@@ -358,7 +367,7 @@ impl std::error::Error for DeciderError {}
 
 impl Display for DeciderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.name, self.msg)?;
+        write!(f, "{}: {}", self.decider_id.name, self.msg)?;
         if let Some(machine) = &self.machine {
             write!(f, "\n{machine}")?;
         }

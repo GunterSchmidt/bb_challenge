@@ -25,7 +25,7 @@ use crate::{
 };
 
 #[cfg(debug_assertions)]
-const IS_DEBUG: bool = true;
+const IS_DEBUG: bool = false;
 
 // #[cfg(debug_assertions)]
 // const DEBUG_MACHINE_NO: usize = 0; // 84080; // 351902; // 1469538; // 322636617; // BB3 max: 651320; // 46; //

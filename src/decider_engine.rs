@@ -6,23 +6,23 @@ use std::{
 use crate::{
     data_provider::DataProvider,
     data_provider_threaded::DataProviderThreaded,
-    decider::{DeciderConfig, ResultDecider, ThreadResultDataProvider, ThreadResultDecider},
+    decider::{DeciderConfig, ThreadResultDataProvider, ThreadResultDecider},
     decider_result::{BatchData, DeciderResultStats, DurationDataProvider, EndReason},
     pre_decider::PreDeciderRun,
     reporter::Reporter,
     utils::num_cpus_percentage,
 };
 
-// TODO error handling
 /// Runs the deciders (using the thread called from). \
 /// This is more an internal function but can be used if own data provider handling is used.
+/// Return DeciderResultStats with an EndReason which needs to be evaluated.
 pub fn run_decider_chain_batch(
     batch_data: BatchData,
     // data: DataProviderResult,
     // num_batches: usize,
     // run_predecider: PreDeciderRun,
     decider_configs: &[DeciderConfig],
-) -> ResultDecider {
+) -> DeciderResultStats {
     let start_decider = Instant::now();
     // interestingly this is required
     let mut batch_data = batch_data;
@@ -37,12 +37,16 @@ pub fn run_decider_chain_batch(
 
     match first_decider.f_decider()(&mut batch_data) {
         Ok(_) => {
-            result_batch.add_result(&batch_data.result_decided);
-            // call user analyzer/worker so result can be dealt with individually (e.g. save)
-            if let Err(e) = first_decider.f_result_worker()(&batch_data) {
-                result_batch.end_reason = e;
-                stop_run = true;
-                // eprintln!("{}", e);
+            // Call user analyzer/worker so result can be dealt with individually (e.g. save), also in case of error.
+            if let Some(fnr) = first_decider.fo_result_worker() {
+                if let Err(e) = fnr(&mut batch_data) {
+                    result_batch.end_reason = e;
+                    stop_run = true;
+                    // eprintln!("{}", e);
+                }
+            }
+            if !result_batch.add_result(&batch_data.result_decided) {
+                stop_run = true
             }
 
             let mut m_undecided;
@@ -59,6 +63,7 @@ pub fn run_decider_chain_batch(
                             first_decider.config(),
                             result_batch.steps_max(),
                         ),
+                        machines_decided: Default::default(),
                         machines_undecided: Default::default(),
                         batch_no,
                         num_batches,
@@ -70,13 +75,15 @@ pub fn run_decider_chain_batch(
                     match d.f_decider()(&mut batch_data) {
                         Ok(()) => {
                             batch_data.result_decided.clear_total();
-                            result_batch.add_result(&batch_data.result_decided);
                             // call user analyzer/worker so result can be dealt with individually (e.g. save)
-                            if let Err(e) = d.f_result_worker()(&batch_data) {
-                                result_batch.end_reason = e;
-                                stop_run = true;
-                                // eprintln!("{}", e);
+                            if d.fo_result_worker().is_some() {
+                                if let Err(e) = d.fo_result_worker().unwrap()(&mut batch_data) {
+                                    result_batch.end_reason = e;
+                                    stop_run = true;
+                                    // eprintln!("{}", e);
+                                }
                             }
+                            result_batch.add_result(&batch_data.result_decided);
                         }
                         Err(e) => {
                             result_batch.end_reason = e;
@@ -89,9 +96,6 @@ pub fn run_decider_chain_batch(
             // add remaining undecided to final result
             for (i, m) in batch_data.machines_undecided.machines.iter().enumerate() {
                 if !result_batch.add(m, &batch_data.machines_undecided.states[i]) {
-                    result_batch.end_reason =
-                        EndReason::UndecidedLimitReached(result_batch.limit_machines_undecided());
-                    // undecided_available = false;
                     break;
                 }
             }
@@ -104,7 +108,7 @@ pub fn run_decider_chain_batch(
         ..Default::default()
     };
 
-    Ok(result_batch)
+    result_batch
 }
 
 /// Runs the data provider and the deciders both on the main thread
@@ -123,6 +127,7 @@ pub fn run_decider_chain_data_provider_single_thread(
 
 /// Runs the data provider and the deciders both on the main thread
 /// using a custom reporter (or None to omit reporting).
+// TODO check end_result like in multi
 pub fn run_decider_chain_data_provider_single_thread_reporting(
     decider_configs: &[DeciderConfig],
     mut data_provider: impl DataProvider,
@@ -162,6 +167,7 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
                             first_config,
                             result_main.steps_max(),
                         ),
+                        machines_decided: Default::default(),
                         machines_undecided: Default::default(),
                         batch_no: data.batch_no,
                         num_batches: data_provider.num_batches(),
@@ -170,23 +176,19 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
                         run_predecider: data_provider.requires_pre_decider_check(),
                     };
                     let dc_result = run_decider_chain_batch(batch_data, decider_configs);
-                    match dc_result {
-                        Ok(r_stats) => {
-                            result_main.add_result(&r_stats);
-                            match r_stats.end_reason {
-                                EndReason::AllMachinesChecked => todo!(),
-                                EndReason::Error(_, _) => todo!(),
-                                EndReason::IsLastBatch => todo!(),
-                                EndReason::MachineLimitReached(_) => todo!(),
-                                EndReason::NoBatchData => todo!(),
-                                EndReason::NoMoreData => todo!(),
-                                EndReason::StopRequested(_, _) => todo!(),
-                                EndReason::UndecidedLimitReached(_) => todo!(),
-                                _ => {}
-                            };
-                        }
-                        Err(_) => todo!(),
-                    }
+                    result_main.add_result(&dc_result);
+                    match dc_result.end_reason {
+                        EndReason::AllMachinesChecked => todo!(),
+                        EndReason::Error(_, _) => todo!(),
+                        EndReason::IsLastBatch => todo!(),
+                        EndReason::MachineLimitReached(_) => todo!(),
+                        EndReason::NoBatchData => todo!(),
+                        EndReason::NoMoreData => todo!(),
+                        EndReason::RecordLimitDecidedReached(_) => todo!(),
+                        EndReason::RecordLimitUndecidedReached(_) => todo!(),
+                        EndReason::StopRequested(_, _) => todo!(),
+                        _ => {}
+                    };
                     // let undecided_available = result.add_result(&br.result_decided);
                     duration_decider += start_decider.elapsed();
 
@@ -208,10 +210,10 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
                         result_main.end_reason = data.end_reason;
                         break;
                     }
+                    EndReason::RecordLimitDecidedReached(_) => todo!(),
+                    EndReason::RecordLimitUndecidedReached(_) => todo!(),
                     EndReason::StopRequested(_, _) => todo!(),
-                    EndReason::UndecidedLimitReached(_) => todo!(),
-                    EndReason::Undefined => {}
-                    EndReason::Working => {}
+                    EndReason::None => {}
                 }
 
                 // Output info on progress
@@ -259,6 +261,7 @@ pub fn run_decider_chain_threaded_data_provider_single_thread(
 
 /// Runs the data provider and the deciders in separate threads (deciders can have multiple threads)
 /// using a custom reporter (or None to omit reporting).
+// TODO check end_result like in multi
 pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
     decider_configs: &[DeciderConfig],
     mut data_provider: impl DataProvider,
@@ -310,10 +313,11 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
                             EndReason::MachineLimitReached(_) => todo!(),
                             EndReason::NoBatchData => todo!(),
                             EndReason::NoMoreData => todo!(),
-                            EndReason::UndecidedLimitReached(_) => todo!(),
-                            EndReason::Undefined => todo!(),
-                            EndReason::Working => {}
-                            _ => todo!(),
+                            EndReason::None => todo!(),
+                            EndReason::AllMachinesChecked => todo!(),
+                            EndReason::StopRequested(_, _) => todo!(),
+                            EndReason::RecordLimitDecidedReached(_) => todo!(),
+                            EndReason::RecordLimitUndecidedReached(_) => todo!(),
                         }
                         // println!(
                         //     "Generator batch {}/{} created",
@@ -371,6 +375,7 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
                     let batch_data = BatchData {
                         machines: &gen_result.machines,
                         result_decided,
+                        machines_decided: Default::default(),
                         machines_undecided: Default::default(),
                         batch_no: gen_result.batch_no,
                         num_batches,
@@ -394,14 +399,9 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
 
             // Check if deciders have finished
             while let Ok(thread_result_dec) = receive_finished_thread_decider.try_recv() {
-                match thread_result_dec.result {
-                    Ok(r) => {
-                        result_main.add_result(&r);
-                        duration_decider += thread_result_dec.duration;
-                        num_threads_decider_running -= 1;
-                    }
-                    Err(_) => todo!(),
-                }
+                result_main.add_result(&thread_result_dec.result);
+                duration_decider += thread_result_dec.duration;
+                num_threads_decider_running -= 1;
                 // println!(
                 //     "Decider batch {}/{} finished",
                 //     thread_result_dec.batch_no + 1,
@@ -569,7 +569,8 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
                     // Single thread is twice as fast, maybe cache issue
                     // use Arc?
                     // https://doc.rust-lang.org/rust-by-example/std/arc.html
-                    send_finished_thread_gen.send(result).unwrap();
+                    // unwrap can fail when stop is requested
+                    send_finished_thread_gen.send(result).unwrap_or_default();
                 });
                 batch_no += 1;
                 if batch_no == data_provider.num_batches() {
@@ -663,6 +664,7 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
                     let batch_data = BatchData {
                         machines: &gen_result.machines,
                         result_decided,
+                        machines_decided: Default::default(),
                         machines_undecided: Default::default(),
                         batch_no: gen_result.batch_no,
                         num_batches,
@@ -682,26 +684,24 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
                         result: dr,
                         duration: start.elapsed(),
                     };
-                    send_finished_thread_dec.send(decider_result).unwrap();
+                    // unwrap error can occur if stop is requested while other threads are still running
+                    send_finished_thread_dec
+                        .send(decider_result)
+                        .unwrap_or_default();
                 });
             }
 
             // Check if deciders have finished
             while let Ok(thread_result_dec) = receive_finished_thread_decider.try_recv() {
-                match thread_result_dec.result {
-                    Ok(r) => {
-                        // println!(
-                        //     "Decider batch {}/{} finished, r {}",
-                        //     thread_result_dec.batch_no + 1,
-                        //     data_provider.num_batches(),
-                        //     r.num_processed_total()
-                        // );
-                        result_main.add_result(&r);
-                        duration_decider += thread_result_dec.duration;
-                        num_threads_decider_running -= 1;
-                    }
-                    Err(_) => todo!(),
-                }
+                // println!(
+                //     "Decider batch {}/{} finished, r {}",
+                //     thread_result_dec.batch_no + 1,
+                //     data_provider.num_batches(),
+                //     r.num_processed_total()
+                // );
+                result_main.add_result(&thread_result_dec.result);
+                duration_decider += thread_result_dec.duration;
+                num_threads_decider_running -= 1;
 
                 // Output info on progress
                 if let Some(reporter) = reporter.as_mut() {
@@ -719,12 +719,25 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
             {
                 if batch_no < data_provider.num_batches() {
                     panic!(
-                    "All empty! Threads max gen {max_threads_gen}, batch {batch_no}/{}, buffer {}",
-                    data_provider.num_batches(),
-                    buffer_gen_result.len(),
-                );
+                        "All empty! Threads max gen {max_threads_gen}, batch {batch_no}/{}, buffer {}",
+                        data_provider.num_batches(),
+                        buffer_gen_result.len(),
+                    );
                 }
+                result_main.end_reason = EndReason::AllMachinesChecked;
                 break;
+            }
+            match result_main.end_reason {
+                EndReason::AllMachinesChecked => todo!(),
+                EndReason::Error(_, _) => todo!(),
+                EndReason::IsLastBatch => todo!(),
+                EndReason::MachineLimitReached(_) => todo!(),
+                EndReason::NoMoreData => todo!(),
+                EndReason::StopRequested(_, _) => break,
+                EndReason::RecordLimitDecidedReached(_) => break,
+                EndReason::RecordLimitUndecidedReached(_) => break,
+                EndReason::NoBatchData => todo!(),
+                EndReason::None => {}
             }
 
             if do_sleep {

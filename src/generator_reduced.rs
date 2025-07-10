@@ -456,7 +456,7 @@ impl DataProvider for GeneratorReduced {
         let end_reason = if is_last_batch {
             EndReason::IsLastBatch
         } else {
-            EndReason::Working
+            EndReason::None
         };
         Ok(DataProviderBatch {
             batch_no: self.batch_no - 1,
@@ -531,7 +531,7 @@ impl DataProviderThreaded for GeneratorReduced {
         let end_reason = if is_last_batch {
             EndReason::IsLastBatch
         } else {
-            EndReason::Working
+            EndReason::None
         };
         DataProviderBatch {
             batch_no: self.batch_no,

@@ -1,6 +1,10 @@
 use std::ops::Range;
 
-use crate::config::{StepTypeSmall, TAPE_SIZE_INIT_CELLS};
+use crate::{
+    config::{StepTypeSmall, TAPE_SIZE_INIT_CELLS},
+    html,
+    transition_symbol2::TransitionSymbol2,
+};
 
 pub const TAPE_SIZE_BIT_U128: usize = 128;
 pub const TAPE_SIZE_HALF_128: usize = TAPE_SIZE_BIT_U128 / 2;
@@ -25,6 +29,7 @@ pub const TAPE_DISPLAY_RANGE_128: std::ops::Range<usize> =
 pub trait U64Ext {
     #[allow(dead_code)] // required for debugging
     fn to_binary_split_string(&self) -> String;
+    fn to_binary_split_html_string(&self, tr: &TransitionSymbol2) -> String;
 }
 
 impl U64Ext for u64 {
@@ -37,12 +42,50 @@ impl U64Ext for u64 {
             (*self as u32) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
         )
     }
+
+    fn to_binary_split_html_string(&self, tr: &TransitionSymbol2) -> String {
+        if tr.is_hold() {
+            // TODO In case the last symbol is written (1RZ instead of ---), it is not colored.
+            return self.to_binary_split_string();
+        }
+        if tr.is_dir_left() {
+            let n = format!("{:08b}", (*self >> 24) as u8);
+            let t = format!(
+                "{}<span class=\"{}\">{}</span>{}",
+                &n[0..1],
+                html::CLASS_CHANGED_POSITION,
+                &n[1..2],
+                &n[2..8]
+            );
+            format!(
+                "{:024b}_{:08b} {t}_{:024b}",
+                self >> 40,
+                (self >> 32) as u8,
+                (*self as u32) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
+            )
+        } else {
+            let n = format!("{:08b}", (*self >> 32) as u8);
+            let t = format!(
+                "{}<span class=\"{}\">{}</span>",
+                &n[0..7],
+                html::CLASS_CHANGED_POSITION,
+                &n[7..8]
+            );
+            format!(
+                "{:024b}_{t} {:08b}_{:024b}",
+                self >> 40,
+                (self >> 24) as u8,
+                (*self as u32) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
+            )
+        }
+    }
 }
 
 pub trait U128Ext {
     #[allow(dead_code)] // required for debugging
     fn to_binary_split_string_half(&self) -> String;
     fn to_binary_split_string(&self) -> String;
+    fn to_binary_split_html_string(&self, tr: &TransitionSymbol2) -> String;
 }
 
 impl U128Ext for u128 {
@@ -67,6 +110,47 @@ impl U128Ext for u128 {
             ((*self >> 32) as u32) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
             *self as u32,
         )
+    }
+
+    fn to_binary_split_html_string(&self, tr: &TransitionSymbol2) -> String {
+        if tr.is_hold() {
+            // TODO In case the last symbol is written (1RZ instead of ---), it is not colored.
+            return self.to_binary_split_string();
+        }
+        if tr.is_dir_left() {
+            let n = format!("{:08b}", (*self >> 56) as u8);
+            let t = format!(
+                "{}<span class=\"{}\">{}</span>{}",
+                &n[0..1],
+                html::CLASS_CHANGED_POSITION,
+                &n[1..2],
+                &n[2..8]
+            );
+            format!(
+                "{:032b}_{:024b}_{:08b}*{t}_{:024b}_{:032b}",
+                (*self >> 96) as u32,
+                (*self >> 72) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
+                (*self >> 64) as u8,
+                ((*self >> 32) as u32) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
+                *self as u32,
+            )
+        } else {
+            let n = format!("{:08b}", (*self >> 64) as u8);
+            let t = format!(
+                "{}<span class=\"{}\">{}</span>",
+                &n[0..7],
+                html::CLASS_CHANGED_POSITION,
+                &n[7..8]
+            );
+            format!(
+                "{:032b}_{:024b}_{t}*{:08b}_{:024b}_{:032b}",
+                (*self >> 96) as u32,
+                (*self >> 72) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
+                (*self >> 56) as u8,
+                ((*self >> 32) as u32) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
+                *self as u32,
+            )
+        }
     }
 }
 

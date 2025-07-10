@@ -41,12 +41,14 @@ pub enum EndReason {
     /// Machine Id, msg. ResultWorker can use this to end processing without marking it as an error.
     StopRequested(u64, String),
     /// When the maximum number of recorded undecided machines is reached. For analyzing undecided.
-    UndecidedLimitReached(usize),
+    RecordLimitDecidedReached(usize),
+    /// When the maximum number of recorded undecided machines is reached. For analyzing undecided.
+    RecordLimitUndecidedReached(usize),
     /// Default state indicating no action has been taken yet.
     #[default]
-    Undefined,
-    /// The data provider needs to have this state when working.
-    Working,
+    None,
+    // / The data provider needs to have this state when working.
+    // Working,
 }
 
 // Implement std::convert::From for AppError; from io::Error
@@ -84,11 +86,16 @@ impl Display for EndReason {
                 };
                 write!(f, "{ms}Stop requested: {message}")
             }
-            EndReason::UndecidedLimitReached(limit) => {
-                write!(f, "Limit of {} undecided machines reached", limit)
+            EndReason::RecordLimitDecidedReached(limit) => {
+                write!(f, "Limit ({limit}) for recording decided machines reached")
             }
-            EndReason::Undefined => write!(f, "No end reason given"),
-            EndReason::Working => write!(f, "working..."),
+            EndReason::RecordLimitUndecidedReached(limit) => {
+                write!(
+                    f,
+                    "Limit ({limit}) for recording undecided machines reached"
+                )
+            }
+            EndReason::None => write!(f, "No end reason"),
         }
         // write(f, "{s}")
     }
@@ -120,8 +127,7 @@ pub struct DeciderResultStats {
     /// Number of states used for the Turing machines.
     n_states: usize,
     /// Number of Turing machines to decide.
-    num_total_turing_machines: IdBig,
-
+    // num_total_turing_machines: IdBig,
     num_not_max_too_many_hold_transitions: u64,
     /// Eliminated machines which cannot reach the maximum steps because not all states were used.
     num_not_max_not_all_states_used: u64,
@@ -135,8 +141,10 @@ pub struct DeciderResultStats {
     // record_machines_max_steps: u16,
     // machines_max_steps: Option<Vec<MachineInfo>>,
     /// Store all machines Undecided up to this limit.
+    limit_machines_decided: usize,
     limit_machines_undecided: usize,
     // machine_undecided: Option<MachineInfo>,
+    machines_decided: Option<Vec<MachineInfo>>,
     machines_undecided: Option<Vec<MachineInfo>>,
     pub end_reason: EndReason,
 
@@ -156,21 +164,24 @@ impl DeciderResultStats {
     /// Result with starting steps_max to avoid unnecessary updates on machine with max steps. \
     /// Use init_steps_max(n_states).
     pub fn new(config: &Config) -> Self {
-        DeciderResultStats {
-            n_states: config.n_states(),
-            num_total_turing_machines: generator::num_turing_machine_permutations_u64(
-                config.n_states(),
-            ),
-            steps_max: StepMaxResult::new(if config.n_states() == 1 { 0 } else { 2 }),
-            limit_machines_undecided: config.limit_machines_undecided(),
-            ..Default::default()
-        }
+        let init_steps_max = if config.n_states() == 1 { 0 } else { 2 };
+        Self::new_init_steps_max(config, init_steps_max)
     }
 
+    /// Creates a new result stat with higher init_steps_max which avoids storing irrelevant machines
+    /// with less than max steps. Used in decider engine.
     pub fn new_init_steps_max(config: &Config, init_steps_max: StepTypeBig) -> Self {
+        // limit_machines_decided is handled differently because there is no counter like num_undecided
+        let limit_machines_decided = config.limit_machines_decided();
         DeciderResultStats {
             n_states: config.n_states(),
             steps_max: StepMaxResult::new(init_steps_max),
+            limit_machines_decided,
+            machines_decided: if limit_machines_decided > 0 {
+                Some(Vec::new())
+            } else {
+                None
+            },
             limit_machines_undecided: config.limit_machines_undecided(),
             ..Default::default()
         }
@@ -189,18 +200,19 @@ impl DeciderResultStats {
         self.limit_machines_undecided
     }
 
-    pub fn set_limit_machines_undecided(&mut self, limit: usize) {
-        self.limit_machines_undecided = limit;
-        if limit == 0 {
-            self.machines_undecided = None;
-        }
-    }
+    // pub fn set_limit_machines_undecided(&mut self, limit: usize) {
+    //     self.limit_machines_undecided = limit;
+    //     if limit == 0 {
+    //         self.machines_undecided = None;
+    //     }
+    // }
 
     /// Add one single result to these totals
-    /// Returns false if <limit_machines_undecided> Undecided Machines have been stored
-    /// which allows the caller to stop further processing.  
+    /// Returns false if <limit_machines_(un)decided> (Un)decided Machines have been stored
+    /// which allows the caller to stop further processing. In this case the end_reason is set also.  
     pub fn add(&mut self, machine: &Machine, status: &MachineStatus) -> bool {
         // self.num_checked_total += 1;
+        let mut is_decided = true;
         self.num_evaluated += 1;
         match status {
             MachineStatus::DecidedHolds(steps) => {
@@ -211,18 +223,18 @@ impl DeciderResultStats {
                 {
                     self.counter_stats.add_steps(*steps);
 
-                    if *steps == 3 && self.counter_stats.hold_steps_stats[3] < 20 {
-                        println!("Holds in 3: {}, {}", machine, status);
-                    }
-                    if *steps == 4 && self.counter_stats.hold_steps_stats[4] < 20 {
-                        println!("Holds in 4: {}, {}", machine, status);
-                    }
-                    if *steps == 5 && self.counter_stats.hold_steps_stats[5] < 20 {
-                        println!("Holds in 5: {}, {}", machine, status);
-                    }
-                    if *steps == 6 && self.counter_stats.hold_steps_stats[6] < 20 {
-                        println!("Holds in 6: {}, {}", machine, status);
-                    }
+                    // if *steps == 3 && self.counter_stats.hold_steps_stats[3] < 20 {
+                    //     println!("Holds in 3: {}, {}", machine, status);
+                    // }
+                    // if *steps == 4 && self.counter_stats.hold_steps_stats[4] < 20 {
+                    //     println!("Holds in 4: {}, {}", machine, status);
+                    // }
+                    // if *steps == 5 && self.counter_stats.hold_steps_stats[5] < 20 {
+                    //     println!("Holds in 5: {}, {}", machine, status);
+                    // }
+                    // if *steps == 6 && self.counter_stats.hold_steps_stats[6] < 20 {
+                    //     println!("Holds in 6: {}, {}", machine, status);
+                    // }
                 }
             }
             MachineStatus::EliminatedPreDecider(reason) => match reason {
@@ -266,6 +278,7 @@ impl DeciderResultStats {
                 self.counter_stats.add_endless_cycle(endless_reason);
             }
             MachineStatus::Undecided(_, _, _) => {
+                is_decided = false;
                 if self.limit_machines_undecided > 0 {
                     if self.num_undecided < self.limit_machines_undecided as u64 {
                         if let Some(machines) = self.machines_undecided.as_mut() {
@@ -275,6 +288,8 @@ impl DeciderResultStats {
                                 Some(vec![MachineInfo::from_machine(machine, status)]);
                         }
                     } else {
+                        self.end_reason =
+                            EndReason::RecordLimitUndecidedReached(self.limit_machines_undecided);
                         return false;
                     }
                 }
@@ -291,6 +306,17 @@ impl DeciderResultStats {
             }
         }
 
+        if is_decided && self.limit_machines_decided > 0 {
+            if let Some(m_decided) = self.machines_decided.as_mut() {
+                if m_decided.len() < self.limit_machines_decided {
+                    m_decided.push(MachineInfo::from_machine(machine, status));
+                } else {
+                    self.end_reason =
+                        EndReason::RecordLimitDecidedReached(self.limit_machines_decided);
+                    return false;
+                }
+            }
+        }
         true
     }
 
@@ -311,7 +337,7 @@ impl DeciderResultStats {
     }
 
     /// Add another result to this result. \
-    /// Returns false if <limit_machines_undecided> Undecided Machines have been stored
+    /// Returns false if <limit_machines_(un)decided> (Un)decided Machines have been stored
     /// which allows the caller to stop further processing.  
     pub fn add_result(&mut self, result: &DeciderResultStats) -> bool {
         self.num_processed_total += result.num_processed_total;
@@ -330,6 +356,8 @@ impl DeciderResultStats {
         self.num_not_max_not_all_states_used += result.num_not_max_not_all_states_used;
         self.num_not_max_too_many_hold_transitions += result.num_not_max_too_many_hold_transitions;
 
+        let mut is_ok = true;
+
         if !result.names.is_empty() {
             if self.names.is_empty() {
                 self.names = result.names.to_vec();
@@ -346,6 +374,29 @@ impl DeciderResultStats {
         #[cfg(feature = "bb_counter_stats")]
         self.counter_stats.add_result(result);
 
+        // add decided machines
+        if self.limit_machines_decided > 0 {
+            if let Some(d_machines) = self.machines_decided.as_mut() {
+                if d_machines.len() < self.limit_machines_decided {
+                    if let Some(new_machines) = result.machines_decided.as_ref() {
+                        let max = new_machines
+                            .len()
+                            .min(self.limit_machines_decided - d_machines.len());
+                        d_machines.extend_from_slice(&new_machines[0..max]);
+                    }
+                    if d_machines.len() >= self.limit_machines_decided {
+                        self.end_reason =
+                            EndReason::RecordLimitDecidedReached(self.limit_machines_decided);
+                        is_ok = false;
+                    }
+                } else {
+                    self.end_reason =
+                        EndReason::RecordLimitDecidedReached(self.limit_machines_decided);
+                    is_ok = false;
+                }
+            }
+        }
+
         // add undecided machines
         if self.limit_machines_undecided > 0 {
             if self.num_undecided < self.limit_machines_undecided as u64 {
@@ -359,15 +410,32 @@ impl DeciderResultStats {
                         self.machines_undecided = result.machines_undecided.clone();
                     }
                     if self.num_undecided >= self.limit_machines_undecided as u64 {
-                        return false;
+                        self.end_reason =
+                            EndReason::RecordLimitUndecidedReached(self.limit_machines_undecided);
+                        is_ok = false;
                     }
                 }
             } else {
-                return false;
+                self.end_reason =
+                    EndReason::RecordLimitUndecidedReached(self.limit_machines_undecided);
+                is_ok = false;
             }
         }
 
-        true
+        // add end_reason
+        if result.end_reason != EndReason::None {
+            match self.end_reason {
+                // only if not already an error was reported
+                EndReason::AllMachinesChecked | EndReason::None => match result.end_reason {
+                    EndReason::IsLastBatch => {}
+                    EndReason::NoBatchData => {}
+                    _ => self.end_reason = result.end_reason.clone(),
+                },
+                _ => {}
+            }
+        }
+
+        is_ok
     }
 
     pub fn add_pre_decider_count(&mut self, count: &PreDeciderCount) {
@@ -510,8 +578,8 @@ impl DeciderResultStats {
         }
     }
 
-    pub fn num_total_turing_machines(&self) -> u64 {
-        self.num_total_turing_machines
+    pub fn num_total_turing_machines(&self) -> IdBig {
+        generator::num_turing_machine_permutations(self.n_states) as IdBig
     }
 
     pub fn num_not_max_too_many_hold_transitions(&self) -> u64 {
@@ -561,7 +629,7 @@ impl Display for DeciderResultStats {
         let mut s = String::new();
 
         writeln!(f, "Result BB{}: {}", self.n_states, self.end_reason)?;
-        buf.write_formatted(&self.num_total_turing_machines, &locale);
+        buf.write_formatted(&self.num_total_turing_machines(), &locale);
         s.push_str(format!("Turing machines:    {:>NUM_LONG_LEN$}\n", buf.as_str()).as_str());
         if self.num_processed_total() != self.num_evaluated {
             buf.write_formatted(&self.num_processed_total, &locale);
@@ -1126,7 +1194,7 @@ impl Display for StepMaxResult {
 }
 
 #[derive(Debug, Default)]
-pub struct MachinesUndecided {
+pub struct MachinesStates {
     /// All undecided machines of one batch run. \
     /// Machines can be used directly in next batch run with undecided only.
     pub machines: Vec<Machine>,
@@ -1134,7 +1202,7 @@ pub struct MachinesUndecided {
     pub states: Vec<MachineStatus>,
 }
 
-impl MachinesUndecided {
+impl MachinesStates {
     pub fn new(capacity: usize) -> Self {
         Self {
             machines: Vec::with_capacity(capacity),
@@ -1170,7 +1238,7 @@ impl MachinesUndecided {
 /// All undecided Turing machines are recorded in detail.
 pub struct BatchResult {
     pub result_decided: DeciderResultStats,
-    pub machines_undecided: MachinesUndecided,
+    pub machines_undecided: MachinesStates,
     pub batch_no: usize,
     pub num_batches: usize,
     pub decider_name: String,
@@ -1183,7 +1251,8 @@ pub struct BatchResult {
 pub struct BatchData<'a> {
     pub machines: &'a [Machine],
     pub result_decided: DeciderResultStats,
-    pub machines_undecided: MachinesUndecided,
+    pub machines_decided: MachinesStates,
+    pub machines_undecided: MachinesStates,
     /// Current batch no, first batch is 0.
     pub batch_no: usize,
     pub num_batches: usize,
@@ -1199,7 +1268,7 @@ pub struct BatchData<'a> {
 pub struct BatchDataThread<'a> {
     pub machines: Vec<Machine>,
     pub result_decided: DeciderResultStats,
-    pub machines_undecided: MachinesUndecided,
+    pub machines_undecided: MachinesStates,
     /// Current batch no, first batch is 0.
     pub batch_no: usize,
     pub num_batches: usize,

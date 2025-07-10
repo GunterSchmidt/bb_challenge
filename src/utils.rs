@@ -19,3 +19,8 @@ pub fn num_cpus_percentage(percent: usize) -> usize {
         n
     }
 }
+
+// check if a file exists
+pub fn file_exists(file_path: &str) -> bool {
+    std::path::Path::new(file_path).exists()
+}

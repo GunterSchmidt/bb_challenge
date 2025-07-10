@@ -5,7 +5,6 @@ use crate::{
     bb_file_reader::BBFileReader,
     config::Config,
     decider::Decider,
-    decider_cycler_v4::DeciderCyclerV4,
     decider_hold_u128_long::DeciderHoldU128Long,
     machine_info::MachineInfo,
     pre_decider::run_pre_decider_simple,
@@ -84,12 +83,29 @@ impl Machine {
         if status != MachineStatus::NoDecision {
             return status;
         }
-        status = DeciderCyclerV4::decide_single_machine(self, &config);
-        match status {
-            MachineStatus::Undecided(_, _, _) => {}
-            _ => return status,
-        }
+        // status = DeciderCyclerV4::decide_single_machine(self, &config);
+        // match status {
+        //     MachineStatus::Undecided(_, _, _) => {}
+        //     _ => return status,
+        // }
         DeciderHoldU128Long::decide_single_machine(self, &config)
+    }
+
+    pub fn file_name(&self) -> String {
+        if self.id == 0 {
+            format!(
+                "BB{}_{}",
+                self.n_states(),
+                self.to_standard_tm_text_format()
+            )
+        } else {
+            format!(
+                "BB{}_ID_{}_{}",
+                self.n_states(),
+                self.id,
+                self.to_standard_tm_text_format()
+            )
+        }
     }
 
     /// Creates the transition table from the Standard TM Text Format \
@@ -247,8 +263,8 @@ impl Machine {
     }
 }
 
-impl From<MachineInfo> for Machine {
-    fn from(mi: MachineInfo) -> Self {
+impl From<&MachineInfo> for Machine {
+    fn from(mi: &MachineInfo) -> Self {
         Self {
             id: mi.id(),
             transition_table: mi.transition_table(),

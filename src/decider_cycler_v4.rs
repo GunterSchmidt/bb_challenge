@@ -1,140 +1,124 @@
-/// This is a fast version of the decider loop.
-/// It is limited to a u64 shift.
+// TODO document
+//! This is the fast version of the cycler decider (limited to a 64-bit tape, so it may not find larger cycles). \
+//! It is a very effective decider and should run first with a small number of steps to eliminate most \
+//! of the cyclers and machines which hold quickly (both are identified).
+//! Example for BB4 with 6,975,757,441 machines. If only this decider is run with 150 step limit, then all
+//! machines can be checked in less than 5 seconds, leaving only 65,500 undecided.
+//! Most machines are eliminated by the pre-decider, leaving only 30,199,552 machines which need to be checked further.
+//! This decider than classifies 10,758,178 as Hold and 19,375,874 as Cycler.
+//! Of the 10,758,178 Hold machines, only 184 machines run more than 50 steps.
+//! Of the 19,375,874 Cycler machines, only 4740 machines are not detected within 50 steps.
+//! If the limit is set to 10,000 machines, then the runtime will be around 110 seconds (on my machine), \
+//! which is a factor of 20. \
+//! Additionally 160 Cyclers are found. Which means < 0,01% of the machines take 95% of the time.\
+//! For BB5 the first 100,000,000,000 can be tested in about 30 seconds, leaving only 214,996 undecided \
+//! with step limit 500.
+//! Therefore it is wiser to run the bouncer before attempting to catch the other cyclers.
+//! How it works: \
+//! When run, every step is recorded (StepCycler) so repeating steps can be identified.
+//! A map is created for all table fields which stores the steps which used this table field, \
+//! e.g. A0 was used in step 0, 14, 28, 42 etc.
+//! In this case when 28 is found, all steps will be compared between 0 to 14 and 14 to 28 and \
+//! checked if each step is identical. \
+//! If this is the case then also the tape will be compared. It needs to match for the \
+//! relevant part, meaning all cells touched in this cycle will be compared.
 
-// #[cfg(debug_assertions)]
-#[cfg(all(debug_assertions, feature = "bb_debug"))]
-use crate::tape_utils::U64Ext;
+#[cfg(feature = "bb_enable_html_reports")]
+use std::{io::Write, path::MAIN_SEPARATOR_STR};
+
+#[cfg(feature = "bb_enable_html_reports")]
+use crate::html;
+#[cfg(feature = "bb_enable_html_reports")]
+use crate::transition_symbol2::TransitionSymbol2;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES},
     decider::{self, Decider, DECIDER_CYCLER_ID},
     decider_result::BatchData,
     machine::Machine,
     status::{EndlessReason, MachineStatus, UndecidedReason},
-    transition_symbol2::{DirectionType, TransitionSymbol2, TransitionType},
+    transition_symbol2::{DirectionType, TransitionType, TRANSITION_SYM2_START},
     ResultUnitEndReason,
 };
 
-// #[cfg(debug_assertions)]
-// const DEBUG_MACHINE_NO: u64 = 84080; // 351902; // 1469538; // 322636617; // BB3 max: 651320; // 46; //
+const DEBUG_EXTRA: bool = true;
+const DEBUG_MIN_DISTANCE: usize = 75;
 
 type TapeType = u64;
 const TAPE_SIZE_BIT: StepTypeSmall = 64;
-// const TAPE_LONG_BYTE: usize = 8;
 const MIDDLE_BIT: StepTypeSmall = TAPE_SIZE_BIT / 2 - 1;
 const POS_HALF: TapeType = 1 << MIDDLE_BIT;
-// const POS_HALF_TEST: u64 = 0b1000_0000_0000_0000_0000_0000_0000_0000;
 
 pub const MAX_INIT_CAPACITY: usize = 10_000;
 
-// TODO self_ref for loop
-
+// TODO for clarity move tr and tape_shifted into this struct
+// TO DO Performance: Check if really all found duplicates must be checked, maybe some learnings from previous.
 #[derive(Debug)]
 pub struct DeciderCyclerV4 {
-    steps: Vec<StepLoop>,
-    /// stores the step ids for each State-Symbol combination (basically e.g. all from A0 steps)
-    // TODO check if storage as u16 is faster
+    /// Store all steps to do comparisons (test if a cycle is repeating)
+    steps: Vec<StepCycler>,
+    /// Stores the step ids (2 = 3rd step) for each field in the transition table. \
+    /// (basically e.g. all steps for e.g. field 'B0' steps: 1 if A0 points to B, as step 1 then has state B and head symbol 0.)
+    // TODO performance: check if storage as u16 is faster
+    // TODO performance: extra level for 0/1 at head position? , maybe better calc single array
     maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)],
-    /// Step limit for this decider. Should not exceed 2000 // TODO why
+    /// Step limit for this decider. Should not exceed 2000 // TODO why: u64 tape, cannot be so large
     step_limit: StepTypeSmall,
-    // TODO tape_size
+    tr_field_id: usize,
+    #[cfg(feature = "bb_enable_html_reports")]
+    write_html: bool,
+    #[cfg(feature = "bb_enable_html_reports")]
+    path: String,
+    #[cfg(feature = "bb_enable_html_reports")]
+    file: Option<std::fs::File>,
 }
 
 impl DeciderCyclerV4 {
     pub fn new(config: &Config) -> Self {
-        // TODO reasoning for size, 510 was for BB5
         let cap = (config.step_limit_cycler() as usize).min(MAX_INIT_CAPACITY);
         Self {
             steps: Vec::with_capacity(cap),
             maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
             step_limit: config.step_limit_cycler(),
+            tr_field_id: 0,
+            #[cfg(feature = "bb_enable_html_reports")]
+            write_html: config.write_html_file(),
+            #[cfg(feature = "bb_enable_html_reports")]
+            path: Self::get_html_path(config.write_html_file(), config.n_states()),
+            #[cfg(feature = "bb_enable_html_reports")]
+            file: None,
         }
     }
 
-    pub fn new_step_limit(step_limit: StepTypeSmall) -> Self {
-        // TODO reasoning for size, 510 was for BB5
-        let cap = (step_limit as usize).min(MAX_INIT_CAPACITY);
-        Self {
-            steps: Vec::with_capacity(cap),
-            maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
-            step_limit,
-        }
-    }
-
-    pub fn clear(&mut self) {
+    #[inline]
+    fn clear(&mut self) {
         self.steps.clear();
         for map in self.maps_1d.iter_mut() {
             map.clear();
         }
     }
 
-    // fn new_from_self(&self) -> DeciderCyclerV4 {
-    //     let cap = (self.step_limit as usize).min(MAX_INIT_CAPACITY);
-    //     DeciderCyclerV4 {
-    //         steps: Vec::with_capacity(cap),
-    //         maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
-    //         step_limit: self.step_limit,
-    //     }
-    // }
-
-    // TODO fine tune and other states
-    pub fn step_limit(n_states: usize) -> StepTypeSmall {
-        match n_states {
-            1 => 100,
-            2 => 100,
-            3 => 100,
-            4 => 300,
-            5 => 510,
-            _ => panic!("result_max_steps: Not build for this."),
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn write_file_end(&mut self) {
+        if let Some(file) = self.file.as_mut() {
+            html::write_file_end(file).expect("Html file could not be written")
         }
     }
-}
 
-// impl DeciderMinimalTest for DeciderCyclerV4 {
-//     fn decide_machine_minimal(&mut self, machine: &Machine) -> MachineStatus {
-//         self.decide_machine(machine)
-//     }
-//
-//     fn name_minimal(&self) -> &str {
-//         self.name()
-//     }
-// }
-
-impl Decider for DeciderCyclerV4 {
-    fn decider_id() -> &'static decider::DeciderId {
-        &DECIDER_CYCLER_ID
-    }
-    //     fn id(&self) -> usize {
-    //         DECIDER_CYCLER_ID
-    //     }
-    //
-    //     fn name(&self) -> &str {
-    //         "Decider Cycler"
-    //     }
-
-    //     fn new_from_config(config: &Config) -> Self {
-    //         Self::new(config)
-    //     }
-    //
-    //     fn new_from_self(&self) -> Self {
-    //         Self::new_step_limit(self.step_limit)
-    //     }
-
-    // tape_long_bits in machine?
-    // TODO counter: longest loop
-    fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
+    fn decide_machine_cycler(&mut self, machine: &Machine) -> MachineStatus {
         // #[cfg(debug_assertions)]
         // {
         //     if machine.id != DEBUG_MACHINE_NO {
         //         // return MachineStatus::NoDecision;
         //     }
-        //     println!("\nDecider Loop for {}", machine.to_string_without_status());
+        //     println!("\nDecider Cycle for {}", machine.to_string_without_status());
         // }
-        // println!("Machine {}", m_info.id);
+        // println!("Machine {}", machine);
+
+        // if machine.id() >= 1_341_092 {
+        //     print!("");
+        // }
 
         // initialize decider
-
-        // num steps, same as steps, but steps can be deactivated after a while
-        // let mut steps: Vec<Step> = Vec::with_capacity(STEP_LIMIT_DECIDER_LOOP);
         self.clear();
 
         // tape for storage in Step with cell before transition at position u32 top bit
@@ -143,62 +127,59 @@ impl Decider for DeciderCyclerV4 {
         let mut high_bound = 31;
         let mut low_bound = 31;
 
-        // replaces tape_long as shift happens every 32 bit
-        // let mut tape_long_u32 = [0; TAPE_LONG_BYTE * 2];
-        // let mut pos_high_long_tape_shifted = TAPE_LONG_BYTE;
-
-        // map for each transition, which step went into it
-        // TODO extra level for 0/1 at head position, maybe better calc single array
-        // TODO 1D array
-        // let mut maps: [[Vec<usize>; 2]; MAX_STATES + 1] =
-        //     core::array::from_fn(|_| [Vec::new(), Vec::new()]);
-        // let mut maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)] = core::array::from_fn(|_| Vec::new());
         // Initialize transition with A0 as start
-        let mut tr = TransitionSymbol2 {
-            transition: crate::transition_symbol2::TRANSITION_0RA,
-            #[cfg(debug_assertions)]
-            text: ['0', 'R', 'A'],
-        };
-
-        // The tape ist just an u64 with each bit representing one cell
-        // let mut tape: u64 = 0;
-        // let mut position_one = POS_HALF;
+        let mut tr = TRANSITION_SYM2_START;
 
         // loop over transitions to write tape
         loop {
-            // store next step
+            // read symbol at tape head
             let curr_read_symbol = ((tape_shifted & POS_HALF) != 0) as usize; // resolves to one if bit is set
+            self.tr_field_id = tr.state_x2() + curr_read_symbol;
 
+            // store next step
+            // map for each transition, which step went into it
             // maps: store step id leading to this
-            // maps[tr.state_next as usize][curr_read_symbol].push(self.steps.len());
-            self.maps_1d[tr.state_x2() + curr_read_symbol].push(self.steps.len());
-            let mut step = StepLoop::new(
+            self.maps_1d[self.tr_field_id].push(self.steps.len());
+            let mut step = StepCycler::new(
                 tr.transition,
                 curr_read_symbol as TransitionType,
                 0,
                 tape_shifted,
             );
-            tr = machine.transition(tr.state_x2() + curr_read_symbol);
+            tr = machine.transition(self.tr_field_id);
             step.direction = tr.direction();
             self.steps.push(step);
 
-            // halt is regarded as step, so always count step
             // check if done
             if tr.is_hold() {
                 // Hold found
-                // write last symbol
                 // TODO count ones
                 #[allow(unused_assignments)]
                 if tr.symbol() < 2 {
+                    // write last symbol
                     if tr.is_symbol_one() {
                         tape_shifted |= POS_HALF
                     } else {
                         tape_shifted &= !POS_HALF
                     };
                 }
-                // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
+                // println!("Check Cycle: ID {}: Steps till hold: {}", m_info.id, steps);
+                #[cfg(feature = "bb_enable_html_reports")]
+                if self.write_html {
+                    self.write_step_html(&tr, tape_shifted);
+                    self.write_html_p(
+                        format!("Decided: Holds after {} steps.", self.steps.len()).as_str(),
+                    );
+                }
                 return MachineStatus::DecidedHolds(self.steps.len() as StepTypeBig);
             } else if self.steps.len() as StepTypeSmall >= self.step_limit {
+                #[cfg(feature = "bb_enable_html_reports")]
+                if self.write_html {
+                    self.write_step_html(&tr, tape_shifted);
+                    self.write_html_p(
+                        format!("Undecided: Limit of {} steps reached.", self.step_limit).as_str(),
+                    );
+                }
                 return MachineStatus::Undecided(
                     UndecidedReason::StepLimit,
                     self.step_limit as StepTypeBig,
@@ -213,10 +194,11 @@ impl Decider for DeciderCyclerV4 {
                 tape_shifted & !POS_HALF
             };
 
+            // check if tape bound is reached
             tape_shifted = if tr.is_dir_right() {
                 high_bound += 1;
                 if high_bound == 64 {
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                     {
                         println!("\n{}", machine);
                         println!("step         {}", self.steps.len());
@@ -224,6 +206,14 @@ impl Decider for DeciderCyclerV4 {
                         println!("high_bound   {}", high_bound);
                         println!("tape shifted {}", tape_shifted.to_binary_split_string());
                         println!("State: Undecided: Too many steps to right.");
+                        // panic!("State: Undecided: Too many steps to right.");
+                    }
+                    #[cfg(feature = "bb_enable_html_reports")]
+                    if self.write_html {
+                        html::write_html_p(
+                            self.file.as_mut().unwrap(),
+                            "Undecided: Too many steps to right.",
+                        );
                     }
                     return MachineStatus::Undecided(
                         UndecidedReason::TapeLimitLeftBoundReached,
@@ -238,7 +228,7 @@ impl Decider for DeciderCyclerV4 {
             } else {
                 low_bound -= 1;
                 if low_bound == -1 {
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                     {
                         println!("\n{}", machine);
                         println!("step         {}", self.steps.len());
@@ -246,6 +236,14 @@ impl Decider for DeciderCyclerV4 {
                         println!("high_bound   {}", high_bound);
                         println!("tape shifted {}", tape_shifted.to_binary_split_string());
                         println!("State: Undecided: Too many steps to left.");
+                        // panic!("State: Undecided: Too many steps to left.");
+                    }
+                    #[cfg(feature = "bb_enable_html_reports")]
+                    if self.write_html {
+                        html::write_html_p(
+                            self.file.as_mut().unwrap(),
+                            "Undecided: Too many steps to left.",
+                        );
                     }
                     return MachineStatus::Undecided(
                         UndecidedReason::TapeLimitRightBoundReached,
@@ -262,12 +260,12 @@ impl Decider for DeciderCyclerV4 {
             // get next transition
             let read_symbol_next = ((tape_shifted & POS_HALF) != 0) as usize; // resolves to one if bit is set
 
-            #[cfg(all(debug_assertions, feature = "bb_debug"))]
+            // print steps
+            #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
             println!(
-                "Step {:3}: {}{} {} Tape shifted after: {:032b} {:032b}, next {}{} {}",
+                "Step {:3}: {} {} Tape shifted after: {:032b} {:032b}, next {}{} {}",
                 self.steps.len() - 1,
-                (self.steps.last().unwrap().for_state() + 64) as u8 as char,
-                self.steps.last().unwrap().for_symbol(),
+                self.steps.last().unwrap().for_state_symbol_to_string(),
                 tr,
                 (tape_shifted >> 32) as u32,
                 tape_shifted as u32,
@@ -275,8 +273,12 @@ impl Decider for DeciderCyclerV4 {
                 read_symbol_next,
                 machine.transition(tr.state_x2() + read_symbol_next),
             );
+            #[cfg(feature = "bb_enable_html_reports")]
+            if self.write_html {
+                self.write_step_html(&tr, tape_shifted);
+            }
 
-            // check endless loop for multiple steps
+            // check endless cycle for multiple steps
             if self.maps_1d[tr.state_x2() + read_symbol_next].len() > 1 {
                 'steps: for &step_id in self.maps_1d[tr.state_x2() + read_symbol_next][1..]
                     .iter()
@@ -284,39 +286,47 @@ impl Decider for DeciderCyclerV4 {
                     .rev()
                 {
                     let distance = self.steps.len() - step_id;
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                    // #[cfg(debug_assertions)]
+                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                     {
-                        println!("  Endless loop check: Step {step_id} with distance {distance}");
+                        println!("  Endless cycle check: Step {step_id} with distance {distance}");
                     }
 
-                    // check if we have two repeated loops
+                    // check if we have two repeated cycles
                     if distance > step_id {
-                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                        #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                         println!("  * Fail {step_id}: Min Distance");
                         // step_id will get smaller, distance larger
                         break;
                     }
 
-                    // check loop steps are identical
+                    // check cycle steps are identical
                     for (i, step) in self.steps.iter().enumerate().skip(step_id) {
-                        if step.for_symbol_state != self.steps[i - distance].for_symbol_state {
-                            #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                            println!("  * Fail: Loop steps different");
+                        if step.for_state_symbol != self.steps[i - distance].for_state_symbol {
+                            #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                            println!("  * Fail: Cycle steps different");
                             continue 'steps;
                         }
                     }
 
-                    // Same, we found a loop candidate!
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                    println!(
-                        "  *** Loop candidate found: First step {}, distance {distance}!",
-                        self.steps.len() - distance
-                    );
+                    // Same, we found a cycle candidate!
+                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                    {
+                        println!(
+                            "  *** Cycle candidate found: First step {}, distance {distance}!",
+                            self.steps.len() - distance
+                        );
+                        if self.write_html {
+                            let text = format!(
+                                "  *** Cycle candidate found: First step {}, distance {distance}!",
+                                self.steps.len() - distance
+                            );
+                            self.write_html_p(&text);
+                        }
+                    }
 
                     let step_tape_before = self.steps[step_id].tape_before;
 
-                    // #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    // #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                     // {
                     //     println!("Step Tape     : {}", step_tape.to_binary_split_string());
                     //     println!("Tape shifted  : {}", tape_shifted.to_binary_split_string());
@@ -325,38 +335,41 @@ impl Decider for DeciderCyclerV4 {
                     // check if full tape is identical (this is not necessary, only relevant bytes)
                     // TODO requires comparison of long_tape
                     if step_tape_before == tape_shifted {
-                        // Same, we found a loop!
-                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                        println!("*** Found Loop without mask!");
+                        // Same, we found a cycle!
+                        #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                        println!("*** Found Cycle (tape identical)!");
+                        #[cfg(feature = "bb_enable_html_reports")]
+                        if self.write_html {
+                            let text = format!(
+                                "  Decided: Found Cycle (tape identical): Start {} and {}, length: {distance}", 
+                                step_id-distance+1,
+                                step_id+1
+                            );
+                            self.write_html_p(&text);
+                        }
+                        #[cfg(debug_assertions)]
+                        if DEBUG_EXTRA {
+                            if distance >= DEBUG_MIN_DISTANCE {
+                                println!(
+                                    "cycle size = {}, current step = {}: M {}",
+                                    distance,
+                                    self.steps.len(),
+                                    machine
+                                );
+                            }
+                        }
                         return MachineStatus::DecidedEndless(EndlessReason::Cycle(
                             self.steps.len() as StepTypeSmall,
                             distance as StepTypeSmall,
                         ));
                     }
 
-                    // identify affected bits in the loop steps
-                    // this does not work: if a bit left/right is required for the next candidate of same type, then is wrongly cut
+                    // identify affected bits in the cycle steps
                     let mut total_shift = 0;
                     let mut max_r = 0;
                     let mut min_l = 0;
                     // add all steps including next step, because result bit is also relevant
                     for step in self.steps.iter().skip(step_id) {
-                        // total_shift += m_info.transitions[step.from_state as usize]
-                        //     [step.from_symbol as usize]
-                        //     .direction as isize;
-                        // let state = step.from_symbol_state & MASK_STATE;
-                        // let symbol = step.from_symbol_state & MASK_SYMBOL;
-                        // let org = m_info.transitions[(step.from_symbol_state & MASK_STATE) as usize]
-                        //     [((step.from_symbol_state & MASK_SYMBOL) >> 6) as usize]
-                        //     .direction;
-                        // let new = step.direction;
-                        // if org != new {
-                        //     todo!()
-                        // }
-                        // total_shift += m_info.transitions
-                        //     [(step.from_symbol_state & MASK_STATE) as usize]
-                        //     [((step.from_symbol_state & MASK_SYMBOL) >> 6) as usize]
-                        //     .direction as isize;
                         total_shift += step.direction as isize;
                         if min_l > total_shift {
                             min_l = total_shift
@@ -365,15 +378,13 @@ impl Decider for DeciderCyclerV4 {
                             max_r = total_shift
                         };
                     }
-                    // When shifted, eventually all bits on that side are used after x loops, check all
-                    // TODO limit to byte or shift in
+                    // When shifted, eventually all bits on that side are used after x cycles, check all
                     #[allow(clippy::comparison_chain)]
                     if total_shift > 0 {
                         max_r = 31
                     } else if total_shift < 0 {
                         min_l = -32
                     }
-                    // add dir of next step: take(self.steps.len() - step_id + 1)
 
                     // extract relevant bits and compare (bits counted from right, starting with 0, middle is bit 31)
                     let start_bit = 31 - max_r;
@@ -383,10 +394,9 @@ impl Decider for DeciderCyclerV4 {
                     //    (1 << 10) gives 0b10000000000 (1 followed by 10 zeros)
                     //    Subtracting 1 gives 0b01111111111 (10 ones) -> 0x3FF in hex
                     let mask = ((1u64 << num_bits) - 1) << start_bit;
-                    // #[cfg(feature = "bb_debug")]
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    // #[cfg(feature = "bb_debug_cycler")]
+                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                     {
-                        // for i in step_id - distance..step_id {
                         for (i, step) in self.steps.iter().enumerate().skip(step_id) {
                             let t = machine.transition(
                                 step.for_state() as usize * 2 + step.for_symbol() as usize,
@@ -421,15 +431,32 @@ impl Decider for DeciderCyclerV4 {
 
                     // check if full tape is identical (this is not necessary, only relevant bytes)
                     if step_tape_before & mask == tape_shifted & mask {
-                        // Same, we found a loop!#
-                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                        println!("  *** Found Loop with mask!");
+                        // Same, we found a cycle!
+                        #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                        println!("  *** Found Cycle with mask!");
+                        #[cfg(feature = "bb_enable_html_reports")]
+                        if self.write_html {
+                            let text =
+                                format!("  Decided: Found Cycle (tape for relevant part identical): Start {} and {}, length: {distance}", step_id-distance+1,step_id+1);
+                            self.write_html_p(&text);
+                        }
+                        #[cfg(debug_assertions)]
+                        if DEBUG_EXTRA {
+                            if distance >= DEBUG_MIN_DISTANCE {
+                                println!(
+                                    "cycle size = {}, current step = {}: M {}",
+                                    distance,
+                                    self.steps.len(),
+                                    machine
+                                );
+                            }
+                        }
                         return MachineStatus::DecidedEndless(EndlessReason::Cycle(
                             self.steps.len() as StepTypeSmall,
                             distance as StepTypeSmall,
                         ));
                     } else {
-                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                        #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                         println!("  * Fail: Mask");
                     }
                 }
@@ -437,62 +464,126 @@ impl Decider for DeciderCyclerV4 {
         }
     }
 
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn decide_machine_cycler_html(&mut self, machine: &Machine) -> MachineStatus {
+        let (file, file_name) =
+            html::create_html_file_start(&self.path, Self::decider_id().name, machine)
+                .expect("Html file could not be written");
+        self.file = Some(file);
+
+        let ms = self.decide_machine_cycler(machine);
+        self.write_file_end();
+        // close the file so it can be renamed
+        self.file = None;
+        // rename file depending on status
+        // TODO generalize and use for other deciders
+        match ms {
+            MachineStatus::NoDecision => todo!(),
+            MachineStatus::EliminatedPreDecider(_) => todo!(),
+            MachineStatus::Undecided(_, _, _) => {
+                // rename file
+                let f_name_new = "undecided_".to_string() + &file_name;
+                let old_path = format!("{}{}{}", self.path, MAIN_SEPARATOR_STR, file_name);
+                let new_path = format!("{}{}{}", self.path, MAIN_SEPARATOR_STR, f_name_new);
+                std::fs::rename(old_path, new_path).expect("Could not rename file");
+            }
+            _ => {
+                // rename file
+                let f_name_new = "decided_".to_string() + &file_name;
+                let old_path = format!("{}{}{}", self.path, MAIN_SEPARATOR_STR, file_name);
+                let new_path = format!("{}{}{}", self.path, MAIN_SEPARATOR_STR, f_name_new);
+                // println!("{old_path}");
+                // let x = std::fs::exists(&old_path);
+                std::fs::rename(old_path, new_path).expect("Could not rename file");
+            }
+        }
+
+        ms
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn write_html_p(&self, text: &str) {
+        writeln!(self.file.as_ref().unwrap(), "<p>{text}</p>",).expect("Html write error");
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn write_step_html(&mut self, transition: &TransitionSymbol2, tape_shifted: u64) {
+        html::write_step_html_64(
+            self.file.as_mut().unwrap(),
+            self.steps.len(),
+            self.tr_field_id,
+            transition,
+            tape_shifted,
+        );
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn get_html_path(write_html: bool, n_states: usize) -> String {
+        if write_html {
+            let p = format!(
+                "{}{}{}{n_states}",
+                Config::get_result_path(),
+                MAIN_SEPARATOR_STR,
+                "cycler_bb",
+            );
+            html::create_css(&p).expect("CSS files could not be created.");
+            p
+        } else {
+            String::new()
+        }
+    }
+}
+
+impl Decider for DeciderCyclerV4 {
+    fn decider_id() -> &'static decider::DeciderId {
+        &DECIDER_CYCLER_ID
+    }
+
+    fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
+        #[cfg(feature = "bb_enable_html_reports")]
+        if self.write_html {
+            self.decide_machine_cycler_html(machine)
+        } else {
+            self.decide_machine_cycler(machine)
+        }
+        #[cfg(not(feature = "bb_enable_html_reports"))]
+        self.decide_machine_cycler(machine)
+    }
+
+    // tape_long_bits in machine?
+    // TODO counter: longest cycle
+
     fn decide_single_machine(machine: &Machine, config: &Config) -> MachineStatus {
-        let mut d = Self::new_step_limit(config.step_limit_cycler());
+        let mut d = Self::new(config);
         d.decide_machine(machine)
     }
 
-    // fn decider_run_batch(
-    //     machines: &[Machine],
-    //     run_predecider: PreDeciderRun,
-    //     config: &Config,
-    // ) -> Option<BatchResult> {
-    //     let decider = Self::new_step_limit(config.step_limit_cycler());
-    //     decider::decider_generic_run_batch(decider, machines, run_predecider, config)
-    // }
-
     fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {
         let decider = Self::new(batch_data.config);
-        // batch_data.decider_id = decider.decider_id();
         decider::decider_generic_run_batch_v2(decider, batch_data)
     }
-
-    // fn new_from_self(&self) -> Self {
-    //     todo!()
-    // }
 }
 
-// impl Default for DeciderLoopV4CompactP {
-//     fn default() -> Self {
-//         Self {
-//             steps: Vec::with_capacity(STEP_LIMIT_DECIDER_LOOP),
-//             maps_1d: core::array::from_fn(|_| Vec::with_capacity(STEP_LIMIT_DECIDER_LOOP / 4)),
-//         }
-//     }
-// }
-
-/// Single Step when run, records the state before to identify loops
-// TODO remove from_state and from_symbol, only for debugging purposes
-// TODO integrate state & symbol in one number and match it with 1D array, so no calc for lookup required, array would have 32 fields
-// TODO pub(crate)
+/// Record of every step to identify cycles.
 #[derive(Debug)]
-pub struct StepLoop {
+pub struct StepCycler {
     /// Allows quick compare of symbol & state in one step
     /// symbol: bit 0
     /// state: bits 1-4
-    for_symbol_state: TransitionType,
+    // TO DO performance: could possibly be tr_field_id instead, probably no gain
+    pub for_state_symbol: TransitionType,
     /// step goes to this direction, which is the result from symbol_state lookup
-    direction: DirectionType,
-    tape_before: u64,
-    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+    pub direction: DirectionType,
+    pub tape_before: u64,
+    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
     #[allow(dead_code)]
     text: [char; 3],
 }
 
-impl StepLoop {
-    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+impl StepCycler {
+    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
     const FILTER_SYMBOL_PURE: i16 = 0b0000_0001;
-    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
     const FILTER_STATE: i16 = 0b0001_1110;
     // const FILTER_SYMBOL: u8 = 0b1100_0000;
     // const FILTER_SYMBOL_STATE: u8 = 0b0001_1111;
@@ -505,30 +596,34 @@ impl StepLoop {
         tape_before: u64,
     ) -> Self {
         Self {
-            for_symbol_state: (for_transition & crate::transition_symbol2::FILTER_STATE)
+            for_state_symbol: (for_transition & crate::transition_symbol2::FILTER_STATE)
                 | for_symbol,
             direction,
             tape_before,
-            #[cfg(all(debug_assertions, feature = "bb_debug"))]
+            #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
             text: Self::to_chars(for_transition, for_symbol, direction),
         }
     }
 
-    // fn is_a0(&self) -> bool {
-    //     self.for_symbol_state & Self::FILTER_STATE == 0b0000_0010
-    // }
-
-    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-    fn for_state(&self) -> i16 {
-        (self.for_symbol_state & Self::FILTER_STATE) >> 1
+    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+    pub fn for_state(&self) -> i16 {
+        (self.for_state_symbol & Self::FILTER_STATE) >> 1
     }
 
-    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-    fn for_symbol(&self) -> i16 {
-        self.for_symbol_state & Self::FILTER_SYMBOL_PURE
+    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+    pub fn for_symbol(&self) -> i16 {
+        self.for_state_symbol & Self::FILTER_SYMBOL_PURE
     }
 
-    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+    pub fn for_state_symbol_to_string(&self) -> String {
+        let mut s = String::with_capacity(2);
+        s.push((self.for_state() as u8 + b'A' - 1) as char);
+        s.push((self.for_symbol() as u8 + b'0') as char);
+        s
+    }
+
+    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
     fn to_chars(from_state: i16, from_symbol: i16, direction: i16) -> [char; 3] {
         let dir = match direction {
             -1 => 'L',
@@ -538,7 +633,7 @@ impl StepLoop {
         let state = if from_state & crate::transition_symbol2::FILTER_STATE == 0 {
             'Z'
         } else {
-            (((from_state & crate::transition_symbol2::FILTER_STATE) >> 2) + 64) as u8 as char
+            (((from_state & crate::transition_symbol2::FILTER_STATE) >> 1) as u8 + b'A' - 1) as char
         };
 
         [state, from_symbol as u8 as char, dir]
@@ -551,7 +646,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decider_loop_v4_compact_holds_after_107_steps() {
+    fn decider_cycler_v4_compact_holds_after_107_steps() {
         // check does not apply
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RC", "1LC"));
@@ -562,13 +657,13 @@ mod tests {
 
         let machine = Machine::from_string_tuple(0, &transitions);
         let config = Config::new_default(machine.n_states());
-        let mut d = DeciderCyclerV4::new_step_limit(config.step_limit_cycler());
+        let mut d = DeciderCyclerV4::new(&config);
         let machine_status = d.decide_machine(&machine);
         assert_eq!(machine_status, MachineStatus::DecidedHolds(107));
     }
 
     #[test]
-    fn decider_loop_v4_compact_unspecified() {
+    fn decider_cycler_v4_compact_unspecified() {
         // free test without expected result
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("0RC", "1LC"));
@@ -578,7 +673,7 @@ mod tests {
 
         let machine = Machine::from_string_tuple(32538705, &transitions);
         let config = Config::new_default(machine.n_states());
-        let mut d = DeciderCyclerV4::new_step_limit(config.step_limit_cycler());
+        let mut d = DeciderCyclerV4::new(&config);
         let machine_status = d.decide_machine(&machine);
         println!("result: {}", machine_status);
         let ok = match machine_status {

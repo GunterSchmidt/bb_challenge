@@ -1,0 +1,20 @@
+html {
+    background-color: white;
+    height: 100%;
+    margin: 0px;
+    padding: 0px;
+}
+body {
+    background-color: white;
+    min-height: 100vh;
+    margin: 0;
+    padding: 10px;
+    color: black;
+}
+
+.head_pos {
+    color: black; background-color: lavenderblush; font-weight: bold;
+}
+.change_pos {
+    color: blue; font-weight: bold;
+}

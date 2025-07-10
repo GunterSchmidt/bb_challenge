@@ -333,6 +333,13 @@ impl TransitionSymbol2 {
     pub fn set_as_self_ref(&mut self) {
         self.transition |= FILTER_SELF_REF;
     }
+
+    // Transition array id in 1D-array
+    pub fn field_id_to_string(arr_id: usize) -> String {
+        let state = ((arr_id / 2) as u8 + b'A' - 1) as char;
+        let symbol = arr_id % 2;
+        format!("{state}{symbol}")
+    }
 }
 
 impl Default for TransitionSymbol2 {

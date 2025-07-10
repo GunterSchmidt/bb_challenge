@@ -3,6 +3,8 @@ use std::{fmt::Display, time::SystemTime};
 use hashbrown::HashMap;
 use num_format::ToFormattedString;
 
+use crate::utils::file_exists;
+
 // File path, can always be passed as parameter.
 pub(crate) const PATH_DATA: &str = "./data/";
 pub(crate) const FILE_PATH_BB5_CHALLENGE_DATA_FILE: &str =
@@ -23,6 +25,7 @@ const CPU_UTILIZATION_DEFAULT: usize = 100;
 
 const GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION: usize = 500_000;
 const GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION: usize = 5_000_000;
+const WRITE_HTML_STEP_LIMIT: u32 = 100_000;
 
 // --- Below are program defining definitions, where changes may have a serious impact. ---
 
@@ -78,7 +81,11 @@ pub struct Config {
     generator_full_batch_size_request: usize,
     /// Specific to the GeneratorReduced: desired batch_size. One needs to test different sizes for max performance.
     generator_reduced_batch_size_request: usize,
+    /// This many decided machines are stored in the ResultDecider. If full, the decider exits.
+    /// This is mainly for individual ResultDeciders to further process machines with certain characteristics.
+    limit_machines_decided: usize,
     /// This many undecided machines are stored in the ResultDecider. If full, the decider exits.
+    /// This is mainly to find machines to further analyze.
     limit_machines_undecided: usize,
     /// CPU utilization in percent, e.g. 75 -> 6 of 8 cores used. 0-150 allowed.
     cpu_utilization_percent: usize,
@@ -88,6 +95,9 @@ pub struct Config {
     creation_time: SystemTime,
     /// When set to false UTC is used instead, but this may be confusing to the user.
     use_local_time: bool,
+    /// Outputs decider steps into an html file
+    write_html_file: bool,
+    write_html_step_limit: u32,
 }
 
 impl Config {
@@ -115,6 +125,7 @@ impl Config {
             generator_full_batch_size_request: GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION,
             generator_reduced_batch_size_request: GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION,
             file_id_range: None,
+            limit_machines_decided: 0,
             limit_machines_undecided: 0,
             cpu_utilization_percent: CPU_UTILIZATION_DEFAULT,
             config_key_value: HashMap::new(),
@@ -122,6 +133,8 @@ impl Config {
             use_local_time: true,
             step_limit_bouncer: Self::step_limit_bouncer_default(n_states),
             step_limit_cycler: Self::step_limit_cycler_default(n_states),
+            write_html_file: false,
+            write_html_step_limit: WRITE_HTML_STEP_LIMIT,
         }
     }
 
@@ -223,13 +236,17 @@ impl Config {
         self.generator_reduced_batch_size_request
     }
 
+    pub fn limit_machines_decided(&self) -> usize {
+        self.limit_machines_decided
+    }
+
     pub fn limit_machines_undecided(&self) -> usize {
         self.limit_machines_undecided
     }
 
-    pub fn set_limit_machines_undecided(&mut self, limit: usize) {
-        self.limit_machines_undecided = limit;
-    }
+    // pub fn set_limit_machines_undecided(&mut self, limit: usize) {
+    //     self.limit_machines_undecided = limit;
+    // }
 
     pub fn machines_limit(&self) -> u64 {
         self.machines_limit
@@ -269,6 +286,25 @@ impl Config {
     pub fn use_local_time(&self) -> bool {
         self.use_local_time
     }
+
+    pub fn write_html_file(&self) -> bool {
+        self.write_html_file
+    }
+
+    pub fn write_html_step_limit(&self) -> u32 {
+        self.write_html_step_limit
+    }
+
+    // TODO TOML config file
+    /// Directory for all file outputs
+    pub fn get_result_path() -> String {
+        let path = "./result";
+        if !file_exists(path) {
+            // create dir
+            std::fs::create_dir(path).expect("Path could not be created.");
+        }
+        path.to_string()
+    }
 }
 
 impl Default for Config {
@@ -276,17 +312,6 @@ impl Default for Config {
         Self::new_default(N_STATES_DEFAULT)
     }
 }
-
-// impl From<&Config> for Config {
-//     fn from(value: &Config) -> Self {
-//         value.clone();
-//     }
-// }
-
-// pub struct ConfigKeyValue {
-//     key: String,
-//     value: String,
-// }
 
 // TODO init_steps_max: StepType
 #[derive(Default)]
@@ -301,10 +326,13 @@ pub struct ConfigBuilder {
     step_limit_cycler: Option<StepTypeSmall>,
     tape_size_limit: Option<usize>,
     machines_limit: Option<u64>,
+    limit_machines_decided: Option<usize>,
     limit_machines_undecided: Option<usize>,
     cpu_utilization_percent: Option<usize>,
     config_key_value: Option<HashMap<String, String>>,
     use_local_time: Option<bool>,
+    write_html_file: Option<bool>,
+    write_html_step_limit: Option<u32>,
 }
 
 impl ConfigBuilder {
@@ -327,10 +355,13 @@ impl ConfigBuilder {
             file_id_range: config.file_id_range.clone(),
             generator_batch_size_request_full: Some(config.generator_full_batch_size_request),
             generator_batch_size_request_reduced: Some(config.generator_reduced_batch_size_request),
+            limit_machines_decided: Some(config.limit_machines_decided),
             limit_machines_undecided: Some(config.limit_machines_undecided),
             cpu_utilization_percent: Some(config.cpu_utilization_percent),
             config_key_value: Some(config.config_key_value.clone()),
             use_local_time: Some(config.use_local_time),
+            write_html_file: Some(config.write_html_file),
+            write_html_step_limit: Some(config.write_html_step_limit),
         }
     }
 
@@ -356,6 +387,11 @@ impl ConfigBuilder {
 
     pub fn generator_reduced_batch_size_request(mut self, batch_size_request: usize) -> Self {
         self.generator_batch_size_request_reduced = Some(batch_size_request);
+        self
+    }
+
+    pub fn limit_machines_decided(mut self, value: usize) -> Self {
+        self.limit_machines_decided = Some(value);
         self
     }
 
@@ -394,8 +430,18 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn write_html_file(mut self, value: bool) -> Self {
+        self.write_html_file = Some(value);
+        self
+    }
+
+    pub fn write_html_step_limit(mut self, value: u32) -> Self {
+        self.write_html_step_limit = Some(value);
+        self
+    }
+
     pub fn build(self) -> Config {
-        Config {
+        let mut config = Config {
             n_states: self.n_states,
             batch_size: self.batch_size.unwrap_or(BATCH_SIZE_FILE),
             step_limit_hold: self
@@ -419,14 +465,25 @@ impl ConfigBuilder {
                 .generator_batch_size_request_reduced
                 .unwrap_or(GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION),
             file_id_range: self.file_id_range,
+            limit_machines_decided: self.limit_machines_decided.unwrap_or(0),
             limit_machines_undecided: self.limit_machines_undecided.unwrap_or(0),
             cpu_utilization_percent: self
                 .cpu_utilization_percent
                 .unwrap_or(CPU_UTILIZATION_DEFAULT),
             config_key_value: self.config_key_value.unwrap_or_default(),
             creation_time: SystemTime::now(),
-            use_local_time: true,
+            use_local_time: self.use_local_time.unwrap_or(true),
+            write_html_file: self.write_html_file.unwrap_or(false),
+            write_html_step_limit: self.write_html_step_limit.unwrap_or(WRITE_HTML_STEP_LIMIT),
+        };
+
+        #[cfg(not(feature = "bb_enable_html_reports"))]
+        if config.write_html_file {
+            println!("WARNING: feature 'bb_enable_html_reports' is not enabled, cannot write HTML files.");
+            config.write_html_file = false;
         }
+
+        config
     }
 }
 

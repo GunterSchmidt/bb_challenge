@@ -12,6 +12,7 @@ use crate::{
     decider_result::BatchResult,
 };
 
+pub type FnResultWorker = fn(&mut BatchData) -> ResultWorker;
 pub type ResultWorker = std::result::Result<(), EndReason>;
 pub type ResultString = std::result::Result<(), String>;
 
@@ -115,16 +116,6 @@ pub fn print_batch_result(batch_result: &BatchResult, _config: &Config) -> Resul
     }
     // });
 
-    Ok(())
-}
-
-/// This is a dummy function to pass when no worker is required.
-pub fn no_worker(_batch_result: &BatchResult, _config: &Config) -> ResultWorker {
-    Ok(())
-}
-
-/// This is a dummy function to pass when no worker is required.
-pub fn no_worker_v2(_batch_result: &BatchData) -> ResultWorker {
     Ok(())
 }
 
