@@ -441,6 +441,7 @@ impl ConfigBuilder {
     }
 
     pub fn build(self) -> Config {
+        #[allow(unused_mut)]
         let mut config = Config {
             n_states: self.n_states,
             batch_size: self.batch_size.unwrap_or(BATCH_SIZE_FILE),

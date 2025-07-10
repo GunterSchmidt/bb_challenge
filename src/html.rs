@@ -140,6 +140,7 @@ pub fn format_int_html(number: usize, size: usize) -> String {
 /// * file_name_prefix
 /// * machine to write, uses tm_standard_name for file name
 /// * Example: ("data", "hold", m) creates /data/hold_1RB0RC_1RA0RA_0RB1RC.html
+///
 /// Returns (File, FileName)
 pub fn create_html_file_start(
     path: &str,
@@ -189,7 +190,7 @@ pub fn write_step_html_64(
         "Step {} {} {transition}: {}</br>",
         format_int_html(step_no, 5),
         TransitionSymbol2::field_id_to_string(tr_field_id),
-        crate::tape_utils::U64Ext::to_binary_split_html_string(&tape_shifted, &transition),
+        crate::tape_utils::U64Ext::to_binary_split_html_string(&tape_shifted, transition),
     )
     .expect("Html write error");
 }
@@ -206,7 +207,7 @@ pub fn write_step_html_128(
         "Step {} {} {transition}: {}</br>",
         format_int_html(step_no, 5),
         TransitionSymbol2::field_id_to_string(tr_field_id),
-        crate::tape_utils::U128Ext::to_binary_split_html_string(&tape_shifted, &transition),
+        crate::tape_utils::U128Ext::to_binary_split_html_string(&tape_shifted, transition),
     )
     .expect("Html write error");
 }

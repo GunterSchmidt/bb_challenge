@@ -348,15 +348,13 @@ impl DeciderCyclerV4 {
                             self.write_html_p(&text);
                         }
                         #[cfg(debug_assertions)]
-                        if DEBUG_EXTRA {
-                            if distance >= DEBUG_MIN_DISTANCE {
-                                println!(
-                                    "cycle size = {}, current step = {}: M {}",
-                                    distance,
-                                    self.steps.len(),
-                                    machine
-                                );
-                            }
+                        if DEBUG_EXTRA && distance >= DEBUG_MIN_DISTANCE {
+                            println!(
+                                "cycle size = {}, current step = {}: M {}",
+                                distance,
+                                self.steps.len(),
+                                machine
+                            );
                         }
                         return MachineStatus::DecidedEndless(EndlessReason::Cycle(
                             self.steps.len() as StepTypeSmall,
@@ -441,15 +439,13 @@ impl DeciderCyclerV4 {
                             self.write_html_p(&text);
                         }
                         #[cfg(debug_assertions)]
-                        if DEBUG_EXTRA {
-                            if distance >= DEBUG_MIN_DISTANCE {
-                                println!(
-                                    "cycle size = {}, current step = {}: M {}",
-                                    distance,
-                                    self.steps.len(),
-                                    machine
-                                );
-                            }
+                        if DEBUG_EXTRA && distance >= DEBUG_MIN_DISTANCE {
+                            println!(
+                                "cycle size = {}, current step = {}: M {}",
+                                distance,
+                                self.steps.len(),
+                                machine
+                            );
                         }
                         return MachineStatus::DecidedEndless(EndlessReason::Cycle(
                             self.steps.len() as StepTypeSmall,

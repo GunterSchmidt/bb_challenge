@@ -79,11 +79,11 @@ impl Machine {
     /// This should only be used for testing single machines as it is slow in a loop.
     pub fn decide_hold(&self) -> MachineStatus {
         let config = Config::new_default(self.n_states());
-        let mut status = run_pre_decider_simple(&self.transition_table);
+        let status = run_pre_decider_simple(&self.transition_table);
         if status != MachineStatus::NoDecision {
             return status;
         }
-        // status = DeciderCyclerV4::decide_single_machine(self, &config);
+        // status = crate::decider_cycler_v4::DeciderCyclerV4::decide_single_machine(self, &config);
         // match status {
         //     MachineStatus::Undecided(_, _, _) => {}
         //     _ => return status,

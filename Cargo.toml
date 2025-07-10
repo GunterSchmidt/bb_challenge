@@ -16,14 +16,14 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # criterion2 = "1.1.1"
 
 [features]
-default = ["bb_counter_stats"]
+# default = ["bb_counter_stats"]
 # default = ["bb_debug", "bb_debug_cycler", "bb_no_self_ref"]
 # default = ["bb_debug_cycler", "bb_no_self_ref"]
 # default = ["bb_no_self_ref"]
 # default = ["bb_generator_longest_skip_chain"]
 # default = ["bb_use_result_large"]
 # default = ["bb_print_non_pre_perm"]
-# default = ["bb_enable_html_reports"]
+default = ["bb_enable_html_reports"]
 bb_debug = []
 bb_debug_cycler = []
 bb_counter_stats = []

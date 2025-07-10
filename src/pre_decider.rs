@@ -480,6 +480,7 @@ pub fn check_straight_to_end(table: &TransitionTableSymbol2, n_states: usize) ->
 /// * A0 must to be 0RB or 1RB (strict test)
 /// * Only one direction is eliminated
 #[inline]
+#[allow(unused)]
 pub fn check_states_can_be_switched(
     // tr_used: &[TransitionSymbol2],
     table: &TransitionTableSymbol2,
@@ -496,10 +497,10 @@ pub fn check_states_can_be_switched(
         // starts with state B
         let max_state_allowed = (i + 1) as TransitionType;
         // let mut has_one_correct = false;
-        if table.transitions[i * 2].state() > max_state_allowed {
-            if table.transitions[i * 2 + 1].state() > max_state_allowed {
-                return true;
-            }
+        if table.transitions[i * 2].state() > max_state_allowed
+            && table.transitions[i * 2 + 1].state() > max_state_allowed
+        {
+            return true;
         }
     }
 
