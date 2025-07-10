@@ -129,7 +129,7 @@ fn write_dark_css_content(file: &mut File) -> io::Result<()> {
 }
 
 pub fn format_int_html(number: usize, size: usize) -> String {
-    let s = format!("{:>size$}", number);
+    let s = format!("{number:>size$}");
     s.replace(" ", "&nbsp;")
 }
 

@@ -255,7 +255,7 @@ impl DeciderCycler {
                         TAPE_SIZE_BIT,
                     );
                 }
-                if high_bound > MIDDLE_BIT as u32 {
+                if high_bound > MIDDLE_BIT {
                     high_bound -= 1;
                 }
                 tape_shifted >> 1

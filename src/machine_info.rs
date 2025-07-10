@@ -121,6 +121,6 @@ impl Display for MachineInfo {
         //         s.push_str(format!("State not yet documented: {:?}", self.status).as_str());
         //     }
         // }
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }

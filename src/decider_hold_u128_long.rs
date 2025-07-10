@@ -664,8 +664,8 @@ impl DeciderHoldU128Long {
         )
     }
 
-    /// Update tape: write symbol at head position into cell.
-    /// This is only required for handover from u64.
+    // / Update tape: write symbol at head position into cell.
+    // / This is only required for handover from u64.
     // #[inline(always)]
     //     fn update_and_move_tape(&mut self) -> bool {
     //         if self.tr.goes_right() {

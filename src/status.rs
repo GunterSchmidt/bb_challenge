@@ -78,10 +78,10 @@ impl Display for MachineStatus {
         let mut s = String::new();
         match self {
             MachineStatus::DecidedHolds(steps) => {
-                s.push_str(format!("Decided Holds: after {} steps", steps).as_str())
+                s.push_str(format!("Decided Holds: after {steps} steps").as_str())
             }
             MachineStatus::EliminatedPreDecider(reason) => {
-                s.push_str(format!("Eliminated Pre-Decider {:?}", reason).as_str())
+                s.push_str(format!("Eliminated Pre-Decider {reason:?}").as_str())
             }
             // MachineStatus::DecidedHoldsOld(steps, num_ones) => {
             //     s.push_str(
@@ -94,7 +94,7 @@ impl Display for MachineStatus {
             // }
             MachineStatus::NoDecision => s.push_str("No decision"),
             MachineStatus::DecidedEndless(endless_reason) => {
-                s.push_str(format!("Decided Endless for {:?}", endless_reason).as_str())
+                s.push_str(format!("Decided Endless for {endless_reason:?}").as_str())
             }
             MachineStatus::DecidedNotMaxTooManyHoldTransitions => todo!(),
             MachineStatus::DecidedNotMaxNotAllStatesUsed => {
@@ -133,6 +133,6 @@ impl Display for MachineStatus {
               //     s.push_str("Undecided as fast tape size limit was reached.")
               // }
         }
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }

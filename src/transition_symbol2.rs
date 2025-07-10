@@ -190,10 +190,10 @@ impl TransitionSymbol2 {
         })
     }
 
-    /// Create transition from array, where all values are numbers only, not chars.
-    /// This is faster than new and used for the generator, but only used during batch creation.
-    /// Discarded for DRY principle.
-    /// [symbol, direction, state]
+    // / Create transition from array, where all values are numbers only, not chars.
+    // / This is faster than new and used for the generator, but only used during batch creation.
+    // / Discarded for DRY principle.
+    // / [symbol, direction, state]
     //     pub fn new_int(transition_data: [u8; 3]) -> Self {
     //         const MAX: u8 = MAX_STATES as u8 + 1;
     //         // special hold in case of array
@@ -353,7 +353,7 @@ impl TryFrom<&str> for TransitionSymbol2 {
     type Error = String;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        if value.as_bytes().len() != 3 {
+        if value.len() != 3 {
             return Err("Transition must have length of 3".to_string());
         }
         let r = TransitionSymbol2::new(value.as_bytes().try_into().unwrap());
@@ -403,7 +403,7 @@ impl From<&TransitionGeneric> for TransitionSymbol2 {
                 text: ['_', '_', '_'],
             };
             // format with formatter
-            let text = format!("{}", tx);
+            let text = format!("{tx}");
             tx.text = text.chars().collect::<Vec<_>>().try_into().unwrap();
 
             tx
@@ -743,7 +743,7 @@ impl Display for TransitionError {
                 write!(f, "Invalid state character: '{}'", *s as char)
             }
             TransitionError::StateOutOfRange(s) => {
-                write!(f, "State {} out of range (max {})", s, MAX_STATES)
+                write!(f, "State {s} out of range (max {MAX_STATES})")
             }
         }
     }

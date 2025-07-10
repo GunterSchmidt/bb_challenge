@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 #[cfg(debug_assertions)]
 use std::io::Write;
 
@@ -88,7 +89,7 @@ impl DeciderBouncer {
         let mut file = None;
         #[cfg(debug_assertions)]
         if IS_DEBUG {
-            println!("\nDecider Expanding Sinus for {}", machine);
+            println!("\nDecider Expanding Sinus for {machine}");
             // TODO why not simply machine?
             self.machine_info =
                 crate::machine_info::MachineInfo::from_machine(machine, &MachineStatus::NoDecision);

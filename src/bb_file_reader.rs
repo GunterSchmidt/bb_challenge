@@ -1,3 +1,4 @@
+#![allow(clippy::manual_is_multiple_of)]
 use std::convert::TryInto;
 // Function to read a file
 use std::fs::File;
@@ -89,7 +90,7 @@ impl BBFileReader {
         match r {
             Ok(reader) => file = reader,
             Err(e) => {
-                eprintln!("File not found: {}", file_path);
+                eprintln!("File not found: {file_path}");
                 return Err(e);
             }
         }

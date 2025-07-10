@@ -89,7 +89,7 @@ pub fn standard_args(args: &[String]) -> ArgValue {
                     // println!("Machine number: {}", no);
                     match BBFileReader::read_machine_single(no, file_path) {
                         Ok(machine) => return ArgValue::Machine(Box::new(machine)),
-                        Err(e) => return ArgValue::Error(format!("{:?}", e)),
+                        Err(e) => return ArgValue::Error(format!("{e:?}")),
                     };
                 } else {
                     return ArgValue::Error(format!("Invalid machine number: {}", args[2]));

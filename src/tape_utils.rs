@@ -162,7 +162,7 @@ impl VecU32Ext for Vec<u32> {
     fn to_hex_string_range(&self, range: Range<usize>) -> String {
         let mut s = String::new();
         for cell_pack in self[range.start..range.end - 1].iter() {
-            s.push_str(format!("{:08X}, ", cell_pack).as_str());
+            s.push_str(format!("{cell_pack:08X}, ").as_str());
         }
         s.push_str(format!("{:08X}", &self[range.end - 1]).as_str());
 

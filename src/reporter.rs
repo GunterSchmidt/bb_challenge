@@ -201,7 +201,7 @@ impl ReportProgressStandard {
 
 impl ReportProgress for ReportProgressStandard {
     fn report_detail(&self, result: &DeciderResultStats) -> String {
-        format!("\nCurrent result\n{}", result)
+        format!("\nCurrent result\n{result}")
     }
 
     fn report_progress(&self, processed: IdBig, progress_info: &ProgressInfo) -> String {
@@ -319,6 +319,7 @@ impl ProgressInfo {
             time_stamp: Instant::now(),
             processed,
         });
+        #[allow(clippy::manual_is_multiple_of)]
         if self.progress_data.len() % 50 == 0 {
             self.clean_progress();
         }
@@ -423,12 +424,9 @@ pub fn format_duration_hhmmss_ms(duration: Duration, display_millis: bool) -> St
     }
 
     if display_millis {
-        format!(
-            "{:02}:{:02}:{:02}.{:03}",
-            hours, minutes, seconds, milliseconds
-        )
+        format!("{hours:02}:{minutes:02}:{seconds:02}.{milliseconds:03}")
     } else {
-        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
     }
 }
 

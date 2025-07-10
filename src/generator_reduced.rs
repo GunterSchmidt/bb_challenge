@@ -90,7 +90,8 @@ impl GeneratorReduced {
         };
         let batch_size =
             Self::calc_batch_size(config.generator_batch_size_request_reduced(), n_states);
-        let num_batches = ((limit + batch_size as u64 - 1) / batch_size as u64) as usize;
+        // let num_batches = ((limit + batch_size as u64 - 1) / batch_size as u64) as usize;
+        let num_batches = limit.div_ceil(batch_size as u64) as usize;
 
         Self {
             id_next: 0,
@@ -422,7 +423,8 @@ impl Generator for GeneratorReduced {
         if self.batch_size != BATCH_SIZE_REQUEST_SINGLE_THREAD {
             // self.config.generator_batch_size_request_full = BATCH_SIZE_REQUEST_SINGLE_THREAD;
             let batch_size = Self::calc_batch_size(BATCH_SIZE_REQUEST_SINGLE_THREAD, self.n_states);
-            self.num_batches = ((self.limit + batch_size as u64 - 1) / batch_size as u64) as usize;
+            // self.num_batches = ((self.limit + batch_size as u64 - 1) / batch_size as u64) as usize;
+            self.num_batches = self.limit.div_ceil(batch_size as u64) as usize;
             self.batch_size = batch_size;
         }
     }

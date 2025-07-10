@@ -136,7 +136,7 @@ impl TryFrom<&str> for TransitionGeneric {
     type Error = &'static str;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        if value.as_bytes().len() != 3 {
+        if value.len() != 3 {
             return Err("Transition must have length of 3");
         }
         Ok(TransitionGeneric::new(value.as_bytes().try_into().unwrap()))
@@ -165,7 +165,7 @@ impl Display for TransitionGeneric {
         } else {
             (self.state_next + 64) as char
         };
-        write!(f, "{}{}{}", write_symbol, move_next, next_state)
+        write!(f, "{write_symbol}{move_next}{next_state}")
     }
 }
 
@@ -190,7 +190,7 @@ impl TransitionTableGeneric {
             // println!("{}", transition_tuples.len());
             return Err("The number of table states exceeds the states set in MAX_STATES_GENERIC!");
         }
-        let len_line = transition_tuples.first().unwrap().as_bytes().len();
+        let len_line = transition_tuples.first().unwrap().len();
         if len_line / 3 > MAX_SYMBOLS_GENERIC {
             return Err(
                 "The number of table symbols exceeds the symbols set in MAX_SYMBOLS_GENERIC!",
@@ -199,7 +199,7 @@ impl TransitionTableGeneric {
         let mut max_symbol = 0;
         for (line, tuple) in transition_tuples.iter().enumerate() {
             // Check format
-            if tuple.as_bytes().len() != len_line {
+            if tuple.len() != len_line {
                 return Err("Expected a format like '1RB1LC_1RC1RB_1RD0LE_1LA1LD_1RZ0LA'. The length of the separated transition lines is not identical.");
             }
             for (symbol, start) in (0..len_line).step_by(3).enumerate() {

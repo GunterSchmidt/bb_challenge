@@ -74,7 +74,7 @@ impl Display for EndReason {
                 write!(f, "Last batch indication. Should be internal only")
             }
             EndReason::MachineLimitReached(limit) => {
-                write!(f, "Limit of {} machines reached", limit)
+                write!(f, "Limit of {limit} machines reached")
             }
             EndReason::NoBatchData => write!(f, "No data in this batch"),
             EndReason::NoMoreData => write!(f, "No more data found"),
@@ -662,7 +662,7 @@ impl Display for DeciderResultStats {
         s.push_str(format!("{}", self.endless_count).as_str());
         s.push_str(format!("{}", self.pre_decider_count).as_str());
         s.push_str(format!("{}", self.steps_max).as_str());
-        write!(f, "{}", s)?;
+        write!(f, "{s}")?;
 
         if let Some(machines) = self.machines_undecided.as_ref() {
             writeln!(
@@ -981,7 +981,7 @@ impl Display for PreDeciderCount {
         } else {
             s.push('\n');
         }
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
