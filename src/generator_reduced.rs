@@ -151,6 +151,7 @@ impl GeneratorReduced {
     //     2u64.pow(2 * self.n_states as u32)
     // }
 
+    #[inline]
     pub fn check_pre_decider(&self) -> PreDeciderReason {
         let tr_used = self.transition_table.transitions_used(self.n_states);
         // if count_hold_transitions(tr_used) != 1 {

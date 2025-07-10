@@ -177,6 +177,7 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
                     };
                     let dc_result = run_decider_chain_batch(batch_data, decider_configs);
                     result_main.add_result(&dc_result);
+                    duration_decider += start_decider.elapsed();
                     match dc_result.end_reason {
                         EndReason::AllMachinesChecked => todo!(),
                         EndReason::Error(_, _) => todo!(),
@@ -186,11 +187,10 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
                         EndReason::NoMoreData => todo!(),
                         EndReason::RecordLimitDecidedReached(_) => todo!(),
                         EndReason::RecordLimitUndecidedReached(_) => todo!(),
-                        EndReason::StopRequested(_, _) => todo!(),
-                        _ => {}
+                        EndReason::StopRequested(_, _) => break,
+                        EndReason::None => {}
                     };
                     // let undecided_available = result.add_result(&br.result_decided);
-                    duration_decider += start_decider.elapsed();
 
                     // end if undecided limit has been reached
                     // if stop_run || !undecided_available {

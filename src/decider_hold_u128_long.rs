@@ -825,7 +825,7 @@ impl Decider for DeciderHoldU128Long {
         d.decide_machine(machine)
     }
 
-    fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason {
+    fn decider_run_batch(batch_data: &mut BatchData) -> ResultUnitEndReason {
         let decider = Self::new(batch_data.config);
         decider::decider_generic_run_batch_v2(decider, batch_data)
     }

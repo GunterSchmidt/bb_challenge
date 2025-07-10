@@ -1,18 +1,21 @@
-// TODO document
-//! This is the fast version of the cycler decider (limited to a 64-bit tape, so it may not find larger cycles). \
+//! This is the fast version of the cycler decider (limited to a 128-bit tape, so it may not find larger cycles). \
 //! It is a very effective decider and should run first with a small number of steps to eliminate most \
 //! of the cyclers and machines which hold quickly (both are identified).
 //! Example for BB4 with 6,975,757,441 machines. If only this decider is run with 150 step limit, then all
-//! machines can be checked in less than 5 seconds, leaving only 65,500 undecided.
+//! machines can be checked in less than 3 seconds, leaving only 65,530 undecided.
 //! Most machines are eliminated by the pre-decider, leaving only 30,199,552 machines which need to be checked further.
-//! This decider than classifies 10,758,178 as Hold and 19,375,874 as Cycler.
+//! This decider than classifies 10,758,178 as Hold and 19,375,844 as Cycler.
 //! Of the 10,758,178 Hold machines, only 184 machines run more than 50 steps.
-//! Of the 19,375,874 Cycler machines, only 4740 machines are not detected within 50 steps.
-//! If the limit is set to 10,000 machines, then the runtime will be around 110 seconds (on my machine), \
-//! which is a factor of 20. \
-//! Additionally 160 Cyclers are found. Which means < 0,01% of the machines take 95% of the time.\
-//! For BB5 the first 100,000,000,000 can be tested in about 30 seconds, leaving only 214,996 undecided \
-//! with step limit 500.
+//! Of the 19,375,844 Cycler machines, only 4740 machines are not detected within 50 steps.
+//! If the limit is set to 10,000 machines, then the runtime will be around 50 seconds (on my machine), \
+//! which is a factor of 12. \
+//! Additionally 216 Cyclers are found. Which means < 0,01% of the machines take 95% of the time.\
+//! For BB4 these are also found with 1500, so anything more does not help.
+//! A reasonable size is between 300 and 1500, the runtime does differ, but this is not much overall.
+//! For BB5 the first 100,000,000,000 can be tested in about 32 seconds, leaving only 214,857 undecided \
+//! with step limit 1500.
+//! For BB5 the first 100,000,000,000 can be tested in about 40 seconds, leaving only 214,845 undecided \
+//! with step limit 2500.
 //! Therefore it is wiser to run the bouncer before attempting to catch the other cyclers.
 //! How it works: \
 //! When run, every step is recorded (StepCycler) so repeating steps can be identified.
@@ -29,7 +32,7 @@ use std::{io::Write, path::MAIN_SEPARATOR_STR};
 #[cfg(feature = "bb_enable_html_reports")]
 use crate::html;
 #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-use crate::tape_utils::U64Ext;
+use crate::tape_utils::U128Ext;
 #[cfg(feature = "bb_enable_html_reports")]
 use crate::transition_symbol2::TransitionSymbol2;
 use crate::{
@@ -47,15 +50,17 @@ const DEBUG_EXTRA: bool = true;
 #[cfg(debug_assertions)]
 const DEBUG_MIN_DISTANCE: usize = 75;
 
-type TapeType = u64;
-const TAPE_SIZE_BIT: StepTypeSmall = 64;
+type TapeType = u128;
+const TAPE_SIZE_BIT: StepTypeSmall = 128;
 const MIDDLE_BIT: StepTypeSmall = TAPE_SIZE_BIT / 2 - 1;
 const POS_HALF: TapeType = 1 << MIDDLE_BIT;
 
 const MAX_INIT_CAPACITY: usize = 10_000;
+/// Reduces number of checks. This relies on a cycle which always has one tape side 0.
+const SEARCH_ONLY_0_SIDE_FROM: usize = 50;
 
 // TODO for clarity move tr and tape_shifted into this struct
-// TO DO Performance: Check if really all found duplicates must be checked, maybe some learnings from previous.
+// TODO Implement Tape Long for larger cycles in v6
 #[derive(Debug)]
 pub struct DeciderCycler {
     /// Store all steps to do comparisons (test if a cycle is repeating)
@@ -63,7 +68,7 @@ pub struct DeciderCycler {
     /// Stores the step ids (2 = 3rd step) for each field in the transition table. \
     /// (basically e.g. all steps for e.g. field 'B0' steps: 1 if A0 points to B, as step 1 then has state B and head symbol 0.)
     // TODO performance: check if storage as u16 is faster
-    // TODO performance: extra level for 0/1 at head position? , maybe better calc single array
+    // TODO performance: extra differentiation for 0/1 at head position? The idea is, that the field cannot be identical if head read is different
     maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)],
     /// Step limit for this decider. Should not exceed 2000 // TODO why: u64 tape, cannot be so large
     step_limit: StepTypeSmall,
@@ -130,6 +135,9 @@ impl DeciderCycler {
         let mut tape_shifted: TapeType = 0;
         let mut high_bound: u32 = MIDDLE_BIT;
         let mut low_bound: i32 = MIDDLE_BIT as i32;
+
+        // let mut zero_left = Vec::new();
+        // let mut zero_right = Vec::new();
 
         // Initialize transition with A0 as start
         let mut tr = TRANSITION_SYM2_START;
@@ -204,6 +212,8 @@ impl DeciderCycler {
                 if high_bound == TAPE_SIZE_BIT {
                     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                     {
+                        use crate::tape_utils::U128Ext;
+
                         println!("\n{}", machine);
                         println!("step         {}", self.steps.len());
                         println!("low_bound    {}", low_bound);
@@ -271,8 +281,8 @@ impl DeciderCycler {
                 self.steps.len() - 1,
                 self.steps.last().unwrap().for_state_symbol_to_string(),
                 tr,
-                (tape_shifted >> 32) as u32,
-                tape_shifted as u32,
+                (tape_shifted >> 64) as u64,
+                tape_shifted as u64,
                 tr.state_to_char(),
                 read_symbol_next,
                 machine.transition(tr.state_x2() + read_symbol_next),
@@ -283,8 +293,15 @@ impl DeciderCycler {
             }
 
             // check endless cycle for multiple steps
-            if self.maps_1d[tr.state_x2() + read_symbol_next].len() > 1 {
-                'steps: for &step_id in self.maps_1d[tr.state_x2() + read_symbol_next][1..]
+            let tr_field_next = tr.state_x2() + read_symbol_next;
+            // must be repeated already and either side needs to be 0
+            // This assumes, the tape is fluctuating around the start
+            if self.maps_1d[tr_field_next].len() > 1
+                && (self.steps.len() < SEARCH_ONLY_0_SIDE_FROM
+                    || tape_shifted as u64 == 0
+                    || (tape_shifted >> 64) as u64 == 0)
+            {
+                'steps: for &step_id in self.maps_1d[tr_field_next][1..]
                     .iter()
                     // .skip(1) // slow
                     .rev()
@@ -367,9 +384,9 @@ impl DeciderCycler {
                     }
 
                     // identify affected bits in the cycle steps
-                    let mut total_shift = 0;
-                    let mut max_r = 0;
-                    let mut min_l = 0;
+                    let mut total_shift: isize = 0;
+                    let mut max_r: isize = 0;
+                    let mut min_l: isize = 0;
                     // add all steps including next step, because result bit is also relevant
                     for step in self.steps.iter().skip(step_id) {
                         total_shift += step.direction as isize;
@@ -383,9 +400,9 @@ impl DeciderCycler {
                     // When shifted, eventually all bits on that side are used after x cycles, check all
                     #[allow(clippy::comparison_chain)]
                     if total_shift > 0 {
-                        max_r = MIDDLE_BIT as isize
+                        max_r = MIDDLE_BIT as isize // 31 / 63
                     } else if total_shift < 0 {
-                        min_l = TAPE_SIZE_BIT as isize / -2
+                        min_l = TAPE_SIZE_BIT as isize / -2 // -32 / -64
                     }
 
                     // extract relevant bits and compare (bits counted from right, starting with 0, middle is bit 31)
@@ -507,8 +524,8 @@ impl DeciderCycler {
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
-    fn write_step_html(&mut self, transition: &TransitionSymbol2, tape_shifted: u64) {
-        html::write_step_html_64(
+    fn write_step_html(&mut self, transition: &TransitionSymbol2, tape_shifted: TapeType) {
+        html::write_step_html_128(
             self.file.as_mut().unwrap(),
             self.steps.len(),
             self.tr_field_id,

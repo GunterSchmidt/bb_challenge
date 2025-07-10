@@ -3,7 +3,6 @@ use std::{fmt::Display, time::Duration};
 use crate::{
     config::Config,
     decider_bouncer::DeciderBouncer,
-    decider_cycler_v4::DeciderCyclerV4,
     decider_hold_u128_long::DeciderHoldU128Long,
     decider_result::{BatchData, DeciderResultStats, EndReason, PreDeciderCount},
     decider_result_worker::FnResultWorker,
@@ -45,13 +44,14 @@ impl DeciderStandard {
     pub fn decider_caller(&self) -> DeciderCaller<'_> {
         match self {
             DeciderStandard::Bouncer => {
-                DeciderCaller::new(&DECIDER_BOUNCER_ID, DeciderBouncer::decider_run_batch_v2)
+                DeciderCaller::new(&DECIDER_BOUNCER_ID, DeciderBouncer::decider_run_batch)
             }
-            DeciderStandard::Cycler => {
-                DeciderCaller::new(&DECIDER_CYCLER_ID, DeciderCyclerV4::decider_run_batch_v2)
-            }
+            DeciderStandard::Cycler => DeciderCaller::new(
+                &DECIDER_CYCLER_ID,
+                crate::decider_cycler_v5::DeciderCycler::decider_run_batch,
+            ),
             DeciderStandard::Hold => {
-                DeciderCaller::new(&DECIDER_HOLD_ID, DeciderHoldU128Long::decider_run_batch_v2)
+                DeciderCaller::new(&DECIDER_HOLD_ID, DeciderHoldU128Long::decider_run_batch)
             }
         }
     }
@@ -60,17 +60,17 @@ impl DeciderStandard {
         match self {
             DeciderStandard::Bouncer => DeciderConfig::new(
                 &DECIDER_BOUNCER_ID,
-                DeciderBouncer::decider_run_batch_v2,
+                DeciderBouncer::decider_run_batch,
                 config,
             ),
             DeciderStandard::Cycler => DeciderConfig::new(
                 &DECIDER_CYCLER_ID,
-                DeciderCyclerV4::decider_run_batch_v2,
+                crate::decider_cycler_v5::DeciderCycler::decider_run_batch,
                 config,
             ),
             DeciderStandard::Hold => DeciderConfig::new(
                 &DECIDER_HOLD_ID,
-                DeciderHoldU128Long::decider_run_batch_v2,
+                DeciderHoldU128Long::decider_run_batch,
                 config,
             ),
         }
@@ -119,7 +119,7 @@ impl<'a> DeciderCaller<'a> {
 #[derive(Debug, Clone, Copy)]
 pub struct DeciderConfig<'a> {
     decider_id: &'a DeciderId,
-    f_decider: FnDeciderRunBatchV2,
+    f_decider_run_batch: FnDeciderRunBatchV2,
     pub fo_result_worker: Option<FnResultWorker>,
     config: &'a Config,
 }
@@ -132,7 +132,7 @@ impl<'a> DeciderConfig<'a> {
     ) -> Self {
         Self {
             decider_id,
-            f_decider,
+            f_decider_run_batch: f_decider,
             fo_result_worker: None,
             config,
         }
@@ -141,7 +141,7 @@ impl<'a> DeciderConfig<'a> {
     pub fn new_caller(decider_caller: &'a DeciderCaller, config: &'a Config) -> Self {
         Self {
             decider_id: decider_caller.decider_id,
-            f_decider: decider_caller.f_decider,
+            f_decider_run_batch: decider_caller.f_decider,
             fo_result_worker: None,
             config,
         }
@@ -155,14 +155,14 @@ impl<'a> DeciderConfig<'a> {
     ) -> Self {
         Self {
             decider_id,
-            f_decider,
+            f_decider_run_batch: f_decider,
             fo_result_worker: Some(f_result_worker),
             config,
         }
     }
 
     pub fn f_decider(&self) -> FnDeciderRunBatchV2 {
-        self.f_decider
+        self.f_decider_run_batch
     }
 
     // pub fn f_result_worker(&self) -> FnResultWorker {
@@ -238,7 +238,7 @@ pub trait Decider {
     /// Allows to inefficiently test a single machine.
     fn decide_single_machine(machine: &Machine, config: &Config) -> MachineStatus;
 
-    fn decider_run_batch_v2(batch_data: &mut BatchData) -> ResultUnitEndReason;
+    fn decider_run_batch(batch_data: &mut BatchData) -> ResultUnitEndReason;
 }
 
 // impl From<&Config> for Decider {

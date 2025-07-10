@@ -11,11 +11,10 @@ const CSS_FILE_DARK: &str = "dark.css";
 const BODY_FONT_FAMILY: &str = "monospace";
 pub const CLASS_HEAD_POSITION: &str = "head_pos";
 pub const CLASS_CHANGED_POSITION: &str = "change_pos";
-const CSS_HEAD_POSITION_LIGHT: &str =
-    "color: black; background-color: lavenderblush; font-weight: bold;";
-const CSS_HEAD_POSITION_DARK: &str = "color: black; background-color: lavenderblush;";
-const CSS_CHANGE_POSITION_LIGHT: &str = "color: blue; font-weight: bold;";
-const CSS_CHANGE_POSITION_DARK: &str = "color: yellow; font-weight: bold;";
+const CSS_HEAD_POSITION_LIGHT: &str = "background-color: lavenderblush; font-weight: bold;"; // color: black;
+const CSS_HEAD_POSITION_DARK: &str = "background-color: lavenderblush;"; // color: black;
+const CSS_CHANGE_POSITION_LIGHT: &str = "font-weight: bold;"; // color: blue;
+const CSS_CHANGE_POSITION_DARK: &str = "font-weight: bold;"; // color: yellow;
 const CSS_HTML: &str = "html {
     background-color: white;
     height: 100%;
