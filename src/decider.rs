@@ -3,7 +3,6 @@ use std::{fmt::Display, time::Duration};
 use crate::{
     config::Config,
     decider_bouncer::DeciderBouncer,
-    decider_hold_u128_long::DeciderHoldU128Long,
     decider_result::{BatchData, DeciderResultStats, EndReason, PreDeciderCount},
     decider_result_worker::FnResultWorker,
     machine::Machine,
@@ -50,9 +49,10 @@ impl DeciderStandard {
                 &DECIDER_CYCLER_ID,
                 crate::decider_cycler_v5::DeciderCycler::decider_run_batch,
             ),
-            DeciderStandard::Hold => {
-                DeciderCaller::new(&DECIDER_HOLD_ID, DeciderHoldU128Long::decider_run_batch)
-            }
+            DeciderStandard::Hold => DeciderCaller::new(
+                &DECIDER_HOLD_ID,
+                crate::decider_hold_u128_long_v2::DeciderHoldU128Long::decider_run_batch,
+            ),
         }
     }
 
@@ -70,7 +70,7 @@ impl DeciderStandard {
             ),
             DeciderStandard::Hold => DeciderConfig::new(
                 &DECIDER_HOLD_ID,
-                DeciderHoldU128Long::decider_run_batch,
+                crate::decider_hold_u128_long_v2::DeciderHoldU128Long::decider_run_batch,
                 config,
             ),
         }

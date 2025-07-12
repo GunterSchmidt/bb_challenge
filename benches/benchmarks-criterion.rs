@@ -7,7 +7,6 @@ use bb_challenge::{
     config::{Config, StepTypeBig},
     decider::{Decider, DeciderStandard},
     decider_engine::{self},
-    decider_hold_u128_long::DeciderHoldU128Long,
     decider_result::result_max_steps_known,
     generator::Generator,
     generator_full::GeneratorFull,
@@ -25,9 +24,9 @@ const GENERATOR_LIMIT: u64 = 50_000_000;
 
 criterion_group!(
     benches,
-    // benchmark_tape_type,
-    // benchmark_generator,
-    // benchmark_decider_gen_bb3,
+    benchmark_tape_type,
+    benchmark_generator,
+    benchmark_decider_gen_bb3,
     benchmark_decider_gen_bb4,
 );
 criterion_main!(benches);
@@ -212,9 +211,11 @@ fn benchmark_tape_type(c: &mut Criterion) {
 
 fn bench_decider_hold_u128_long(machine: &Machine, n_states: usize, steps_result: StepTypeBig) {
     let config = Config::new_default(n_states);
-    let mut d: DeciderHoldU128Long = DeciderHoldU128Long::new(&config);
     // let mut d = bb_challenge::decider_u128_long::DeciderU128Long::new(&machine, STEP_LIMIT_DEFAULT);
-    let check_result = d.decide_machine(machine);
+    let check_result =
+        bb_challenge::decider_hold_u128_long_v2::DeciderHoldU128Long::decide_single_machine(
+            &machine, &config,
+        );
     // println!("{}", check_result);
     assert_eq!(check_result, MachineStatus::DecidedHolds(steps_result));
 }

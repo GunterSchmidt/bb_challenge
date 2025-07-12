@@ -337,7 +337,7 @@ impl TransitionSymbol2 {
     // Transition array id in 1D-array
     pub fn field_id_to_string(arr_id: usize) -> String {
         let state = ((arr_id / 2) as u8 + b'A' - 1) as char;
-        let symbol = ((arr_id % 2) as u8 + b'0') as char;
+        let symbol = ((arr_id & 1) as u8 + b'0') as char;
         format!("{state}{symbol}")
     }
 }
@@ -624,6 +624,8 @@ impl TransitionTableSymbol2 {
         (self.transitions[0].transition & FILTER_TABLE_SELF_REF) != 0
     }
 
+    /// Evaluates and sets self referencing transition marker.
+    /// A transition is self referencing when state and symbol do not change, e.g. field B1: 1RB
     pub fn eval_set_has_self_referencing_transition(&mut self) -> bool {
         for (id, t) in self.transitions_used_eval().iter().enumerate() {
             if t.array_id() == id + 2 {
