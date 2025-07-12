@@ -1058,8 +1058,8 @@ mod tests {
 
     #[test]
     fn decider_hold_u128_applies_bb4_max() {
-        // let config = Config::new_default(4);
-        let config = Config::builder(4).write_html_file(true).build();
+        let config = Config::new_default(4);
+        // let config = Config::builder(4).write_html_file(true).build();
 
         // BB4 Max
         let machine = Machine::build_machine("BB4_MAX").unwrap();
@@ -1072,12 +1072,12 @@ mod tests {
     #[test]
     /// This test runs 50 mio steps, so turn off default = ["bb_debug"].
     fn decider_hold_u128_applies_bb5_max() {
-        // let config = Config::new_default(5);
-        let config = Config::builder(5)
-            .write_html_file(false)
-            .write_html_step_limit(1_000_000)
-            .step_limit_hold(1_000_000)
-            .build();
+        let config = Config::new_default(5);
+        // let config = Config::builder(5)
+        //     .write_html_file(false)
+        //     .write_html_step_limit(1_000_000)
+        //     // .step_limit_hold(1_000_000)
+        //     .build();
         // BB5 Max
         let machine = Machine::build_machine("BB5_MAX").unwrap();
         let check_result = DeciderHoldU128Long::decide_single_machine(&machine, &config);
