@@ -12,6 +12,20 @@ use crate::{
 // Returning DataProviderBatch in a box degrades performance.
 pub type ResultDataProvider = Result<DataProviderBatch, Box<DataProviderError>>;
 
+// pub enum GeneratorStandard {
+//     GeneratorFull,
+//     GeneratorReduced,
+// }
+//
+// impl GeneratorStandard {
+//     pub fn data_provider(&self, config: &Config) -> Box<dyn DataProvider> {
+//         match self {
+//             GeneratorStandard::GeneratorFull => Box::new(GeneratorFull::new(config)),
+//             GeneratorStandard::GeneratorReduced => Box::new(GeneratorReduced::new(config)),
+//         }
+//     }
+// }
+
 // TODO BatchInfo with batch_no, num_batches, machine_no_first, machines_total
 pub trait DataProvider {
     /// Returns the name of this data provider.
@@ -46,6 +60,16 @@ pub trait DataProvider {
     /// E.g. for single thread the batch sizes can be smaller which optimized memory operations.
     /// If the total number of machines is small, a smaller batch size may utilize all threads.
     fn set_batch_size_for_num_threads(&mut self, num_threads: usize);
+}
+
+pub trait DataProviderThreaded: DataProvider {
+    /// Create new generator for random batch no. \
+    /// Avoids some recalculations for e.g. batch_size, but gives normal initialized struct.
+    /// This makes the Trait not safe (cannot be made into an object), but this is not relevant.
+    fn new_from_data_provider(&self) -> Self;
+
+    /// Returns the specific batch no (count starts at 0) of machines (permutations) and an info if this is the last batch.
+    fn batch_no(&mut self, batch_no: usize) -> DataProviderBatch;
 }
 
 #[derive(Debug, Default)]

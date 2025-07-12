@@ -4,8 +4,7 @@
 use crate::machine_info::MachineInfo;
 use crate::{
     config::{Config, MAX_STATES},
-    data_provider::{DataProvider, DataProviderBatch, ResultDataProvider},
-    data_provider_threaded::DataProviderThreaded,
+    data_provider::{DataProvider, DataProviderBatch, DataProviderThreaded, ResultDataProvider},
     decider_result::{EndReason, PreDeciderCount},
     generator::{self, create_all_transition_permutations, Generator},
     machine::Machine,

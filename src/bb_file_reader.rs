@@ -10,7 +10,6 @@ use crate::data_provider::{
     DataProvider, DataProviderBatch, DataProviderError, ResultDataProvider,
 };
 #[allow(unused)]
-use crate::data_provider_threaded::DataProviderThreaded;
 use crate::decider_result::EndReason;
 use crate::machine::Machine;
 use crate::pre_decider::PreDeciderRun;

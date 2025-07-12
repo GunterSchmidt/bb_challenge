@@ -4,8 +4,7 @@ use std::{
 };
 
 use crate::{
-    data_provider::DataProvider,
-    data_provider_threaded::DataProviderThreaded,
+    data_provider::{DataProvider, DataProviderThreaded},
     decider::{DeciderConfig, ThreadResultDataProvider, ThreadResultDecider},
     decider_result::{BatchData, DeciderResultStats, DurationDataProvider, EndReason},
     pre_decider::PreDeciderRun,

@@ -6,7 +6,7 @@ use std::time::Duration;
 use bb_challenge::{
     config::{Config, StepTypeBig},
     decider::{Decider, DeciderStandard},
-    decider_engine::{self, run_decider_chain_threaded_data_provider_multi_thread_reporting},
+    decider_engine::{self},
     decider_hold_u128_long::DeciderHoldU128Long,
     decider_result::result_max_steps_known,
     generator::Generator,
@@ -14,6 +14,7 @@ use bb_challenge::{
     generator_reduced::GeneratorReduced,
     machine::Machine,
     status::MachineStatus,
+    Cores,
 };
 
 const WARM_UP_TIME_MS: u64 = 500;
@@ -21,13 +22,12 @@ const MEASUREMENT_TIME_MS: u64 = 2000;
 const BENCH_GENERATOR_BATCH_SIZE_REQUEST_FULL: usize = 500_000;
 const BENCH_GENERATOR_BATCH_SIZE_REQUEST_REDUCED: usize = 1_000_000;
 const GENERATOR_LIMIT: u64 = 50_000_000;
-const RUN_DEPRECATED: bool = true;
 
 criterion_group!(
     benches,
-    benchmark_tape_type,
-    benchmark_generator,
-    benchmark_decider_gen_bb3,
+    // benchmark_tape_type,
+    // benchmark_generator,
+    // benchmark_decider_gen_bb3,
     benchmark_decider_gen_bb4,
 );
 criterion_main!(benches);
@@ -55,22 +55,22 @@ fn benchmark_decider_gen_bb3(c: &mut Criterion) {
 
     // full single
     group.bench_function("Decider (Data Provider Generator Full) BB3", |b| {
-        b.iter(|| bench_decider_data_provider_gen_v2(&config, false))
+        b.iter(|| bench_decider_data_provider_gen(&config, false, Cores::SingleCore))
     });
 
     // reduced single
     group.bench_function("Decider (Data Provider Generator Reduced) BB3", |b| {
-        b.iter(|| bench_decider_data_provider_gen_v2(&config, true))
+        b.iter(|| bench_decider_data_provider_gen(&config, true, Cores::SingleCore))
     });
 
     // full threaded
     group.bench_function("Decider (Generator Full) Threaded BB3", |b| {
-        b.iter(|| bench_decider_data_provider_gen_full_threaded(&config))
+        b.iter(|| bench_decider_data_provider_gen(&config, false, Cores::MultiCore))
     });
 
     // full reduced
     group.bench_function("Decider (Generator Reduced) Threaded BB3", |b| {
-        b.iter(|| bench_decider_data_provider_gen_reduced_threaded(&config))
+        b.iter(|| bench_decider_data_provider_gen(&config, true, Cores::MultiCore))
     });
 
     group.finish();
@@ -86,23 +86,23 @@ fn benchmark_decider_gen_bb4(c: &mut Criterion) {
 
     // full single
     group.bench_function("Decider V2 (Data Provider Generator Full) BB4", |b| {
-        b.iter(|| bench_decider_data_provider_gen_v2(&config, false))
+        b.iter(|| bench_decider_data_provider_gen(&config, false, Cores::SingleCore))
     });
 
     // reduced single
     group.bench_function("Decider V2 (Data Provider Generator Reduced) BB4", |b| {
-        b.iter(|| bench_decider_data_provider_gen_v2(&config, true))
+        b.iter(|| bench_decider_data_provider_gen(&config, true, Cores::SingleCore))
     });
 
     // full threaded
     group.bench_function("Decider (Generator Full) Threaded BB4", |b| {
-        b.iter(|| bench_decider_data_provider_gen_full_threaded(&config))
+        b.iter(|| bench_decider_data_provider_gen(&config, false, Cores::MultiCore))
     });
 
     // reduced threaded
     group.bench_function(
         "Decider (Data Provider Generator Reduced) Threaded BB4",
-        |b| b.iter(|| bench_decider_data_provider_gen_reduced_threaded(&config)),
+        |b| b.iter(|| bench_decider_data_provider_gen(&config, true, Cores::MultiCore)),
     );
 
     group.finish();
@@ -275,20 +275,56 @@ fn bench_generate_reduced() {
     }
 }
 
-fn bench_decider_data_provider_gen_v2(config: &Config, run_reduced: bool) {
+fn bench_decider_data_provider_gen(config: &Config, gen_reduced: bool, cores: Cores) {
     let dc_cycler = DeciderStandard::Cycler.decider_config(config);
-    let result = if run_reduced {
-        decider_engine::run_decider_chain_data_provider_single_thread_reporting(
-            &vec![dc_cycler],
-            GeneratorReduced::new(config),
-            None,
-        )
+    let result = if gen_reduced {
+        match cores {
+            Cores::SingleCore => {
+                decider_engine::run_decider_chain_data_provider_single_thread_reporting(
+                    &vec![dc_cycler],
+                    GeneratorReduced::new(config),
+                    None,
+                )
+            }
+            Cores::SingleCoreGeneratorMultiCoreDecider => {
+                decider_engine::run_decider_chain_threaded_data_provider_single_thread_reporting(
+                    &vec![dc_cycler],
+                    GeneratorReduced::new(config),
+                    None,
+                )
+            }
+            Cores::MultiCore => {
+                decider_engine::run_decider_chain_threaded_data_provider_multi_thread_reporting(
+                    &vec![dc_cycler],
+                    GeneratorReduced::new(config),
+                    None,
+                )
+            }
+        }
     } else {
-        decider_engine::run_decider_chain_data_provider_single_thread_reporting(
-            &vec![dc_cycler],
-            GeneratorFull::new(config),
-            None,
-        )
+        match cores {
+            Cores::SingleCore => {
+                decider_engine::run_decider_chain_data_provider_single_thread_reporting(
+                    &vec![dc_cycler],
+                    GeneratorFull::new(config),
+                    None,
+                )
+            }
+            Cores::SingleCoreGeneratorMultiCoreDecider => {
+                decider_engine::run_decider_chain_threaded_data_provider_single_thread_reporting(
+                    &vec![dc_cycler],
+                    GeneratorFull::new(config),
+                    None,
+                )
+            }
+            Cores::MultiCore => {
+                decider_engine::run_decider_chain_threaded_data_provider_multi_thread_reporting(
+                    &vec![dc_cycler],
+                    GeneratorFull::new(config),
+                    None,
+                )
+            }
+        }
     };
     // println!("{}", result);
     let n_states = config.n_states();
@@ -296,47 +332,6 @@ fn bench_decider_data_provider_gen_v2(config: &Config, run_reduced: bool) {
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
     }
 }
-
-fn bench_decider_data_provider_gen_full_threaded(config: &Config) {
-    let dc_cycler = DeciderStandard::Cycler.decider_config(config);
-    let data_provider = GeneratorFull::new(config);
-    let result = run_decider_chain_threaded_data_provider_multi_thread_reporting(
-        &vec![dc_cycler],
-        data_provider,
-        None,
-    );
-    // println!("{}", result);
-    let n_states = config.n_states();
-    if n_states <= 3 {
-        assert_eq!(result_max_steps_known(n_states), result.steps_max());
-    }
-}
-
-fn bench_decider_data_provider_gen_reduced_threaded(config: &Config) {
-    let dc_cycler = DeciderStandard::Cycler.decider_config(config);
-    let data_provider = GeneratorReduced::new(config);
-    let result = run_decider_chain_threaded_data_provider_multi_thread_reporting(
-        &vec![dc_cycler],
-        data_provider,
-        None,
-    );
-    // println!("{}", result);
-    let n_states = config.n_states();
-    if n_states <= 3 {
-        assert_eq!(result_max_steps_known(n_states), result.steps_max());
-    }
-}
-
-// fn bench_decider_generator_reduced(n_states: usize) {
-//     let generator = GeneratorReduced::new(
-//         n_states,
-//         GENERATOR_BATCH_SIZE_RECOMMENDATION,
-//         limit(n_states),
-//     );
-//     let result = run_decider_generator(generator);
-//     // println!("{}", result);
-//     assert_eq!(result_max_steps(n_states), result.steps_max);
-// }
 
 fn config_bench(n_states: usize) -> Config {
     Config::builder(n_states)
