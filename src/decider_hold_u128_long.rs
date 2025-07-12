@@ -58,7 +58,7 @@ pub struct DeciderHoldU128Long {
     tr_field_id: usize,
     tr: TransitionSymbol2,
     // machine id, just for debugging
-    id: IdBig,
+    machine_id: IdBig,
     transition_table: TransitionTableSymbol2,
     #[allow(dead_code)]
     status: MachineStatus,
@@ -87,7 +87,7 @@ impl DeciderHoldU128Long {
             // Initialize transition with A0 as start
             tr: TRANSITION_SYM2_START,
             // copy the transition table as this runs faster
-            id: 0,
+            machine_id: 0,
             transition_table: TransitionTableSymbol2::default(),
             status: MachineStatus::NoDecision,
             step_limit: config.step_limit_hold(),
@@ -166,24 +166,323 @@ impl DeciderHoldU128Long {
     //     result
     // }
 
-    fn run_check_hold_with_self_referencing_transition(&mut self) -> MachineStatus {
+    fn decide_machine_with_self_referencing_transition(&mut self) -> MachineStatus {
         // loop over transitions to write tape
         loop {
-            if !self.next_step_self_ref() {
+            self.num_steps += 1;
+            self.tr_field_id = self.tr.state_x2() + self.current_symbol();
+            self.tr = self.transition_table.transition(self.tr_field_id);
+            #[cfg(all(debug_assertions, feature = "bb_debug"))]
+            println!("{}", self.step_to_string());
+
+            // check if done
+            if self.tr.is_hold() {
+                // write last symbol
+                if !self.tr.is_symbol_undefined() {
+                    self.set_current_symbol();
+                }
+                self.status = MachineStatus::DecidedHolds(self.num_steps);
+                // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
+                #[cfg(feature = "bb_enable_html_reports")]
+                if self.write_html_step_limit > 0 {
+                    self.write_step_html();
+                    self.write_html_p(
+                        format!("Decided: Holds after {} steps.", self.num_steps).as_str(),
+                    );
+                }
                 return self.status;
+            } else if self.num_steps > self.step_limit {
+                self.status = self.undecided_step_limit();
+                #[cfg(feature = "bb_enable_html_reports")]
+                if self.write_html_step_limit > 0 {
+                    self.write_step_html();
+                    self.write_html_p(
+                        format!("Undecided: Limit of {} steps reached.", self.step_limit).as_str(),
+                    );
+                }
+                return self.status;
+            }
+
+            if self.tr.is_dir_right() {
+                // normal shift RIGHT -> tape moves left
+
+                // Check if self referencing, which speeds up the shift greatly.
+                if self.tr.array_id() == self.tr_field_id {
+                    let mut jump = self.count_right(self.tr_field_id % 2) as usize;
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    println!("  jump right {jump}");
+                    if self.pos_middle + jump > HIGH32_SWITCH_U128 {
+                        jump = HIGH32_SWITCH_U128 - self.pos_middle;
+                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                        println!("  jump right adjusted {jump}");
+                    }
+                    self.pos_middle += jump;
+
+                    // shift tape
+                    self.set_current_symbol();
+                    self.tape_shifted <<= jump;
+                    self.num_steps += jump as StepTypeBig - 1;
+                } else {
+                    self.pos_middle += 1;
+
+                    // shift tape
+                    self.set_current_symbol();
+                    self.tape_shifted <<= 1;
+                }
+
+                if self.pos_middle == HIGH32_SWITCH_U128 {
+                    // save high bytes
+                    self.shift_pos_to_right_checked();
+
+                    // The shift is right, so tape_shifted wanders left -> store high 32 bits.
+                    self.tape_long[self.tl_pos] =
+                        (self.tape_shifted >> TAPE_SIZE_FOURTH_UPPER_128) as u32;
+
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    println!(
+                        "  RIGHT SAVE HIGH P{}-{}: tape wanders left -> {:?}",
+                        self.pos_middle,
+                        self.tl_pos,
+                        self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
+                    );
+
+                    self.pos_middle = MIDDLE_BIT_U128;
+
+                    // Load low 32 bit
+                    self.tape_shifted = (self.tape_shifted & CLEAR_LOW63_32BITS_U128)
+                        | ((self.tape_long[self.tl_pos + 2] as u128) << 32);
+
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    {
+                        println!(
+                            "  ALoad {}",
+                            crate::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
+                        );
+                        println!(
+                            "  RIGHT LOAD LOW  P{}-{}: tape wanders left -> {:?}",
+                            self.pos_middle,
+                            self.tl_pos,
+                            self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
+                        );
+                        print!("");
+                    }
+                }
+            } else {
+                // normal shift LEFT -> tape moves left
+
+                // Check if self referencing, which speeds up the shift greatly.
+                if self.tr.array_id() == self.tr_field_id {
+                    let mut jump = self.count_left(self.tr_field_id % 2) as usize;
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    println!("  jump left {jump}");
+                    if self.pos_middle < LOW64_SWITCH_U128 + jump {
+                        jump = self.pos_middle - LOW64_SWITCH_U128;
+                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                        println!("  jump left adjusted {jump}");
+                    }
+                    self.pos_middle -= jump;
+
+                    self.set_current_symbol();
+                    // shift tape
+                    self.tape_shifted >>= jump;
+                    self.num_steps += jump as StepTypeBig - 1;
+                } else {
+                    self.pos_middle -= 1;
+
+                    self.set_current_symbol();
+                    // shift tape
+                    self.tape_shifted >>= 1;
+                }
+
+                if self.pos_middle == LOW64_SWITCH_U128 {
+                    // save high bytes
+                    self.shift_pos_to_left_checked();
+
+                    // The shift is left, so tape_shifted wanders right -> store low 32 bits.
+                    self.tape_long[self.tl_pos + 3] = self.tape_shifted as u32;
+
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    println!(
+                        "  LEFT  SAVE HIGH P{}-{}: tape wanders right -> {:?}",
+                        self.pos_middle,
+                        self.tl_pos,
+                        self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128) // Self::tape_range_to_hex_string(&self.tape_long, TAPE_DISPLAY_RANGE)
+                    );
+
+                    self.pos_middle = MIDDLE_BIT_U128;
+
+                    // load high bytes
+                    self.tape_shifted = (self.tape_shifted & CLEAR_HIGH95_64BITS_U128)
+                        | ((self.tape_long[self.tl_pos + 1] as u128) << TAPE_SIZE_HALF_128);
+
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    {
+                        println!(
+                            "  ALoad {}",
+                            crate::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
+                        );
+                        println!(
+                            "  LEFT  LOAD HIGH P{}-{}: tape wanders right -> {:?}",
+                            self.pos_middle,
+                            self.tl_pos,
+                            self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
+                        );
+                        print!("");
+                    }
+                }
             };
+            #[cfg(all(debug_assertions, feature = "bb_debug"))]
+            {
+                if self.num_steps % 100 == 0 {
+                    println!();
+                }
+                println!("{}", self.step_to_string());
+            }
+            #[cfg(feature = "bb_enable_html_reports")]
+            if self.write_html_step_limit > 0 && self.num_steps <= self.write_html_step_limit {
+                self.write_step_html();
+            }
         }
     }
 
     /// Returns the MachineStatus:Hold with steps if steps were found within limits of tape and max steps. \
     /// This version has a long tape, so it is not restricted to the 128 bit range.
     /// This is not using the self reference speed-up and should only be used if those would mess up the tests.
-    fn run_check_hold_without_self_referencing_transitions(&mut self) -> MachineStatus {
+    fn decide_machine_without_self_referencing_transitions(&mut self) -> MachineStatus {
         // loop over transitions to write tape
         loop {
-            if !self.next_step() {
+            self.num_steps += 1;
+            self.tr_field_id = self.tr.state_x2() + self.current_symbol();
+            self.tr = self.transition_table.transition(self.tr_field_id);
+            #[cfg(all(debug_assertions, feature = "bb_debug"))]
+            println!("{}", self.step_to_string());
+
+            // check if done
+            if self.tr.is_hold() {
+                // write last symbol
+                if !self.tr.is_symbol_undefined() {
+                    self.set_current_symbol();
+                }
+                // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
+                self.status = MachineStatus::DecidedHolds(self.num_steps);
+                #[cfg(feature = "bb_enable_html_reports")]
+                if self.write_html_step_limit > 0 {
+                    self.write_step_html();
+                    self.write_html_p(
+                        format!("Decided: Holds after {} steps.", self.num_steps).as_str(),
+                    );
+                }
                 return self.status;
+            } else if self.num_steps > self.step_limit {
+                self.status = self.undecided_step_limit();
+                #[cfg(feature = "bb_enable_html_reports")]
+                if self.write_html_step_limit > 0 {
+                    self.write_step_html();
+                    self.write_html_p(
+                        format!("Undecided: Limit of {} steps reached.", self.step_limit).as_str(),
+                    );
+                }
+                return self.status;
+            }
+
+            if self.tr.is_dir_right() {
+                self.set_current_symbol();
+
+                // normal shift RIGHT -> tape moves left
+                self.tape_shifted <<= 1;
+
+                self.pos_middle += 1;
+                if self.pos_middle == HIGH32_SWITCH_U128 {
+                    // save high bytes
+                    self.shift_pos_to_right_checked();
+
+                    // The shift is right, so tape_shifted wanders left -> store high 32 bits.
+                    self.tape_long[self.tl_pos] =
+                        (self.tape_shifted >> TAPE_SIZE_FOURTH_UPPER_128) as u32;
+
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    println!(
+                        "  RIGHT SAVE HIGH P{}-{}: tape wanders left -> {:?}",
+                        self.pos_middle,
+                        self.tl_pos,
+                        self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
+                    );
+
+                    self.pos_middle = MIDDLE_BIT_U128;
+
+                    // Load low 32 bit
+                    self.tape_shifted = (self.tape_shifted & CLEAR_LOW63_32BITS_U128)
+                        | ((self.tape_long[self.tl_pos + 2] as u128) << 32);
+
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    {
+                        println!(
+                            "  ALoad {}",
+                            crate::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
+                        );
+                        println!(
+                            "  RIGHT LOAD LOW  P{}-{}: tape wanders left -> {:?}",
+                            self.pos_middle,
+                            self.tl_pos,
+                            self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
+                        );
+                        print!("");
+                    }
+                }
+            } else {
+                // normal shift LEFT -> tape moves left
+                self.set_current_symbol();
+
+                self.tape_shifted >>= 1;
+                self.pos_middle -= 1;
+                if self.pos_middle == LOW64_SWITCH_U128 {
+                    // save high bytes
+                    self.shift_pos_to_left_checked();
+
+                    // The shift is left, so tape_shifted wanders right -> store low 32 bits.
+                    self.tape_long[self.tl_pos + 3] = self.tape_shifted as u32;
+
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    println!(
+                        "  LEFT  SAVE HIGH P{}-{}: tape wanders right -> {:?}",
+                        self.pos_middle,
+                        self.tl_pos,
+                        self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
+                    );
+
+                    self.pos_middle = MIDDLE_BIT_U128;
+
+                    // load high bytes
+                    self.tape_shifted = (self.tape_shifted & CLEAR_HIGH95_64BITS_U128)
+                        | ((self.tape_long[self.tl_pos + 1] as u128) << TAPE_SIZE_HALF_128);
+
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    {
+                        println!(
+                            "  ALoad {}",
+                            crate::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
+                        );
+                        println!(
+                            "  LEFT  LOAD HIGH P{}-{}: tape wanders right -> {:?}",
+                            self.pos_middle,
+                            self.tl_pos,
+                            self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
+                        );
+                        print!("");
+                    }
+                }
             };
+            #[cfg(all(debug_assertions, feature = "bb_debug"))]
+            {
+                if self.num_steps % 100 == 0 {
+                    println!();
+                }
+                println!("{}", self.step_to_string());
+            }
+            #[cfg(feature = "bb_enable_html_reports")]
+            if self.write_html_step_limit > 0 && self.num_steps <= self.write_html_step_limit {
+                self.write_step_html();
+            }
         }
     }
 
@@ -221,6 +520,22 @@ impl DeciderHoldU128Long {
             }
         }
         ones as StepTypeSmall
+    }
+
+    #[inline(always)]
+    fn current_symbol(&self) -> usize {
+        // resolves to one if bit is set
+        ((self.tape_shifted & POS_HALF_U128) != 0) as usize
+    }
+
+    /// Update tape: write symbol at head position into cell
+    #[inline(always)]
+    fn set_current_symbol(&mut self) {
+        if self.tr.is_symbol_one() {
+            self.tape_shifted |= POS_HALF_U128
+        } else {
+            self.tape_shifted &= !POS_HALF_U128
+        };
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
@@ -288,22 +603,6 @@ impl DeciderHoldU128Long {
         self.tl_pos += 1;
     }
 
-    #[inline(always)]
-    fn current_symbol(&self) -> usize {
-        // resolves to one if bit is set
-        ((self.tape_shifted & POS_HALF_U128) != 0) as usize
-    }
-
-    /// Update tape: write symbol at head position into cell
-    #[inline(always)]
-    fn set_current_symbol(&mut self) {
-        if self.tr.is_symbol_one() {
-            self.tape_shifted |= POS_HALF_U128
-        } else {
-            self.tape_shifted &= !POS_HALF_U128
-        };
-    }
-
     // /// Returns the given machine reference
     // pub fn machine(&self) -> &'a Machine {
     //     self.machine
@@ -335,325 +634,6 @@ impl DeciderHoldU128Long {
     // Returns the approximate tape size, which grows by 32 steps
     fn tape_size(&self) -> StepTypeSmall {
         ((self.tl_high_bound - self.tl_low_bound + 1) * 32) as StepTypeSmall
-    }
-
-    /// reads next step and updates transition
-    #[inline(always)]
-    fn next_step(&mut self) -> bool {
-        self.num_steps += 1;
-        self.tr_field_id = self.tr.state_x2() + self.current_symbol();
-        self.tr = self.transition_table.transition(self.tr_field_id);
-        #[cfg(all(debug_assertions, feature = "bb_debug"))]
-        println!("{}", self.step_to_string());
-
-        // check if done
-        if self.tr.is_hold() {
-            // write last symbol
-            if !self.tr.is_symbol_undefined() {
-                self.set_current_symbol();
-            }
-            // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
-            self.status = MachineStatus::DecidedHolds(self.num_steps);
-            #[cfg(feature = "bb_enable_html_reports")]
-            if self.write_html_step_limit > 0 {
-                self.write_step_html();
-                self.write_html_p(
-                    format!("Decided: Holds after {} steps.", self.num_steps).as_str(),
-                );
-            }
-            return false;
-        } else if self.num_steps > self.step_limit {
-            self.status = self.undecided_step_limit();
-            #[cfg(feature = "bb_enable_html_reports")]
-            if self.write_html_step_limit > 0 {
-                self.write_step_html();
-                self.write_html_p(
-                    format!("Undecided: Limit of {} steps reached.", self.step_limit).as_str(),
-                );
-            }
-            return false;
-        }
-
-        if self.tr.is_dir_right() {
-            self.set_current_symbol();
-
-            // normal shift RIGHT -> tape moves left
-            self.tape_shifted <<= 1;
-
-            self.pos_middle += 1;
-            if self.pos_middle == HIGH32_SWITCH_U128 {
-                // save high bytes
-                self.shift_pos_to_right_checked();
-
-                // The shift is right, so tape_shifted wanders left -> store high 32 bits.
-                self.tape_long[self.tl_pos] =
-                    (self.tape_shifted >> TAPE_SIZE_FOURTH_UPPER_128) as u32;
-
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                println!(
-                    "  RIGHT SAVE HIGH P{}-{}: tape wanders left -> {:?}",
-                    self.pos_middle,
-                    self.tl_pos,
-                    self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
-                );
-
-                self.pos_middle = MIDDLE_BIT_U128;
-
-                // Load low 32 bit
-                self.tape_shifted = (self.tape_shifted & CLEAR_LOW63_32BITS_U128)
-                    | ((self.tape_long[self.tl_pos + 2] as u128) << 32);
-
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                {
-                    println!(
-                        "  ALoad {}",
-                        crate::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
-                    );
-                    println!(
-                        "  RIGHT LOAD LOW  P{}-{}: tape wanders left -> {:?}",
-                        self.pos_middle,
-                        self.tl_pos,
-                        self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
-                    );
-                    print!("");
-                }
-            }
-        } else {
-            // normal shift LEFT -> tape moves left
-            self.set_current_symbol();
-
-            self.tape_shifted >>= 1;
-            self.pos_middle -= 1;
-            if self.pos_middle == LOW64_SWITCH_U128 {
-                // save high bytes
-                self.shift_pos_to_left_checked();
-
-                // The shift is left, so tape_shifted wanders right -> store low 32 bits.
-                self.tape_long[self.tl_pos + 3] = self.tape_shifted as u32;
-
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                println!(
-                    "  LEFT  SAVE HIGH P{}-{}: tape wanders right -> {:?}",
-                    self.pos_middle,
-                    self.tl_pos,
-                    self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
-                );
-
-                self.pos_middle = MIDDLE_BIT_U128;
-
-                // load high bytes
-                self.tape_shifted = (self.tape_shifted & CLEAR_HIGH95_64BITS_U128)
-                    | ((self.tape_long[self.tl_pos + 1] as u128) << TAPE_SIZE_HALF_128);
-
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                {
-                    println!(
-                        "  ALoad {}",
-                        crate::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
-                    );
-                    println!(
-                        "  LEFT  LOAD HIGH P{}-{}: tape wanders right -> {:?}",
-                        self.pos_middle,
-                        self.tl_pos,
-                        self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
-                    );
-                    print!("");
-                }
-            }
-        };
-        #[cfg(all(debug_assertions, feature = "bb_debug"))]
-        {
-            if self.num_steps % 100 == 0 {
-                println!();
-            }
-            println!("{}", self.step_to_string());
-        }
-        #[cfg(feature = "bb_enable_html_reports")]
-        if self.write_html_step_limit > 0 && self.num_steps <= self.write_html_step_limit {
-            self.write_step_html();
-        }
-
-        true
-    }
-
-    /// reads next step and updates transition
-    #[inline(always)]
-    fn next_step_self_ref(&mut self) -> bool {
-        self.num_steps += 1;
-        self.tr_field_id = self.tr.state_x2() + self.current_symbol();
-        self.tr = self.transition_table.transition(self.tr_field_id);
-        #[cfg(all(debug_assertions, feature = "bb_debug"))]
-        println!("{}", self.step_to_string());
-
-        // check if done
-        if self.tr.is_hold() {
-            // write last symbol
-            if !self.tr.is_symbol_undefined() {
-                self.set_current_symbol();
-            }
-            // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
-            self.status = MachineStatus::DecidedHolds(self.num_steps);
-            #[cfg(feature = "bb_enable_html_reports")]
-            if self.write_html_step_limit > 0 {
-                self.write_step_html();
-                self.write_html_p(
-                    format!("Decided: Holds after {} steps.", self.num_steps).as_str(),
-                );
-            }
-            return false;
-        } else if self.num_steps > self.step_limit {
-            self.status = self.undecided_step_limit();
-            #[cfg(feature = "bb_enable_html_reports")]
-            if self.write_html_step_limit > 0 {
-                self.write_step_html();
-                self.write_html_p(
-                    format!("Undecided: Limit of {} steps reached.", self.step_limit).as_str(),
-                );
-            }
-            return false;
-        }
-
-        if self.tr.is_dir_right() {
-            // normal shift RIGHT -> tape moves left
-
-            // Check if self referencing, which speeds up the shift greatly.
-            if self.tr.array_id() == self.tr_field_id {
-                let mut jump = self.count_right(self.tr_field_id % 2) as usize;
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                println!("  jump right {jump}");
-                if self.pos_middle + jump > HIGH32_SWITCH_U128 {
-                    jump = HIGH32_SWITCH_U128 - self.pos_middle;
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                    println!("  jump right adjusted {jump}");
-                }
-                self.pos_middle += jump;
-
-                // shift tape
-                self.set_current_symbol();
-                self.tape_shifted <<= jump;
-                self.num_steps += jump as StepTypeBig - 1;
-            } else {
-                self.pos_middle += 1;
-
-                // shift tape
-                self.set_current_symbol();
-                self.tape_shifted <<= 1;
-            }
-
-            if self.pos_middle == HIGH32_SWITCH_U128 {
-                // save high bytes
-                self.shift_pos_to_right_checked();
-
-                // The shift is right, so tape_shifted wanders left -> store high 32 bits.
-                self.tape_long[self.tl_pos] =
-                    (self.tape_shifted >> TAPE_SIZE_FOURTH_UPPER_128) as u32;
-
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                println!(
-                    "  RIGHT SAVE HIGH P{}-{}: tape wanders left -> {:?}",
-                    self.pos_middle,
-                    self.tl_pos,
-                    self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
-                );
-
-                self.pos_middle = MIDDLE_BIT_U128;
-
-                // Load low 32 bit
-                self.tape_shifted = (self.tape_shifted & CLEAR_LOW63_32BITS_U128)
-                    | ((self.tape_long[self.tl_pos + 2] as u128) << 32);
-
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                {
-                    println!(
-                        "  ALoad {}",
-                        crate::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
-                    );
-                    println!(
-                        "  RIGHT LOAD LOW  P{}-{}: tape wanders left -> {:?}",
-                        self.pos_middle,
-                        self.tl_pos,
-                        self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
-                    );
-                    print!("");
-                }
-            }
-        } else {
-            // normal shift LEFT -> tape moves left
-
-            // Check if self referencing, which speeds up the shift greatly.
-            if self.tr.array_id() == self.tr_field_id {
-                let mut jump = self.count_left(self.tr_field_id % 2) as usize;
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                println!("  jump left {jump}");
-                if self.pos_middle < LOW64_SWITCH_U128 + jump {
-                    jump = self.pos_middle - LOW64_SWITCH_U128;
-                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                    println!("  jump left adjusted {jump}");
-                }
-                self.pos_middle -= jump;
-
-                self.set_current_symbol();
-                // shift tape
-                self.tape_shifted >>= jump;
-                self.num_steps += jump as StepTypeBig - 1;
-            } else {
-                self.pos_middle -= 1;
-
-                self.set_current_symbol();
-                // shift tape
-                self.tape_shifted >>= 1;
-            }
-
-            if self.pos_middle == LOW64_SWITCH_U128 {
-                // save high bytes
-                self.shift_pos_to_left_checked();
-
-                // The shift is left, so tape_shifted wanders right -> store low 32 bits.
-                self.tape_long[self.tl_pos + 3] = self.tape_shifted as u32;
-
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                println!(
-                    "  LEFT  SAVE HIGH P{}-{}: tape wanders right -> {:?}",
-                    self.pos_middle,
-                    self.tl_pos,
-                    self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128) // Self::tape_range_to_hex_string(&self.tape_long, TAPE_DISPLAY_RANGE)
-                );
-
-                self.pos_middle = MIDDLE_BIT_U128;
-
-                // load high bytes
-                self.tape_shifted = (self.tape_shifted & CLEAR_HIGH95_64BITS_U128)
-                    | ((self.tape_long[self.tl_pos + 1] as u128) << TAPE_SIZE_HALF_128);
-
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                {
-                    println!(
-                        "  ALoad {}",
-                        crate::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
-                    );
-                    println!(
-                        "  LEFT  LOAD HIGH P{}-{}: tape wanders right -> {:?}",
-                        self.pos_middle,
-                        self.tl_pos,
-                        self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
-                    );
-                    print!("");
-                }
-            }
-        };
-        #[cfg(all(debug_assertions, feature = "bb_debug"))]
-        {
-            if self.num_steps % 100 == 0 {
-                println!();
-            }
-            println!("{}", self.step_to_string());
-        }
-        #[cfg(feature = "bb_enable_html_reports")]
-        if self.write_html_step_limit > 0 && self.num_steps <= self.write_html_step_limit {
-            self.write_step_html();
-        }
-
-        true
     }
 
     fn undecided_step_limit(&self) -> MachineStatus {
@@ -769,7 +749,7 @@ impl Decider for DeciderHoldU128Long {
     // TODO counter: longest loop
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
         self.clear();
-        self.id = machine.id();
+        self.machine_id = machine.id();
         self.transition_table = *machine.transition_table();
 
         #[cfg(feature = "bb_enable_html_reports")]
@@ -794,14 +774,14 @@ impl Decider for DeciderHoldU128Long {
         }
 
         let result = if cfg!(feature = "bb_no_self_ref") {
-            self.run_check_hold_without_self_referencing_transitions()
+            self.decide_machine_without_self_referencing_transitions()
         } else if self
             .transition_table
             .eval_set_has_self_referencing_transition()
         {
-            self.run_check_hold_with_self_referencing_transition()
+            self.decide_machine_with_self_referencing_transition()
         } else {
-            self.run_check_hold_without_self_referencing_transitions()
+            self.decide_machine_without_self_referencing_transitions()
         };
 
         #[cfg(feature = "bb_enable_html_reports")]
