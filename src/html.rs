@@ -133,6 +133,10 @@ pub fn format_int_html(number: usize, size: usize) -> String {
     s.replace(" ", "&nbsp;")
 }
 
+pub fn blanks(num_blanks: usize) -> String {
+    "&nbsp;".repeat(num_blanks)
+}
+
 /// Writes to html header and the start of the body to the disk.
 /// ## Arguments
 /// * path of the html file

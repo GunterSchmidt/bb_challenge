@@ -337,7 +337,7 @@ impl TransitionSymbol2 {
     // Transition array id in 1D-array
     pub fn field_id_to_string(arr_id: usize) -> String {
         let state = ((arr_id / 2) as u8 + b'A' - 1) as char;
-        let symbol = arr_id % 2;
+        let symbol = ((arr_id % 2) as u8 + b'0') as char;
         format!("{state}{symbol}")
     }
 }

@@ -41,7 +41,7 @@ use crate::{
     decider_result::BatchData,
     machine::Machine,
     status::{EndlessReason, MachineStatus, UndecidedReason},
-    transition_symbol2::{DirectionType, TransitionType, TRANSITION_SYM2_START},
+    transition_symbol2::DirectionType,
     ResultUnitEndReason,
 };
 
@@ -140,24 +140,21 @@ impl DeciderCycler {
         // let mut zero_right = Vec::new();
 
         // Initialize transition with A0 as start
-        let mut tr = TRANSITION_SYM2_START;
+        let mut tr; // = TRANSITION_SYM2_START;
+        let mut read_symbol_next;
+        let mut tr_field_next = 2;
 
         // loop over transitions to write tape
         loop {
             // read symbol at tape head
-            let curr_read_symbol = ((tape_shifted & POS_HALF) != 0) as usize; // resolves to one if bit is set
-            self.tr_field_id = tr.state_x2() + curr_read_symbol;
+            // let curr_read_symbol = read_symbol_next;
+            self.tr_field_id = tr_field_next;
 
             // store next step
             // map for each transition, which step went into it
             // maps: store step id leading to this
             self.maps_1d[self.tr_field_id].push(self.steps.len());
-            let mut step = StepCycler::new(
-                tr.transition,
-                curr_read_symbol as TransitionType,
-                0,
-                tape_shifted,
-            );
+            let mut step = StepCycler::new(self.tr_field_id, 0, tape_shifted);
             tr = machine.transition(self.tr_field_id);
             step.direction = tr.direction();
             self.steps.push(step);
@@ -272,14 +269,14 @@ impl DeciderCycler {
             };
 
             // get next transition
-            let read_symbol_next = ((tape_shifted & POS_HALF) != 0) as usize; // resolves to one if bit is set
+            read_symbol_next = ((tape_shifted & POS_HALF) != 0) as usize; // resolves to one if bit is set
 
             // print steps
             #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
             println!(
                 "Step {:3}: {} {} Tape shifted after: {:032b} {:032b}, next {}{} {}",
                 self.steps.len() - 1,
-                self.steps.last().unwrap().for_state_symbol_to_string(),
+                self.steps.last().unwrap().field_id_to_string(),
                 tr,
                 (tape_shifted >> 64) as u64,
                 tape_shifted as u64,
@@ -293,7 +290,7 @@ impl DeciderCycler {
             }
 
             // check endless cycle for multiple steps
-            let tr_field_next = tr.state_x2() + read_symbol_next;
+            tr_field_next = tr.state_x2() + read_symbol_next;
             // must be repeated already and either side needs to be 0
             // This assumes, the tape is fluctuating around the start
             if self.maps_1d[tr_field_next].len() > 1
@@ -301,30 +298,57 @@ impl DeciderCycler {
                     || tape_shifted as u64 == 0
                     || (tape_shifted >> 64) as u64 == 0)
             {
+                // TODO performance: Possibly one can skip the last x steps as the smaller cycles have been checked before; is that a valid hypothesis?
                 'steps: for &step_id in self.maps_1d[tr_field_next][1..]
                     .iter()
                     // .skip(1) // slow
                     .rev()
                 {
                     let distance = self.steps.len() - step_id;
-                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-                    {
-                        println!("  Endless cycle check: Step {step_id} with distance {distance}");
-                    }
-
                     // check if we have two repeated cycles
                     if distance > step_id {
-                        #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-                        println!("  * Fail {step_id}: Min Distance");
+                        // This case is not interesting
+                        // #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                        // {
+                        //     let s = format!("  * Fail {step_id}: Min Distance");
+                        //     println!("{s}");
+                        //     #[cfg(feature = "bb_enable_html_reports")]
+                        //     let s = html::blanks(10) + &s;
+                        //     self.write_html_p(&s);
+                        // }
                         // step_id will get smaller, distance larger
                         break;
                     }
 
+                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                    {
+                        let s = format!(
+                            "  {} Endless cycle check: Step {step_id} with distance {distance}",
+                            TransitionSymbol2::field_id_to_string(tr_field_next)
+                        );
+                        println!("{s}");
+                        #[cfg(feature = "bb_enable_html_reports")]
+                        let s = html::blanks(10)
+                            + &format!(
+                                "  {} Endless cycle check: Step {} with distance {distance}",
+                                step_id + 1,
+                                TransitionSymbol2::field_id_to_string(tr_field_next)
+                            );
+                        self.write_html_p(&s);
+                    }
+
                     // check cycle steps are identical
                     for (i, step) in self.steps.iter().enumerate().skip(step_id) {
-                        if step.for_state_symbol != self.steps[i - distance].for_state_symbol {
+                        if step.for_field_id != self.steps[i - distance].for_field_id {
                             #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-                            println!("  * Fail: Cycle steps different");
+                            {
+                                let s = "  * Fail: Cycle steps different";
+                                println!("{s}");
+                                #[cfg(feature = "bb_enable_html_reports")]
+                                let s = html::blanks(10) + &s;
+                                self.write_html_p(&s);
+                            }
+                            // not identical, try next distance
                             continue 'steps;
                         }
                     }
@@ -339,7 +363,7 @@ impl DeciderCycler {
                         if self.write_html {
                             let text = format!(
                                 "  *** Cycle candidate found: First step {}, distance {distance}!",
-                                self.steps.len() - distance
+                                self.steps.len() - distance + 1
                             );
                             self.write_html_p(&text);
                         }
@@ -416,18 +440,15 @@ impl DeciderCycler {
                     // #[cfg(feature = "bb_debug_cycler")]
                     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                     {
-                        for (i, step) in self.steps.iter().enumerate().skip(step_id) {
-                            let t = machine.transition(
-                                step.for_state() as usize * 2 + step.for_symbol() as usize,
-                            );
-                            println!(
-                                "   Step {i:3}: {}{} {}: {}",
-                                (step.for_state() + 64) as u8 as char,
-                                step.for_symbol(),
-                                t,
-                                step.tape_before.to_binary_split_string()
-                            );
-                        }
+                        // for (i, step) in self.steps.iter().enumerate().skip(step_id) {
+                        //     let t = machine.transition(step.for_field_id);
+                        //     println!(
+                        //         "   Step {i:3}: {} {}: {}",
+                        //         step.field_id_to_string(),
+                        //         t,
+                        //         step.tape_before.to_binary_split_string()
+                        //     );
+                        // }
                         println!(
                             "Step {step_id:3} before    : {}",
                             step_tape_before.to_binary_split_string()
@@ -585,10 +606,7 @@ impl Decider for DeciderCycler {
 #[derive(Debug)]
 pub struct StepCycler {
     /// Allows quick compare of symbol & state in one step
-    /// symbol: bit 0
-    /// state: bits 1-4
-    // TO DO performance: could possibly be tr_field_id instead, probably no gain
-    pub for_state_symbol: TransitionType,
+    pub for_field_id: usize,
     /// step goes to this direction, which is the result from symbol_state lookup
     pub direction: DirectionType,
     pub tape_before: TapeType,
@@ -598,62 +616,47 @@ pub struct StepCycler {
 }
 
 impl StepCycler {
-    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    const FILTER_SYMBOL_PURE: i16 = 0b0000_0001;
-    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    const FILTER_STATE: i16 = 0b0001_1110;
-    // const FILTER_SYMBOL: u8 = 0b1100_0000;
-    // const FILTER_SYMBOL_STATE: u8 = 0b0001_1111;
-
     #[inline]
-    pub fn new(
-        for_transition: TransitionType,
-        for_symbol: TransitionType,
-        direction: DirectionType,
-        tape_before: TapeType,
-    ) -> Self {
+    pub fn new(for_field_id: usize, direction: DirectionType, tape_before: TapeType) -> Self {
         Self {
-            for_state_symbol: (for_transition & crate::transition_symbol2::FILTER_STATE)
-                | for_symbol,
+            for_field_id,
             direction,
             tape_before,
             #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-            text: Self::to_chars(for_transition, for_symbol, direction),
+            text: Self::to_chars(for_field_id, direction),
         }
     }
 
+    //     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+    //     pub fn for_state(&self) -> i16 {
+    //         (self.for_state_symbol & Self::FILTER_STATE) >> 1
+    //     }
+    //
+    //     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+    //     pub fn for_symbol(&self) -> i16 {
+    //         self.for_state_symbol & Self::FILTER_SYMBOL_PURE
+    //     }
+
     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    pub fn for_state(&self) -> i16 {
-        (self.for_state_symbol & Self::FILTER_STATE) >> 1
+    pub fn field_id_to_string(&self) -> String {
+        TransitionSymbol2::field_id_to_string(self.for_field_id)
     }
 
     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    pub fn for_symbol(&self) -> i16 {
-        self.for_state_symbol & Self::FILTER_SYMBOL_PURE
-    }
-
-    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    pub fn for_state_symbol_to_string(&self) -> String {
-        let mut s = String::with_capacity(2);
-        s.push((self.for_state() as u8 + b'A' - 1) as char);
-        s.push((self.for_symbol() as u8 + b'0') as char);
-        s
-    }
-
-    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    fn to_chars(from_state: i16, from_symbol: i16, direction: i16) -> [char; 3] {
+    fn to_chars(for_field_id: usize, direction: i16) -> [char; 3] {
         let dir = match direction {
             -1 => 'L',
             1 => 'R',
             _ => '-',
         };
-        let state = if from_state & crate::transition_symbol2::FILTER_STATE == 0 {
-            'Z'
-        } else {
-            (((from_state & crate::transition_symbol2::FILTER_STATE) >> 1) as u8 + b'A' - 1) as char
-        };
+        let s = TransitionSymbol2::field_id_to_string(for_field_id);
+        // let state = if from_state & crate::transition_symbol2::FILTER_STATE == 0 {
+        //     'Z'
+        // } else {
+        //     (((from_state & crate::transition_symbol2::FILTER_STATE) >> 1) as u8 + b'A' - 1) as char
+        // };
 
-        [state, from_symbol as u8 as char, dir]
+        [s.as_bytes()[0] as char, s.as_bytes()[1] as char, dir]
     }
 }
 
@@ -663,7 +666,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decider_cycler_v4_compact_holds_after_107_steps() {
+    fn decider_cycler_is_cycle_bb4_1166084() {
+        // check does not apply
+        let transitions = "1RB1LD_1RC---_1LC0RA_0RA0RA";
+
+        let machine = Machine::from_standard_tm_text_format(1166084, &transitions).unwrap();
+        // let config = Config::new_default(machine.n_states());
+        let config = Config::builder(machine.n_states())
+            .write_html_file(true)
+            .build();
+        let machine_status = DeciderCycler::decide_single_machine(&machine, &config);
+        // println!("Status: {machine_status}");
+        assert_eq!(
+            machine_status,
+            MachineStatus::DecidedEndless(EndlessReason::Cycle(8, 2))
+        )
+    }
+
+    #[test]
+    fn decider_cycler_is_cycle_bb4_43788688() {
+        // check does not apply
+        let transitions = "1RB---_1LC0RC_0LD1LC_1RA0RA";
+
+        let machine = Machine::from_standard_tm_text_format(43788688, &transitions).unwrap();
+        // let config = Config::new_default(machine.n_states());
+        let config = Config::builder(machine.n_states())
+            .write_html_file(true)
+            .build();
+        let machine_status = DeciderCycler::decide_single_machine(&machine, &config);
+        // println!("Status: {machine_status}");
+        assert_eq!(
+            machine_status,
+            MachineStatus::DecidedEndless(EndlessReason::Cycle(90, 26))
+        )
+    }
+
+    #[test]
+    fn decider_cycler_holds_after_107_steps() {
         // check does not apply
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RC", "1LC"));
@@ -680,7 +719,7 @@ mod tests {
     }
 
     #[test]
-    fn decider_cycler_v4_compact_unspecified() {
+    fn decider_cycler_unspecified() {
         // free test without expected result
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("0RC", "1LC"));

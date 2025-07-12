@@ -345,7 +345,6 @@ impl DeciderResultStats {
         self.num_hold += result.num_hold;
         // self.num_endless += result.num_endless;
         self.num_not_max += result.num_not_max;
-        self.num_undecided += result.num_undecided;
 
         self.steps_max.add_self(&result.steps_max);
 
@@ -409,7 +408,9 @@ impl DeciderResultStats {
                     } else {
                         self.machines_undecided = result.machines_undecided.clone();
                     }
-                    if self.num_undecided >= self.limit_machines_undecided as u64 {
+                    if self.machines_undecided.as_ref().unwrap().len()
+                        >= self.limit_machines_undecided
+                    {
                         self.end_reason =
                             EndReason::RecordLimitUndecidedReached(self.limit_machines_undecided);
                         is_ok = false;
@@ -421,6 +422,7 @@ impl DeciderResultStats {
                 is_ok = false;
             }
         }
+        self.num_undecided += result.num_undecided;
 
         // add end_reason
         if result.end_reason != EndReason::None {

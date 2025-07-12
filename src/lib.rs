@@ -8,7 +8,6 @@ pub mod arg_handler;
 pub mod bb_file_reader;
 pub mod config;
 pub mod data_provider;
-pub mod data_provider_threaded;
 pub mod decider;
 pub mod decider_bouncer;
 pub mod decider_cycler_v4;
@@ -35,3 +34,11 @@ pub mod transition_symbol2;
 pub mod utils;
 
 pub type ResultUnitEndReason = Result<(), decider_result::EndReason>;
+
+// #[allow(clippy::enum_variant_names)]
+/// This enum can be used to call the different variants.
+pub enum Cores {
+    SingleCore,
+    SingleCoreGeneratorMultiCoreDecider,
+    MultiCore,
+}

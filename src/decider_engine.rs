@@ -184,8 +184,8 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
                         EndReason::MachineLimitReached(_) => todo!(),
                         EndReason::NoBatchData => todo!(),
                         EndReason::NoMoreData => todo!(),
-                        EndReason::RecordLimitDecidedReached(_) => todo!(),
-                        EndReason::RecordLimitUndecidedReached(_) => todo!(),
+                        EndReason::RecordLimitDecidedReached(_) => break,
+                        EndReason::RecordLimitUndecidedReached(_) => break,
                         EndReason::StopRequested(_, _) => break,
                         EndReason::None => {}
                     };
