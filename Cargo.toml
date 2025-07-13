@@ -29,7 +29,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 bb_debug = []
 bb_debug_cycler = []
 bb_counter_stats = []
-# Allow optional output to html files but will have a 10% performance hit even if write_html_file = false.
+# Allow optional output to html files but will have a 10%-30% performance hit even if write_html_file = false.
 bb_enable_html_reports = []
 bb_generator_longest_skip_chain = []
 bb_print_non_pre_perm = []

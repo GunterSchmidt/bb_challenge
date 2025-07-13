@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use bb_challenge::{
     config::{Config, StepTypeBig},
-    decider::{Decider, DeciderStandard},
+    decider::{Decider, DeciderConfig, DeciderStandard},
     decider_engine::{self},
     decider_result::result_max_steps_known,
     generator::Generator,
@@ -27,7 +27,7 @@ criterion_group!(
     benchmark_tape_type,
     // benchmark_generator,
     // benchmark_decider_gen_bb3,
-    // benchmark_decider_gen_bb4,
+    benchmark_decider_gen_bb4,
 );
 criterion_main!(benches);
 
@@ -47,6 +47,7 @@ fn benchmark_generator(c: &mut Criterion) {
 fn benchmark_decider_gen_bb3(c: &mut Criterion) {
     let mut group = c.benchmark_group("Bench Decider Loop BB3");
     let config = config_bench(3);
+    let dc_cycler: DeciderConfig<'_> = DeciderStandard::Cycler.decider_config(&config);
 
     group.warm_up_time(Duration::from_millis(WARM_UP_TIME_MS));
     // group.measurement_time(Duration::from_millis(MEASUREMENT_TIME_MS));
@@ -54,22 +55,22 @@ fn benchmark_decider_gen_bb3(c: &mut Criterion) {
 
     // full single
     group.bench_function("Decider (Data Provider Generator Full) BB3", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&config, false, Cores::SingleCore))
+        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, false, Cores::SingleCore))
     });
 
     // reduced single
     group.bench_function("Decider (Data Provider Generator Reduced) BB3", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&config, true, Cores::SingleCore))
+        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, true, Cores::SingleCore))
     });
 
     // full threaded
     group.bench_function("Decider (Generator Full) Threaded BB3", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&config, false, Cores::MultiCore))
+        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, false, Cores::MultiCore))
     });
 
     // full reduced
     group.bench_function("Decider (Generator Reduced) Threaded BB3", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&config, true, Cores::MultiCore))
+        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, true, Cores::MultiCore))
     });
 
     group.finish();
@@ -78,6 +79,7 @@ fn benchmark_decider_gen_bb3(c: &mut Criterion) {
 fn benchmark_decider_gen_bb4(c: &mut Criterion) {
     let mut group = c.benchmark_group("Bench Decider Loop BB4");
     let config = config_bench(4);
+    let dc_cycler: DeciderConfig<'_> = DeciderStandard::Cycler.decider_config(&config);
 
     group.warm_up_time(Duration::from_millis(WARM_UP_TIME_MS));
     // group.measurement_time(Duration::from_millis(MEASUREMENT_TIME_MS));
@@ -85,23 +87,23 @@ fn benchmark_decider_gen_bb4(c: &mut Criterion) {
 
     // full single
     group.bench_function("Decider V2 (Data Provider Generator Full) BB4", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&config, false, Cores::SingleCore))
+        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, false, Cores::SingleCore))
     });
 
     // reduced single
     group.bench_function("Decider V2 (Data Provider Generator Reduced) BB4", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&config, true, Cores::SingleCore))
+        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, true, Cores::SingleCore))
     });
 
     // full threaded
     group.bench_function("Decider (Generator Full) Threaded BB4", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&config, false, Cores::MultiCore))
+        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, false, Cores::MultiCore))
     });
 
     // reduced threaded
     group.bench_function(
         "Decider (Data Provider Generator Reduced) Threaded BB4",
-        |b| b.iter(|| bench_decider_data_provider_gen(&config, true, Cores::MultiCore)),
+        |b| b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, true, Cores::MultiCore)),
     );
 
     group.finish();
@@ -294,8 +296,14 @@ fn bench_generate_reduced() {
     }
 }
 
-fn bench_decider_data_provider_gen(config: &Config, gen_reduced: bool, cores: Cores) {
-    let dc_cycler = DeciderStandard::Cycler.decider_config(config);
+fn bench_decider_data_provider_gen(
+    dc_cycler: &DeciderConfig<'_>,
+    config: &Config,
+    gen_reduced: bool,
+    cores: Cores,
+) {
+    // let dc_cycler: DeciderConfig<'_> = DeciderStandard::Cycler.decider_config(config);
+    let dc_cycler = *dc_cycler;
     let result = if gen_reduced {
         match cores {
             Cores::SingleCore => {

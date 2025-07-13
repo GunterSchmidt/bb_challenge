@@ -1,4 +1,4 @@
-//! This is the fast version of the cycler decider (limited to a 128-bit tape, so it may not find larger cycles). \
+//! This is the cycler decider (working on a 128-bit tape, with long_tape in background). \
 //! It is a very effective decider and should run first with a small number of steps to eliminate most \
 //! of the cyclers and machines which hold quickly (both are identified).
 //! Example for BB4 with 6,975,757,441 machines. If only this decider is run with 150 step limit, then all
@@ -7,15 +7,17 @@
 //! This decider than classifies 10,758,178 as Hold and 19,375,844 as Cycler.
 //! Of the 10,758,178 Hold machines, only 184 machines run more than 50 steps.
 //! Of the 19,375,844 Cycler machines, only 4740 machines are not detected within 50 steps.
-//! If the limit is set to 10,000 machines, then the runtime will be around 50 seconds (on my machine), \
-//! which is a factor of 12. \
-//! Additionally 216 Cyclers are found. Which means < 0,01% of the machines take 95% of the time.\
-//! For BB4 these are also found with 1500, so anything more does not help.
-//! A reasonable size is between 300 and 1500, the runtime does differ, but this is not much overall.
-//! For BB5 the first 100,000,000,000 can be tested in about 32 seconds, leaving only 214,857 undecided \
-//! with step limit 1500.
-//! For BB5 the first 100,000,000,000 can be tested in about 40 seconds, leaving only 214,845 undecided \
-//! with step limit 2500.
+//! If the limit is set to 10,000 machines, then the runtime will be around 65 seconds (on my machine), \
+//! which is a factor of >20. \
+//! Additionally 27,488 Cyclers are found, eliminating one third more. But is also means < 0,2% of the machines take 95% of the time.\
+//! Therefore it is faster, to run the Cycler with a small limit first, then run the Bouncer on the remaining undecided machines,
+//! which will eliminate a high number of those. Then run the cycler again with a higher limit.
+//! A reasonable size for first run limit is between 300 and 1500, the runtime does differ, but this is not much overall.
+//! Limit 1,500: For BB5 the first 100,000,000,000 can be tested in about 34 seconds, leaving only 204,762 undecided. \
+//! Limit 2,500: For BB5 the first 100,000,000,000 can be tested in about 40 seconds, leaving only 172,913 undecided \
+//! Limit 5,000: For BB5 the first 100,000,000,000 can be tested in about 65 seconds, leaving only 132,196 undecided \
+//! Limit 10,000: For BB5 the first 100,000,000,000 can be tested in about 145 seconds, leaving only 115,224 undecided \
+//! The runtimes largely depend on how many CPUs the system has, this is measured on an older 8 core (4 core / 4 Hyper-threading) notebook.
 //! Therefore it is wiser to run the bouncer before attempting to catch the other cyclers.
 //! How it works: \
 //! When run, every step is recorded (StepCycler) so repeating steps can be identified.
@@ -26,22 +28,15 @@
 //! If this is the case then also the tape will be compared. It needs to match for the \
 //! relevant part, meaning all cells touched in this cycle will be compared.
 
-#[cfg(feature = "bb_enable_html_reports")]
-use std::{io::Write, path::MAIN_SEPARATOR_STR};
-
-#[cfg(feature = "bb_enable_html_reports")]
-use crate::html;
 #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
 use crate::tape_utils::U128Ext;
-#[cfg(feature = "bb_enable_html_reports")]
-use crate::transition_symbol2::TransitionSymbol2;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES},
-    decider::{self, Decider, DECIDER_CYCLER_ID},
+    decider::{self, Decider, DeciderData128, DECIDER_CYCLER_ID},
     decider_result::BatchData,
     machine::Machine,
-    status::{EndlessReason, MachineStatus, UndecidedReason},
-    transition_symbol2::DirectionType,
+    status::{EndlessReason, MachineStatus},
+    step_record::StepRecordU128,
     ResultUnitEndReason,
 };
 
@@ -53,7 +48,6 @@ const DEBUG_MIN_DISTANCE: usize = 75;
 type TapeType = u128;
 const TAPE_SIZE_BIT: StepTypeSmall = 128;
 const MIDDLE_BIT: StepTypeSmall = TAPE_SIZE_BIT / 2 - 1;
-const POS_HALF: TapeType = 1 << MIDDLE_BIT;
 
 const MAX_INIT_CAPACITY: usize = 10_000;
 /// Reduces number of checks. This relies on a cycle which always has one tape side 0.
@@ -63,53 +57,40 @@ const SEARCH_ONLY_0_SIDE_FROM: usize = 50;
 // TODO Implement Tape Long for larger cycles in v6
 #[derive(Debug)]
 pub struct DeciderCycler {
+    data: DeciderData128,
     /// Store all steps to do comparisons (test if a cycle is repeating)
-    steps: Vec<StepCycler>,
+    steps: Vec<StepRecordU128>,
     /// Stores the step ids (2 = 3rd step) for each field in the transition table. \
     /// (basically e.g. all steps for e.g. field 'B0' steps: 1 if A0 points to B, as step 1 then has state B and head symbol 0.)
-    // TODO performance: check if storage as u16 is faster
     // TODO performance: extra differentiation for 0/1 at head position? The idea is, that the field cannot be identical if head read is different
     maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)],
-    /// Step limit for this decider. Should not exceed 2000 // TODO why: u64 tape, cannot be so large
-    step_limit: StepTypeSmall,
-    tr_field_id: usize,
-    #[cfg(feature = "bb_enable_html_reports")]
-    write_html: bool,
-    #[cfg(feature = "bb_enable_html_reports")]
-    path: String,
-    #[cfg(feature = "bb_enable_html_reports")]
-    file: Option<std::fs::File>,
 }
 
 impl DeciderCycler {
     pub fn new(config: &Config) -> Self {
         let cap = (config.step_limit_cycler() as usize).min(MAX_INIT_CAPACITY);
-        Self {
+        #[allow(unused_mut)]
+        let mut decider = Self {
+            data: DeciderData128::new(config),
             steps: Vec::with_capacity(cap),
             maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
-            step_limit: config.step_limit_cycler(),
-            tr_field_id: 0,
-            #[cfg(feature = "bb_enable_html_reports")]
-            write_html: config.write_html_file(),
-            #[cfg(feature = "bb_enable_html_reports")]
-            path: Self::get_html_path(config.write_html_file(), config.n_states()),
-            #[cfg(feature = "bb_enable_html_reports")]
-            file: None,
+        };
+        decider.data.step_limit = config.step_limit_cycler();
+
+        #[cfg(feature = "bb_enable_html_reports")]
+        {
+            decider.data.path = crate::html::get_html_path("cycler_long", config);
         }
+
+        decider
     }
 
     #[inline]
     fn clear(&mut self) {
+        self.data.clear();
         self.steps.clear();
         for map in self.maps_1d.iter_mut() {
             map.clear();
-        }
-    }
-
-    #[cfg(feature = "bb_enable_html_reports")]
-    fn write_file_end(&mut self) {
-        if let Some(file) = self.file.as_mut() {
-            html::write_file_end(file).expect("Html file could not be written")
         }
     }
 
@@ -132,144 +113,49 @@ impl DeciderCycler {
 
         // tape for storage in Step with cell before transition at position u32 top bit
         // this tape shifts in every step, so that the head is always at bit 31
-        let mut tape_shifted: TapeType = 0;
-        let mut high_bound: u32 = MIDDLE_BIT;
-        let mut low_bound: i32 = MIDDLE_BIT as i32;
-
-        // let mut zero_left = Vec::new();
-        // let mut zero_right = Vec::new();
+        // let mut tape_shifted: TapeType = 0;
+        // let mut high_bound: u32 = MIDDLE_BIT;
+        // let mut low_bound: i32 = MIDDLE_BIT as i32;
 
         // Initialize transition with A0 as start
-        let mut tr; // = TRANSITION_SYM2_START;
+        // let mut tr; // = TRANSITION_SYM2_START;
         let mut read_symbol_next;
         let mut tr_field_next = 2;
 
         // loop over transitions to write tape
         loop {
-            // read symbol at tape head
-            // let curr_read_symbol = read_symbol_next;
-            self.tr_field_id = tr_field_next;
+            // use previously identified field
+            self.data.tr_field_id = tr_field_next;
 
             // store next step
             // map for each transition, which step went into it
             // maps: store step id leading to this
-            self.maps_1d[self.tr_field_id].push(self.steps.len());
-            let mut step = StepCycler::new(self.tr_field_id, 0, tape_shifted);
-            tr = machine.transition(self.tr_field_id);
-            step.direction = tr.direction();
+            self.maps_1d[self.data.tr_field_id].push(self.steps.len());
+            let mut step = StepRecordU128::new(self.data.tr_field_id, 0, self.data.tape_shifted());
+            self.data.tr = machine.transition(self.data.tr_field_id);
+            step.direction = self.data.tr.direction();
             self.steps.push(step);
 
             // check if done
-            if tr.is_hold() {
-                // Hold found
-                // TODO count ones
-                #[allow(unused_assignments)]
-                if tr.symbol() < 2 {
-                    // write last symbol
-                    if tr.is_symbol_one() {
-                        tape_shifted |= POS_HALF
-                    } else {
-                        tape_shifted &= !POS_HALF
-                    };
+            if self.data.tr.is_hold() || self.steps.len() as StepTypeSmall >= self.data.step_limit()
+            {
+                self.data.num_steps = self.steps.len() as StepTypeBig;
+                if self.data.is_done() {
+                    return self.data.status;
+                } else {
+                    panic!("Logic error");
                 }
-                // println!("Check Cycle: ID {}: Steps till hold: {}", m_info.id, steps);
-                #[cfg(feature = "bb_enable_html_reports")]
-                if self.write_html {
-                    self.write_step_html(&tr, tape_shifted);
-                    self.write_html_p(
-                        format!("Decided: Holds after {} steps.", self.steps.len()).as_str(),
-                    );
-                }
-                return MachineStatus::DecidedHolds(self.steps.len() as StepTypeBig);
-            } else if self.steps.len() as StepTypeSmall >= self.step_limit {
-                #[cfg(feature = "bb_enable_html_reports")]
-                if self.write_html {
-                    self.write_step_html(&tr, tape_shifted);
-                    self.write_html_p(
-                        format!("Undecided: Limit of {} steps reached.", self.step_limit).as_str(),
-                    );
-                }
-                return MachineStatus::Undecided(
-                    UndecidedReason::StepLimit,
-                    self.step_limit as StepTypeBig,
-                    TAPE_SIZE_BIT,
-                );
             }
 
-            // update tape: write symbol at head position into cell
-            tape_shifted = if tr.is_symbol_one() {
-                tape_shifted | POS_HALF
-            } else {
-                tape_shifted & !POS_HALF
-            };
-
-            // check if tape bound is reached
-            tape_shifted = if tr.is_dir_right() {
-                high_bound += 1;
-                if high_bound == TAPE_SIZE_BIT {
-                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-                    {
-                        use crate::tape_utils::U128Ext;
-
-                        println!("\n{}", machine);
-                        println!("step         {}", self.steps.len());
-                        println!("low_bound    {}", low_bound);
-                        println!("high_bound   {}", high_bound);
-                        println!("tape shifted {}", tape_shifted.to_binary_split_string());
-                        println!("State: Undecided: Too many steps to right.");
-                        // panic!("State: Undecided: Too many steps to right.");
-                    }
-                    #[cfg(feature = "bb_enable_html_reports")]
-                    if self.write_html {
-                        html::write_html_p(
-                            self.file.as_mut().unwrap(),
-                            "Undecided: Too many steps to right.",
-                        );
-                    }
-                    return MachineStatus::Undecided(
-                        UndecidedReason::TapeLimitLeftBoundReached,
-                        self.steps.len() as StepTypeBig,
-                        TAPE_SIZE_BIT,
-                    );
-                }
-                if low_bound < MIDDLE_BIT as i32 {
-                    low_bound += 1;
-                }
-                tape_shifted << 1
-            } else {
-                low_bound -= 1;
-                if low_bound == -1 {
-                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-                    {
-                        println!("\n{}", machine);
-                        println!("step         {}", self.steps.len());
-                        println!("low_bound    {}", low_bound);
-                        println!("high_bound   {}", high_bound);
-                        println!("tape shifted {}", tape_shifted.to_binary_split_string());
-                        println!("State: Undecided: Too many steps to left.");
-                        // panic!("State: Undecided: Too many steps to left.");
-                    }
-                    #[cfg(feature = "bb_enable_html_reports")]
-                    if self.write_html {
-                        html::write_html_p(
-                            self.file.as_mut().unwrap(),
-                            "Undecided: Too many steps to left.",
-                        );
-                    }
-                    return MachineStatus::Undecided(
-                        UndecidedReason::TapeLimitRightBoundReached,
-                        self.steps.len() as StepTypeBig,
-                        TAPE_SIZE_BIT,
-                    );
-                }
-                if high_bound > MIDDLE_BIT {
-                    high_bound -= 1;
-                }
-                tape_shifted >> 1
-            };
+            #[cfg(feature = "bb_enable_html_reports")]
+            {
+                // required because num_steps is not updated normally
+                self.data.num_steps = self.steps.len() as StepTypeBig;
+            }
+            self.data.update_tape_single_step();
 
             // get next transition
-            read_symbol_next = ((tape_shifted & POS_HALF) != 0) as usize; // resolves to one if bit is set
+            read_symbol_next = self.data.get_current_symbol();
 
             // print steps
             #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
@@ -284,19 +170,15 @@ impl DeciderCycler {
                 read_symbol_next,
                 machine.transition(tr.state_x2() + read_symbol_next),
             );
-            #[cfg(feature = "bb_enable_html_reports")]
-            if self.write_html {
-                self.write_step_html(&tr, tape_shifted);
-            }
 
             // check endless cycle for multiple steps
-            tr_field_next = tr.state_x2() + read_symbol_next;
+            tr_field_next = self.data.tr.state_x2() + read_symbol_next;
             // must be repeated already and either side needs to be 0
             // This assumes, the tape is fluctuating around the start
             if self.maps_1d[tr_field_next].len() > 1
                 && (self.steps.len() < SEARCH_ONLY_0_SIDE_FROM
-                    || tape_shifted as u64 == 0
-                    || (tape_shifted >> 64) as u64 == 0)
+                    || self.data.tape_shifted() as u64 == 0
+                    || (self.data.tape_shifted() >> 64) as u64 == 0)
             {
                 // TODO performance: Possibly one can skip the last x steps as the smaller cycles have been checked before; is that a valid hypothesis?
                 'steps: for &step_id in self.maps_1d[tr_field_next][1..]
@@ -379,18 +261,18 @@ impl DeciderCycler {
 
                     // check if full tape is identical (this is not necessary, only relevant bytes)
                     // TODO requires comparison of long_tape
-                    if step_tape_before == tape_shifted {
+                    if step_tape_before == self.data.tape_shifted() {
                         // Same, we found a cycle!
                         #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                         println!("*** Found Cycle (tape identical)!");
                         #[cfg(feature = "bb_enable_html_reports")]
-                        if self.write_html {
+                        if self.data.is_write_html_in_limit() {
                             let text = format!(
                                 "  Decided: Found Cycle (tape identical): Start {} and {}, length: {distance}", 
                                 step_id-distance+1,
                                 step_id+1
                             );
-                            self.write_html_p(&text);
+                            self.data.write_html_p(&text);
                         }
                         #[cfg(debug_assertions)]
                         if DEBUG_EXTRA && distance >= DEBUG_MIN_DISTANCE {
@@ -470,15 +352,15 @@ impl DeciderCycler {
                     }
 
                     // check if full tape is identical (this is not necessary, only relevant bytes)
-                    if step_tape_before & mask == tape_shifted & mask {
+                    if step_tape_before & mask == self.data.tape_shifted() & mask {
                         // Same, we found a cycle!
                         #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                         println!("  *** Found Cycle with mask!");
                         #[cfg(feature = "bb_enable_html_reports")]
-                        if self.write_html {
+                        if self.data.is_write_html_in_limit() {
                             let text =
                                 format!("  Decided: Found Cycle (tape for relevant part identical): Start {} and {}, length: {distance}", step_id-distance+1,step_id+1);
-                            self.write_html_p(&text);
+                            self.data.write_html_p(&text);
                         }
                         #[cfg(debug_assertions)]
                         if DEBUG_EXTRA && distance >= DEBUG_MIN_DISTANCE {
@@ -504,71 +386,18 @@ impl DeciderCycler {
 
     #[cfg(feature = "bb_enable_html_reports")]
     fn decide_machine_cycler_html(&mut self, machine: &Machine) -> MachineStatus {
-        let (file, file_name) =
-            html::create_html_file_start(&self.path, Self::decider_id().name, machine)
-                .expect("Html file could not be written");
-        self.file = Some(file);
+        #[cfg(feature = "bb_enable_html_reports")]
+        self.data.write_html_file_start(Self::decider_id(), machine);
 
         let ms = self.decide_machine_cycler(machine);
-        self.write_file_end();
-        // close the file so it can be renamed
-        self.file = None;
-        // rename file depending on status
-        // TODO generalize and use for other deciders
-        match ms {
-            MachineStatus::NoDecision => todo!(),
-            MachineStatus::EliminatedPreDecider(_) => todo!(),
-            MachineStatus::Undecided(_, _, _) => {
-                // rename file
-                let f_name_new = "undecided_".to_string() + &file_name;
-                let old_path = format!("{}{}{}", self.path, MAIN_SEPARATOR_STR, file_name);
-                let new_path = format!("{}{}{}", self.path, MAIN_SEPARATOR_STR, f_name_new);
-                std::fs::rename(old_path, new_path).expect("Could not rename file");
-            }
-            _ => {
-                // rename file
-                let f_name_new = "decided_".to_string() + &file_name;
-                let old_path = format!("{}{}{}", self.path, MAIN_SEPARATOR_STR, file_name);
-                let new_path = format!("{}{}{}", self.path, MAIN_SEPARATOR_STR, f_name_new);
-                // println!("{old_path}");
-                // let x = std::fs::exists(&old_path);
-                std::fs::rename(old_path, new_path).expect("Could not rename file");
-            }
-        }
+        self.data.write_html_file_end();
+        // close the file so it can be renamed (not sure if necessary)
+        // self.file = None;
+
+        // html::rename_file_to_status(&self.data.path.unwrap(), &self.data.file_name.unwrap(), &ms);
+        self.data.rename_html_file_to_status();
 
         ms
-    }
-
-    #[cfg(feature = "bb_enable_html_reports")]
-    fn write_html_p(&self, text: &str) {
-        writeln!(self.file.as_ref().unwrap(), "<p>{text}</p>",).expect("Html write error");
-    }
-
-    #[cfg(feature = "bb_enable_html_reports")]
-    fn write_step_html(&mut self, transition: &TransitionSymbol2, tape_shifted: TapeType) {
-        html::write_step_html_128(
-            self.file.as_mut().unwrap(),
-            self.steps.len(),
-            self.tr_field_id,
-            transition,
-            tape_shifted,
-        );
-    }
-
-    #[cfg(feature = "bb_enable_html_reports")]
-    fn get_html_path(write_html: bool, n_states: usize) -> String {
-        if write_html {
-            let p = format!(
-                "{}{}{}{n_states}",
-                Config::get_result_path(),
-                MAIN_SEPARATOR_STR,
-                "cycler_bb",
-            );
-            html::create_css(&p).expect("CSS files could not be created.");
-            p
-        } else {
-            String::new()
-        }
     }
 }
 
@@ -579,7 +408,7 @@ impl Decider for DeciderCycler {
 
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
         #[cfg(feature = "bb_enable_html_reports")]
-        if self.write_html {
+        if self.data.is_write_html_file() {
             self.decide_machine_cycler_html(machine)
         } else {
             self.decide_machine_cycler(machine)
@@ -599,64 +428,6 @@ impl Decider for DeciderCycler {
     fn decider_run_batch(batch_data: &mut BatchData) -> ResultUnitEndReason {
         let decider = Self::new(batch_data.config);
         decider::decider_generic_run_batch_v2(decider, batch_data)
-    }
-}
-
-/// Record of every step to identify cycles.
-#[derive(Debug)]
-pub struct StepCycler {
-    /// Allows quick compare of symbol & state in one step
-    pub for_field_id: usize,
-    /// step goes to this direction, which is the result from symbol_state lookup
-    pub direction: DirectionType,
-    pub tape_before: TapeType,
-    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    #[allow(dead_code)]
-    text: [char; 3],
-}
-
-impl StepCycler {
-    #[inline]
-    pub fn new(for_field_id: usize, direction: DirectionType, tape_before: TapeType) -> Self {
-        Self {
-            for_field_id,
-            direction,
-            tape_before,
-            #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-            text: Self::to_chars(for_field_id, direction),
-        }
-    }
-
-    //     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    //     pub fn for_state(&self) -> i16 {
-    //         (self.for_state_symbol & Self::FILTER_STATE) >> 1
-    //     }
-    //
-    //     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    //     pub fn for_symbol(&self) -> i16 {
-    //         self.for_state_symbol & Self::FILTER_SYMBOL_PURE
-    //     }
-
-    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    pub fn field_id_to_string(&self) -> String {
-        TransitionSymbol2::field_id_to_string(self.for_field_id)
-    }
-
-    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-    fn to_chars(for_field_id: usize, direction: i16) -> [char; 3] {
-        let dir = match direction {
-            -1 => 'L',
-            1 => 'R',
-            _ => '-',
-        };
-        let s = TransitionSymbol2::field_id_to_string(for_field_id);
-        // let state = if from_state & crate::transition_symbol2::FILTER_STATE == 0 {
-        //     'Z'
-        // } else {
-        //     (((from_state & crate::transition_symbol2::FILTER_STATE) >> 1) as u8 + b'A' - 1) as char
-        // };
-
-        [s.as_bytes()[0] as char, s.as_bytes()[1] as char, dir]
     }
 }
 
@@ -712,9 +483,11 @@ mod tests {
         transitions.push(("0RA", "0RA"));
 
         let machine = Machine::from_string_tuple(0, &transitions);
-        let config = Config::new_default(machine.n_states());
-        let mut d = DeciderCycler::new(&config);
-        let machine_status = d.decide_machine(&machine);
+        // let config = Config::new_default(machine.n_states());
+        let config = Config::builder(machine.n_states())
+            .write_html_file(true)
+            .build();
+        let machine_status = DeciderCycler::decide_single_machine(&machine, &config);
         assert_eq!(machine_status, MachineStatus::DecidedHolds(107));
     }
 
@@ -728,9 +501,11 @@ mod tests {
         transitions.push(("1RA", "0RA"));
 
         let machine = Machine::from_string_tuple(32538705, &transitions);
-        let config = Config::new_default(machine.n_states());
-        let mut d = DeciderCycler::new(&config);
-        let machine_status = d.decide_machine(&machine);
+        // let config = Config::new_default(machine.n_states());
+        let config = Config::builder(machine.n_states())
+            .write_html_file(true)
+            .build();
+        let machine_status = DeciderCycler::decide_single_machine(&machine, &config);
         println!("result: {}", machine_status);
         let ok = match machine_status {
             MachineStatus::Undecided(_, _, _) => true,

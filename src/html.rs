@@ -4,6 +4,7 @@ use std::path::{Path, MAIN_SEPARATOR_STR};
 
 use crate::config::Config;
 use crate::machine::Machine;
+use crate::status::MachineStatus;
 use crate::transition_symbol2::TransitionSymbol2;
 
 const CSS_FOLDER: &str = "styles";
@@ -98,6 +99,7 @@ pub fn format_right_aligned_int_html(number: usize, size: usize) -> String {
 
 /// Return the path for the html files, usually '/result/<sub_path>_bb5', e.g. '/result/cycler_bb5' \
 /// or None if write_html_file in Config is set to false.
+/// Also creates the css files in the folder if not already existing.
 pub fn get_html_path(sub_path: &str, config: &Config) -> Option<String> {
     if config.write_html_file() {
         let path = format!(
@@ -110,6 +112,41 @@ pub fn get_html_path(sub_path: &str, config: &Config) -> Option<String> {
         Some(path)
     } else {
         None
+    }
+}
+
+/// Rename file depending on status, Decided or Undecided will be added to the file name.
+/// Panics if file cannot be renamed
+pub fn rename_file_to_status(file_path: &str, file_name: &str, machine_status: &MachineStatus) {
+    // -> io::Result<()>
+    let old_path = format!("{}{}{}", file_path, MAIN_SEPARATOR_STR, file_name);
+    // let mut new_path: Option<String> = None;
+    let new_path = match machine_status {
+        MachineStatus::NoDecision => todo!(),
+        MachineStatus::EliminatedPreDecider(_) => todo!(),
+        MachineStatus::Undecided(_, _, _) => {
+            // rename file
+            let f_name_new = "undecided_".to_string() + file_name;
+            Some(format!("{}{}{}", file_path, MAIN_SEPARATOR_STR, f_name_new))
+        }
+        _ => {
+            // rename file
+            let f_name_new = "decided_".to_string() + file_name;
+            Some(format!("{}{}{}", file_path, MAIN_SEPARATOR_STR, f_name_new))
+        }
+    };
+    if let Some(new_path) = new_path {
+        let r = std::fs::exists(&old_path);
+        match r {
+            Ok(exists) => {
+                if !exists {
+                    panic!("File {old_path} not found!");
+                }
+            }
+            Err(e) => panic!("File Error: {e}"),
+        }
+        std::fs::rename(&old_path, &new_path)
+            .unwrap_or_else(|_| panic!("Could not rename file: {old_path}"));
     }
 }
 

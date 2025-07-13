@@ -57,7 +57,7 @@ impl DeciderStandard {
             }
             DeciderStandard::Cycler => DeciderCaller::new(
                 &DECIDER_CYCLER_ID,
-                crate::decider_cycler_v5::DeciderCycler::decider_run_batch,
+                crate::decider_cycler::DeciderCycler::decider_run_batch,
             ),
             DeciderStandard::Hold => DeciderCaller::new(
                 &DECIDER_HOLD_ID,
@@ -75,7 +75,7 @@ impl DeciderStandard {
             ),
             DeciderStandard::Cycler => DeciderConfig::new(
                 &DECIDER_CYCLER_ID,
-                crate::decider_cycler_v5::DeciderCycler::decider_run_batch,
+                crate::decider_cycler::DeciderCycler::decider_run_batch,
                 config,
             ),
             DeciderStandard::Hold => DeciderConfig::new(
@@ -95,6 +95,10 @@ pub const DECIDER_HOLD_ID: DeciderId = DeciderId {
 pub const DECIDER_CYCLER_ID: DeciderId = DeciderId {
     id: 20,
     name: "Decider Cycler",
+};
+pub const DECIDER_CYCLER_LONG_ID: DeciderId = DeciderId {
+    id: 21,
+    name: "Decider Cycler Long",
 };
 pub const DECIDER_BOUNCER_ID: DeciderId = DeciderId {
     id: 20,
@@ -390,6 +394,7 @@ impl Display for DeciderError {
 
 /// This contains the functionality for a hold decider.
 /// It can be used to build a specific decider.
+#[derive(Debug)]
 pub struct DeciderData128 {
     /// Partial fast Turing tape which shifts in every step, so that the head is always at the MIDDLE_BIT.
     tape_shifted: u128,
@@ -423,7 +428,7 @@ pub struct DeciderData128 {
     /// TODO Number of steps, where first step is TODO 0
     pub num_steps: StepTypeBig,
     /// Maximum number of steps, after that Undecided will be returned.
-    step_limit: StepTypeBig,
+    pub step_limit: StepTypeBig,
     /// Tape size limit in number of cells
     tape_size_limit_u32_blocks: u32,
     /// Final status, only valid once machine has ended, but intended to be used internally.
@@ -433,6 +438,8 @@ pub struct DeciderData128 {
     pub write_html_step_limit: u32,
     #[cfg(feature = "bb_enable_html_reports")]
     pub path: Option<String>,
+    #[cfg(feature = "bb_enable_html_reports")]
+    pub file_name: Option<String>,
     #[cfg(feature = "bb_enable_html_reports")]
     pub file: Option<File>,
 }
@@ -468,6 +475,8 @@ impl DeciderData128 {
             },
             #[cfg(feature = "bb_enable_html_reports")]
             path: None,
+            #[cfg(feature = "bb_enable_html_reports")]
+            file_name: None,
             #[cfg(feature = "bb_enable_html_reports")]
             file: None,
         }
@@ -556,12 +565,35 @@ impl DeciderData128 {
             }
             self.status = MachineStatus::DecidedHolds(self.num_steps);
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
+            #[cfg(feature = "bb_enable_html_reports")]
+            self.write_step_html();
             return true;
-        } else if self.num_steps > self.step_limit {
+        } else if self.num_steps >= self.step_limit {
             self.status = self.status_undecided_step_limit();
+            #[cfg(feature = "bb_enable_html_reports")]
+            self.write_step_html();
             return true;
         }
         false
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    pub fn is_write_html_in_limit(&self) -> bool {
+        self.write_html_step_limit != 0 && self.write_html_step_limit > self.num_steps
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    pub fn is_write_html_file(&self) -> bool {
+        self.write_html_step_limit != 0
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    pub fn rename_html_file_to_status(&self) {
+        if let Some(file_name) = self.file_name.as_ref() {
+            let path = self.path.as_ref().unwrap();
+            // self.file = None;
+            html::rename_file_to_status(path, file_name, &self.status);
+        }
     }
 
     /// Update tape: write symbol at head position into cell
@@ -696,12 +728,21 @@ impl DeciderData128 {
     //     )
     // }
 
+    pub fn step_limit(&self) -> StepTypeBig {
+        self.step_limit
+    }
+
+    pub fn tape_shifted(&self) -> u128 {
+        self.tape_shifted
+    }
+
     /// Returns the approximate tape size, which grows by 32 steps
     pub fn tape_size(&self) -> u32 {
         ((self.tl_high_bound - self.tl_low_bound + 1) * 32) as u32
     }
 
     /// Updates tape_shifted and tape_long.
+    /// Also prints and writes step to html if feature is set.
     #[inline(always)]
     pub fn update_tape_single_step(&mut self) -> bool {
         self.set_current_symbol();
@@ -722,9 +763,7 @@ impl DeciderData128 {
             println!("{}", self.step_to_string());
         }
         #[cfg(feature = "bb_enable_html_reports")]
-        if self.is_write_html_in_limit() {
-            self.write_step_html();
-        }
+        self.write_step_html();
 
         shift_ok
     }
@@ -951,9 +990,7 @@ impl DeciderData128 {
             println!("{}", self.step_to_string());
         }
         #[cfg(feature = "bb_enable_html_reports")]
-        if self.is_write_html_in_limit() {
-            self.write_step_html();
-        }
+        self.write_step_html();
 
         shift_ok
     }
@@ -1049,6 +1086,7 @@ impl DeciderData128 {
         true
     }
 
+    // Creates
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn write_html_file_start(&mut self, decider_id: &DeciderId, machine: &Machine) {
         if self.is_write_html_in_limit() {
@@ -1102,19 +1140,16 @@ impl DeciderData128 {
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
-    fn write_step_html(&mut self) {
-        crate::html::write_step_html_128(
-            self.file.as_mut().unwrap(),
-            self.num_steps as usize,
-            self.tr_field_id,
-            &self.tr,
-            self.tape_shifted,
-        );
-    }
-
-    #[cfg(feature = "bb_enable_html_reports")]
-    pub fn is_write_html_in_limit(&self) -> bool {
-        self.write_html_step_limit > 0 && self.write_html_step_limit > self.num_steps
+    pub fn write_step_html(&mut self) {
+        if self.is_write_html_in_limit() {
+            crate::html::write_step_html_128(
+                self.file.as_mut().unwrap(),
+                self.num_steps as usize,
+                self.tr_field_id,
+                &self.tr,
+                self.tape_shifted,
+            );
+        }
     }
 
     /// Debug info on current step

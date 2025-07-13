@@ -72,7 +72,7 @@ pub struct DeciderHoldU128Long {
 
 impl DeciderHoldU128Long {
     pub fn new(config: &Config) -> Self {
-        // #[allow(unused_mut)]
+        #[allow(unused_mut)]
         let mut decider = Self {
             data: DeciderData128::new(config),
             // machine_id: 0,
