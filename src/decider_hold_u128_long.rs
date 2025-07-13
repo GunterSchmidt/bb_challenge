@@ -906,12 +906,12 @@ impl Display for DeciderHoldU128Long {
 // }
 
 pub fn test_decider_hold_u128_applies_bb5_max() {
-    // let config = Config::new_default(5);
-    let config = Config::builder(5)
-        .write_html_file(false)
-        .write_html_step_limit(1_000_000)
-        // .step_limit_hold(1_000_000)
-        .build();
+    let config = Config::new_default(5);
+    // let config = Config::builder(5)
+    //     .write_html_file(false)
+    //     .write_html_step_limit(1_000_000)
+    //     // .step_limit_hold(1_000_000)
+    //     .build();
     // BB5 Max
     let machine = Machine::build_machine("BB5_MAX").unwrap();
     let check_result = DeciderHoldU128Long::decide_single_machine(&machine, &config);

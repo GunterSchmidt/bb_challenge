@@ -18,9 +18,9 @@ pub(crate) const MAX_TAPE_GROWTH: usize = 2 << 20; // 1 MB
 
 /// Only used in Default to initialize, use new_default() instead.
 pub(crate) const N_STATES_DEFAULT: usize = 5;
-/// Default tape size limit if not changed in working machine.
 const BATCH_SIZE_FILE: usize = 200;
-const TAPE_SIZE_LIMIT_DEFAULT: usize = 20000;
+/// Default tape size limit (number cells) if not changed in working machine.
+const TAPE_SIZE_LIMIT_U32_BLOCKS_DEFAULT: u32 = 625; // 20.000 cells
 const CPU_UTILIZATION_DEFAULT: usize = 100;
 
 const GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION: usize = 500_000;
@@ -69,8 +69,8 @@ pub struct Config {
     /// This can be updated as previous batch runs max can be used as init value for next batches,
     /// reducing updates because a new machine with higher max steps was found.
     steps_min: StepTypeBig,
-    /// Unclear usage, if any. Should be the size of the tape, but the tape grows in packages.
-    tape_size_limit: usize,
+    /// Tape Size Limit recalculated in full u32 blocks, e.g. 100 -> 4.
+    tape_size_limit_u32_blocks: u32,
     /// For data provider: Return max this many machines.
     machines_limit: IdBig,
     // Ids from bb_challenge file (start, end exclusive). If None then all.
@@ -120,7 +120,7 @@ impl Config {
             step_limit_hold: step_limit,
             steps_min: if n_states == 1 { 0 } else { 2 },
             // TODO depending on n_states
-            tape_size_limit: TAPE_SIZE_LIMIT_DEFAULT,
+            tape_size_limit_u32_blocks: TAPE_SIZE_LIMIT_U32_BLOCKS_DEFAULT,
             machines_limit: Self::generate_limit_default(n_states),
             generator_full_batch_size_request: GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION,
             generator_reduced_batch_size_request: GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION,
@@ -279,8 +279,12 @@ impl Config {
         self.step_limit_cycler
     }
 
-    pub fn tape_size_limit(&self) -> usize {
-        self.tape_size_limit
+    pub fn tape_size_limit_cells(&self) -> u32 {
+        self.tape_size_limit_u32_blocks * 32
+    }
+
+    pub fn tape_size_limit_u32_blocks(&self) -> u32 {
+        self.tape_size_limit_u32_blocks
     }
 
     pub fn use_local_time(&self) -> bool {
@@ -324,7 +328,7 @@ pub struct ConfigBuilder {
     step_limit_hold: Option<StepTypeBig>,
     step_limit_bouncer: Option<StepTypeSmall>,
     step_limit_cycler: Option<StepTypeSmall>,
-    tape_size_limit: Option<usize>,
+    tape_size_limit_u32_blocks: Option<u32>,
     machines_limit: Option<u64>,
     limit_machines_decided: Option<usize>,
     limit_machines_undecided: Option<usize>,
@@ -350,7 +354,7 @@ impl ConfigBuilder {
             step_limit_hold: Some(config.step_limit_hold),
             step_limit_bouncer: Some(config.step_limit_bouncer),
             step_limit_cycler: Some(config.step_limit_cycler),
-            tape_size_limit: Some(config.tape_size_limit),
+            tape_size_limit_u32_blocks: Some(config.tape_size_limit_u32_blocks),
             machines_limit: Some(config.machines_limit),
             file_id_range: config.file_id_range.clone(),
             generator_batch_size_request_full: Some(config.generator_full_batch_size_request),
@@ -420,8 +424,9 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn tape_size_limit(mut self, tape_size_limit: usize) -> Self {
-        self.tape_size_limit = Some(tape_size_limit);
+    pub fn tape_size_limit_cells(mut self, tape_size_limit_cells: u32) -> Self {
+        let t = tape_size_limit_cells.div_ceil(32);
+        self.tape_size_limit_u32_blocks = Some(t);
         self
     }
 
@@ -455,7 +460,9 @@ impl ConfigBuilder {
                 .step_limit_cycler
                 .unwrap_or_else(|| Config::step_limit_cycler_default(self.n_states)),
             steps_min: if self.n_states == 1 { 0 } else { 2 },
-            tape_size_limit: self.tape_size_limit.unwrap_or(TAPE_SIZE_LIMIT_DEFAULT),
+            tape_size_limit_u32_blocks: self
+                .tape_size_limit_u32_blocks
+                .unwrap_or(TAPE_SIZE_LIMIT_U32_BLOCKS_DEFAULT),
             machines_limit: self
                 .machines_limit
                 .unwrap_or_else(|| Config::generate_limit_default(self.n_states)),

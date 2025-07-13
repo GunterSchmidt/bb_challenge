@@ -25,9 +25,9 @@ const GENERATOR_LIMIT: u64 = 50_000_000;
 criterion_group!(
     benches,
     benchmark_tape_type,
-    benchmark_generator,
-    benchmark_decider_gen_bb3,
-    benchmark_decider_gen_bb4,
+    // benchmark_generator,
+    // benchmark_decider_gen_bb3,
+    // benchmark_decider_gen_bb4,
 );
 criterion_main!(benches);
 
@@ -140,13 +140,20 @@ fn benchmark_tape_type(c: &mut Criterion) {
     //     b.iter(|| bench_decider_hold_u128_object(&machine_p_bb4_max, 107))
     // });
     group.bench_function("u128 long hold decider BB4 max", |b| {
-        b.iter(|| bench_decider_hold_u128_long(&machine_p_bb4_max, 4, 107))
+        b.iter(|| bench_decider_hold_u128_long_v2(&machine_p_bb4_max, 4, 107))
     });
     // group.bench_function("u128 long hold decider BB5 max V1", |b| {
     //     b.iter(|| bench_decider_hold_u128_long_v1(&machine_bb5_max, 47176870))
     // });
     group.bench_function("u128 long hold decider BB5 max", |b| {
-        b.iter(|| bench_decider_hold_u128_long(&machine_p_bb5_max, 5, 47176870))
+        b.iter(|| bench_decider_hold_u128_long_v2(&machine_p_bb5_max, 5, 47176870))
+    });
+
+    group.bench_function("u128 long hold decider BB4 max V3", |b| {
+        b.iter(|| bench_decider_hold_u128_long_v3(&machine_p_bb4_max, 4, 107))
+    });
+    group.bench_function("u128 long hold decider BB5 max V3", |b| {
+        b.iter(|| bench_decider_hold_u128_long_v3(&machine_p_bb5_max, 5, 47176870))
     });
 
     //     // fair comparison, u128 would run longer as it can handle more steps
@@ -209,11 +216,22 @@ fn benchmark_tape_type(c: &mut Criterion) {
 //     assert_eq!(check_result, MachineStatus::DecidedHolds(steps));
 // }
 
-fn bench_decider_hold_u128_long(machine: &Machine, n_states: usize, steps_result: StepTypeBig) {
+fn bench_decider_hold_u128_long_v2(machine: &Machine, n_states: usize, steps_result: StepTypeBig) {
     let config = Config::new_default(n_states);
     // let mut d = bb_challenge::decider_u128_long::DeciderU128Long::new(&machine, STEP_LIMIT_DEFAULT);
     let check_result =
         bb_challenge::decider_hold_u128_long_v2::DeciderHoldU128Long::decide_single_machine(
+            &machine, &config,
+        );
+    // println!("{}", check_result);
+    assert_eq!(check_result, MachineStatus::DecidedHolds(steps_result));
+}
+
+fn bench_decider_hold_u128_long_v3(machine: &Machine, n_states: usize, steps_result: StepTypeBig) {
+    let config = Config::new_default(n_states);
+    // let mut d = bb_challenge::decider_u128_long::DeciderU128Long::new(&machine, STEP_LIMIT_DEFAULT);
+    let check_result =
+        bb_challenge::decider_hold_u128_long_v3::DeciderHoldU128Long::decide_single_machine(
             &machine, &config,
         );
     // println!("{}", check_result);

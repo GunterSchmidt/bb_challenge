@@ -16,6 +16,7 @@ pub mod decider_cycler_v5;
 pub mod decider_engine;
 pub mod decider_hold_u128_long;
 pub mod decider_hold_u128_long_v2;
+pub mod decider_hold_u128_long_v3;
 pub mod decider_result;
 pub mod decider_result_worker;
 pub mod decider_u64;

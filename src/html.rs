@@ -1,7 +1,8 @@
 use std::fs::File;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, MAIN_SEPARATOR_STR};
 
+use crate::config::Config;
 use crate::machine::Machine;
 use crate::transition_symbol2::TransitionSymbol2;
 
@@ -21,6 +22,11 @@ const CSS_HTML: &str = "html {
     margin: 0px;
     padding: 0px;
 }";
+
+/// Returns a String with the number of blanks specified, which does not compress in html ("&nbsp;&nbsp;").
+pub fn blanks(num_blanks: usize) -> String {
+    "&nbsp;".repeat(num_blanks)
+}
 
 /// Creates the css files if they do not exist.
 pub fn create_css(path: &str) -> io::Result<()> {
@@ -47,12 +53,65 @@ pub fn create_css(path: &str) -> io::Result<()> {
     Ok(())
 }
 
-// pub fn create_html_header(path: &str) -> io::Result<()> {
-//     // Create and write to HTML file
-//     let mut html_file = File::create(&path)?;
-//     write_html_header(&mut html_file)?;
-//     Ok(())
-// }
+/// Writes to html header and the start of the body to the disk.
+/// ## Arguments
+/// * path of the html file
+/// * file_name_prefix
+/// * machine to write, uses tm_standard_name for file name
+/// * Example: ("data", "hold", m) creates /data/hold_1RB0RC_1RA0RA_0RB1RC.html
+///
+/// Returns (File, FileName)
+pub fn create_html_file_start(
+    path: &str,
+    decider_name: &str,
+    machine: &Machine,
+) -> io::Result<(File, String)> {
+    if !std::fs::exists(path).expect("File System Error") {
+        std::fs::create_dir_all(path)?;
+    }
+    let file_name = decider_name.to_owned() + "_" + machine.file_name().as_str() + ".html";
+    let p = Path::new(path).join(&file_name);
+    let mut file = File::create(&p)?;
+    write_html_header(&mut file, &machine.to_standard_tm_text_format())?;
+    writeln!(file, "<body>")?;
+    let m_id = if machine.id() == 0 {
+        String::new()
+    } else {
+        format!(" Id: {}", machine.id())
+    };
+    writeln!(
+        file,
+        "  <h2>BB{} {decider_name} Machine{m_id} {}</h2>",
+        machine.n_states(),
+        machine.to_standard_tm_text_format()
+    )?;
+    writeln!(file, "  <p>")?;
+
+    Ok((file, file_name))
+}
+
+/// Formats an Integer right aligned
+pub fn format_right_aligned_int_html(number: usize, size: usize) -> String {
+    let s = format!("{number:>size$}");
+    s.replace(" ", "&nbsp;")
+}
+
+/// Return the path for the html files, usually '/result/<sub_path>_bb5', e.g. '/result/cycler_bb5' \
+/// or None if write_html_file in Config is set to false.
+pub fn get_html_path(sub_path: &str, config: &Config) -> Option<String> {
+    if config.write_html_file() {
+        let path = format!(
+            "{}{MAIN_SEPARATOR_STR}{sub_path}_bb{}",
+            Config::get_result_path(),
+            config.n_states()
+        );
+        let msg = format!("CSS files could not be created in {path}.");
+        create_css(&path).expect(&msg);
+        Some(path)
+    } else {
+        None
+    }
+}
 
 pub fn write_html_header(file: &mut File, title: &str) -> io::Result<()> {
     writeln!(file, "<!DOCTYPE html>")?;
@@ -128,52 +187,6 @@ fn write_dark_css_content(file: &mut File) -> io::Result<()> {
     Ok(())
 }
 
-pub fn format_int_html(number: usize, size: usize) -> String {
-    let s = format!("{number:>size$}");
-    s.replace(" ", "&nbsp;")
-}
-
-pub fn blanks(num_blanks: usize) -> String {
-    "&nbsp;".repeat(num_blanks)
-}
-
-/// Writes to html header and the start of the body to the disk.
-/// ## Arguments
-/// * path of the html file
-/// * file_name_prefix
-/// * machine to write, uses tm_standard_name for file name
-/// * Example: ("data", "hold", m) creates /data/hold_1RB0RC_1RA0RA_0RB1RC.html
-///
-/// Returns (File, FileName)
-pub fn create_html_file_start(
-    path: &str,
-    decider_name: &str,
-    machine: &Machine,
-) -> io::Result<(File, String)> {
-    if !std::fs::exists(path).expect("File System Error") {
-        std::fs::create_dir_all(path)?;
-    }
-    let file_name = decider_name.to_owned() + "_" + machine.file_name().as_str() + ".html";
-    let p = Path::new(path).join(&file_name);
-    let mut file = File::create(&p)?;
-    write_html_header(&mut file, &machine.to_standard_tm_text_format())?;
-    writeln!(file, "<body>")?;
-    let m_id = if machine.id() == 0 {
-        String::new()
-    } else {
-        format!(" Id: {}", machine.id())
-    };
-    writeln!(
-        file,
-        "  <h2>BB{} {decider_name} Machine{m_id} {}</h2>",
-        machine.n_states(),
-        machine.to_standard_tm_text_format()
-    )?;
-    writeln!(file, "  <p>")?;
-
-    Ok((file, file_name))
-}
-
 pub fn write_file_end(file: &mut File) -> io::Result<()> {
     writeln!(file, "  </p>")?;
     writeln!(file, "</body>")?;
@@ -191,7 +204,7 @@ pub fn write_step_html_64(
     writeln!(
         file,
         "Step {} {} {transition}: {}</br>",
-        format_int_html(step_no, 5),
+        format_right_aligned_int_html(step_no, 5),
         TransitionSymbol2::field_id_to_string(tr_field_id),
         crate::tape_utils::U64Ext::to_binary_split_html_string(&tape_shifted, transition),
     )
@@ -208,13 +221,14 @@ pub fn write_step_html_128(
     writeln!(
         file,
         "Step {} {} {transition}: {}</br>",
-        format_int_html(step_no, 5),
+        format_right_aligned_int_html(step_no, 5),
         TransitionSymbol2::field_id_to_string(tr_field_id),
         crate::tape_utils::U128Ext::to_binary_split_html_string(&tape_shifted, transition),
     )
     .expect("Html write error");
 }
 
+/// Writes a paragraphed text into an open Html file. This does not give an error message back as at this point it is unlikely to occur.
 pub fn write_html_p(file: &mut File, text: &str) {
     writeln!(file, "<p>{text}</p>",).expect("Html write error");
 }
