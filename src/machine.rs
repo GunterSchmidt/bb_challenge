@@ -109,7 +109,7 @@ impl Machine {
     }
 
     /// Creates the transition table from the Standard TM Text Format \
-    /// https://www.sligocki.com/2022/10/09/standard-tm-format.html
+    /// <https://www.sligocki.com/2022/10/09/standard-tm-format.html>
     pub fn from_standard_tm_text_format(
         machine_id: u64,
         transitions_text: &str,
@@ -152,7 +152,7 @@ impl Machine {
     //     &self.transition_table
     // }
 
-    /// This only returns the correct value if [set_eval_has_self_referencing_transition] was run.
+    /// This only returns the correct value if [Self::set_eval_has_self_referencing_transition] was run.
     pub fn has_self_referencing_transition(&self) -> bool {
         self.transition_table.has_self_referencing_transition()
     }
@@ -173,7 +173,7 @@ impl Machine {
 
     /// Some notable machines
     /// Builds certain default machines which may be  for testing.
-    /// SA: https://www.scottaaronson.com/papers/bb.pdf
+    /// SA: <https://www.scottaaronson.com/papers/bb.pdf>
     pub fn build_machine(name: &str) -> Option<Self> {
         let mut id = 0;
         let mut transitions: Vec<(&str, &str)> = Vec::new();

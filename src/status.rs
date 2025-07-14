@@ -1,6 +1,8 @@
 use std::fmt::Display;
 
-use crate::config::{StepTypeBig, StepTypeSmall};
+use num_format::ToFormattedString;
+
+use crate::config::{user_locale, StepTypeBig, StepTypeSmall};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PreDeciderReason {
@@ -75,11 +77,16 @@ pub enum MachineStatus {
 
 impl Display for MachineStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let locale = user_locale();
         let mut s = String::new();
         match self {
-            MachineStatus::DecidedHolds(steps) => {
-                s.push_str(format!("Decided: Holds after {steps} steps").as_str())
-            }
+            MachineStatus::DecidedHolds(steps) => s.push_str(
+                format!(
+                    "Decided: Holds after {} steps",
+                    steps.to_formatted_string(&locale)
+                )
+                .as_str(),
+            ),
             MachineStatus::EliminatedPreDecider(reason) => {
                 s.push_str(format!("Eliminated Pre-Decider {reason:?}").as_str())
             }

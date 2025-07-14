@@ -78,7 +78,7 @@ pub struct TransitionGeneric {
 
 impl TransitionGeneric {
     /// New transition from human readable format, e.g. 1RB, 1RZ or --- used in bb_challenge, which is String.as_bytes[0..3]. \
-    /// [symbol,direction,status]
+    /// \[symbol,direction,status\]
     /// With first char the symbol to write on the tape, can be 0, 1 or any other char as undefined. \
     /// The distinction between 0,1 and undefined is relevant in the last transition. \
     /// 0,1 will write and hold in the last transition, undefined will only hold. \
@@ -173,7 +173,7 @@ impl Display for TransitionGeneric {
 #[derive(Debug, Clone, Copy)]
 pub struct TransitionTableGeneric {
     /// The transitions are stored in a two dimensional array with a dummy line, \
-    /// where transition_table[1][2] represents the transition for A2 (state A, symbol 2).
+    /// where transition_table\[1\]\[2\] represents the transition for A2 (state A, symbol 2).
     /// This is designed as an array for faster access in case it is used in a loop. Using a
     /// dummy line for state 0 allows to use the numerical state number (A=1) directly for field access.
     pub transition_table: TransitionGenericArray,
@@ -181,7 +181,7 @@ pub struct TransitionTableGeneric {
 
 impl TransitionTableGeneric {
     /// Creates the transition table from the Standard TM Text Format \
-    /// https://www.sligocki.com/2022/10/09/standard-tm-format.html
+    /// <https://www.sligocki.com/2022/10/09/standard-tm-format.html>
     pub fn from_standard_tm_text_format(transitions_text: &str) -> Result<Self, &'static str> {
         let mut transitions = TRANSITION_TABLE_GENERIC_DEFAULT;
         let transition_tuples: Vec<&str> = transitions_text.split('_').collect();

@@ -435,6 +435,10 @@ pub struct DeciderData128 {
     pub status: MachineStatus,
     /// HTML step limit limits output to file. Set to 0 if write_html_file is false.
     #[cfg(feature = "bb_enable_html_reports")]
+    pub write_html_line_limit: u32,
+    #[cfg(feature = "bb_enable_html_reports")]
+    pub write_html_line_count: u32,
+    #[cfg(feature = "bb_enable_html_reports")]
     pub write_html_step_limit: u32,
     #[cfg(feature = "bb_enable_html_reports")]
     pub path: Option<String>,
@@ -467,6 +471,13 @@ impl DeciderData128 {
             status: MachineStatus::NoDecision,
             step_limit: config.step_limit_hold(),
             tape_size_limit_u32_blocks: config.tape_size_limit_u32_blocks(),
+            #[cfg(feature = "bb_enable_html_reports")]
+            write_html_line_limit: if config.write_html_file() {
+                config.write_html_line_limit()
+            } else {
+                0
+            },
+            write_html_line_count: 0,
             #[cfg(feature = "bb_enable_html_reports")]
             write_html_step_limit: if config.write_html_file() {
                 config.write_html_step_limit()
@@ -579,7 +590,9 @@ impl DeciderData128 {
 
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn is_write_html_in_limit(&self) -> bool {
-        self.write_html_step_limit != 0 && self.write_html_step_limit > self.num_steps
+        self.write_html_step_limit != 0
+            && self.num_steps <= self.write_html_step_limit
+            && self.write_html_line_count < self.write_html_line_limit
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
@@ -1115,11 +1128,36 @@ impl DeciderData128 {
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn write_html_file_end(&mut self) {
         if self.file.is_some() {
+            use num_format::ToFormattedString;
+            let locale = crate::config::user_locale();
+            if self.write_html_line_count >= self.write_html_line_limit {
+                self.write_html_p(
+                    format!(
+                        "HTML Line Limit ({}) reached, total lines: {}.",
+                        self.write_html_line_count.to_formatted_string(&locale),
+                        self.num_steps.to_formatted_string(&locale)
+                    )
+                    .as_str(),
+                );
+            } else if self.write_html_line_count < self.num_steps {
+                let p = ((self.write_html_line_count as f64 / self.num_steps as f64) * 1000.0)
+                    .round()
+                    / 100.0;
+                self.write_html_p(
+                    format!(
+                        "Steps executed (single step or step jump): {} of {} = {p} %.",
+                        self.write_html_line_count.to_formatted_string(&locale),
+                        self.num_steps.to_formatted_string(&locale)
+                    )
+                    .as_str(),
+                );
+            }
             if self.num_steps >= self.write_html_step_limit {
                 self.write_html_p(
                     format!(
                         "HTML Step Limit ({}) reached, total steps: {}.",
-                        self.write_html_step_limit, self.num_steps
+                        self.write_html_step_limit.to_formatted_string(&locale),
+                        self.num_steps.to_formatted_string(&locale)
                     )
                     .as_str(),
                 );
@@ -1142,6 +1180,7 @@ impl DeciderData128 {
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn write_step_html(&mut self) {
         if self.is_write_html_in_limit() {
+            self.write_html_line_count += 1;
             crate::html::write_step_html_128(
                 self.file.as_mut().unwrap(),
                 self.num_steps as usize,

@@ -1,3 +1,18 @@
+//! Functionality to output the machine steps in HTML format. \
+//! The output is limited to the 128-Bit tape_shifted, so not the full tape is seen, but this is usually enough to analyze. \
+//! The step line looks like this (here only 64 bits are show): \
+//! Step     1 A0 1RC: 000000000000000000000000_0000000**1**\*00000000_000000000000000000000000 \
+//! where the Head is always directly after the '\*'.
+//! So here the first step is from table field A0 having transition 1RC, so it writes a 1 on the tape and shifts the head right.
+//! This translates into a shift left for the tape if the head is held in a fixed position.
+//! The \[1\] is just a bold 1 in html indicating the changed cell. The head now rests at the first 0 after the '*'.
+//! The output is limited to WRITE_HTML_STEP_LIMIT (100_000) steps, but can be set higher in config. The full output of BB5_MAX takes
+//! a while and creates a 10 GB large html file (each step). \
+//! In case of the self-ref speed-up not all steps are shown, as the repetitions are omitted. Makes the file much smaller. \
+//! Since the step number is used for the config.write_html_step_limit, the file can be very small. \
+//! Instead use config.write_html_line_limit which counts the actually written steps. For BB5_MAX only 91,021 of 47,176,870 = 0.02 %
+//! are written, which makes it possible to write the full output to a 19,1 MB large html file.
+
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, MAIN_SEPARATOR_STR};
@@ -13,18 +28,39 @@ const CSS_FILE_DARK: &str = "dark.css";
 const BODY_FONT_FAMILY: &str = "monospace";
 pub const CLASS_HEAD_POSITION: &str = "head_pos";
 pub const CLASS_CHANGED_POSITION: &str = "change_pos";
+// const CLASS_TABLE: &str = "table_transition";
 const CSS_HEAD_POSITION_LIGHT: &str = "background-color: lavenderblush; font-weight: bold;"; // color: black;
 const CSS_HEAD_POSITION_DARK: &str = "background-color: lavenderblush;"; // color: black;
 const CSS_CHANGE_POSITION_LIGHT: &str = "font-weight: bold;"; // color: blue;
 const CSS_CHANGE_POSITION_DARK: &str = "font-weight: bold;"; // color: yellow;
+const CSS_STEP: &str = ".p_step {
+    padding: 0;
+    margin: 0;
+}";
 const CSS_HTML: &str = "html {
     background-color: white;
     height: 100%;
     margin: 0px;
     padding: 0px;
 }";
+const CSS_TABLE_LIGHT: &str = "table,
+th,
+td {
+    border: 1px solid black;
+    border-collapse: collapse;
+    padding: 3px;
+    margin-left: 10px;
+}";
+const CSS_TABLE_DARK: &str = "table,
+th,
+td {
+    border: 1px solid white;
+    border-collapse: collapse;
+    padding: 3px;
+    margin-left: 10px;
+}";
 
-/// Returns a String with the number of blanks specified, which does not compress in html ("&nbsp;&nbsp;").
+/// Returns a String with the number of blanks specified, which does not compress in html ("\&nbsp;\&nbsp;").
 pub fn blanks(num_blanks: usize) -> String {
     "&nbsp;".repeat(num_blanks)
 }
@@ -54,14 +90,16 @@ pub fn create_css(path: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// Writes to html header and the start of the body to the disk.
-/// ## Arguments
-/// * path of the html file
-/// * file_name_prefix
-/// * machine to write, uses tm_standard_name for file name
-/// * Example: ("data", "hold", m) creates /data/hold_1RB0RC_1RA0RA_0RB1RC.html
+/// Writes to html header and the start of the body to the file.
+/// # Arguments
+/// - path of the html file
+/// - file_name_prefix
+/// - machine to write, uses tm_standard_name for file name
 ///
-/// Returns (File, FileName)
+/// Example: ("data", "hold", m) creates /data/hold_1RB0RC_1RA0RA_0RB1RC.html
+///
+/// # Returns
+/// (File, FileName)
 pub fn create_html_file_start(
     path: &str,
     decider_name: &str,
@@ -80,13 +118,22 @@ pub fn create_html_file_start(
     } else {
         format!(" Id: {}", machine.id())
     };
+    // write header, machine, e.g.
+    // BB4 Decider Cycler Machine Id: 32538705 0RC1LC_---1RC_1LD1RB_1RA0RA
     writeln!(
         file,
         "  <h2>BB{} {decider_name} Machine{m_id} {}</h2>",
         machine.n_states(),
         machine.to_standard_tm_text_format()
     )?;
-    writeln!(file, "  <p>")?;
+    // Machine transitions as table
+    writeln!(
+        file,
+        "{}",
+        machine.transition_table().to_table_html_string(true)
+    )?;
+    // start with an opening <p> tag, as the lines end with </br>, but this actually leads to nested paragraphs.
+    // writeln!(file, "  <p>")?;
 
     Ok((file, file_name))
 }
@@ -97,9 +144,10 @@ pub fn format_right_aligned_int_html(number: usize, size: usize) -> String {
     s.replace(" ", "&nbsp;")
 }
 
-/// Return the path for the html files, usually '/result/<sub_path>_bb5', e.g. '/result/cycler_bb5' \
-/// or None if write_html_file in Config is set to false.
-/// Also creates the css files in the folder if not already existing.
+/// Creates the folder path of the html file and the css files in the folder if not already existing.
+/// # Returns
+/// - the path for the html files, usually '/result/<sub_path>_bb5', e.g. '/result/cycler_bb5' \
+/// - None if write_html_file in [Config] is set to false.
 pub fn get_html_path(sub_path: &str, config: &Config) -> Option<String> {
     if config.write_html_file() {
         let path = format!(
@@ -150,6 +198,7 @@ pub fn rename_file_to_status(file_path: &str, file_name: &str, machine_status: &
     }
 }
 
+/// Writes the \<head\> section of the file.
 pub fn write_html_header(file: &mut File, title: &str) -> io::Result<()> {
     writeln!(file, "<!DOCTYPE html>")?;
     writeln!(file, "<html lang=\"en\">")?;
@@ -191,6 +240,8 @@ fn write_light_css_content(file: &mut File) -> io::Result<()> {
     writeln!(file, "    padding: 10px;")?;
     writeln!(file, "    color: black;")?;
     writeln!(file, "}}")?;
+    writeln!(file, "{CSS_TABLE_LIGHT}")?;
+    writeln!(file, "{CSS_STEP}")?;
     writeln!(file)?;
     writeln!(
         file,
@@ -212,6 +263,8 @@ fn write_dark_css_content(file: &mut File) -> io::Result<()> {
     writeln!(file, "    padding: 10px;")?;
     writeln!(file, "    color: white;")?;
     writeln!(file, "}}")?;
+    writeln!(file, "{CSS_TABLE_DARK}")?;
+    writeln!(file, "{CSS_STEP}")?;
     writeln!(file)?;
     writeln!(
         file,
@@ -225,10 +278,38 @@ fn write_dark_css_content(file: &mut File) -> io::Result<()> {
 }
 
 pub fn write_file_end(file: &mut File) -> io::Result<()> {
-    writeln!(file, "  </p>")?;
+    // writeln!(file, "  </p>")?;
     writeln!(file, "</body>")?;
     writeln!(file, "</html>")?;
     Ok(())
+}
+
+pub fn step_to_html_64(
+    step_no: usize,
+    tr_field_id: usize,
+    transition: &TransitionSymbol2,
+    tape_shifted: u64,
+) -> String {
+    format!(
+        "Step {} {} {transition}: {}</br>",
+        format_right_aligned_int_html(step_no, 5),
+        TransitionSymbol2::field_id_to_string(tr_field_id),
+        crate::tape_utils::U64Ext::to_binary_split_html_string(&tape_shifted, transition),
+    )
+}
+
+pub fn step_to_html_128(
+    step_no: usize,
+    tr_field_id: usize,
+    transition: &TransitionSymbol2,
+    tape_shifted: u128,
+) -> String {
+    format!(
+        "<p class=\"p_step\">Step {} {} {transition}: {}</p>",
+        format_right_aligned_int_html(step_no, 5),
+        TransitionSymbol2::field_id_to_string(tr_field_id),
+        crate::tape_utils::U128Ext::to_binary_split_html_string(&tape_shifted, transition),
+    )
 }
 
 pub fn write_step_html_64(
@@ -238,14 +319,8 @@ pub fn write_step_html_64(
     transition: &TransitionSymbol2,
     tape_shifted: u64,
 ) {
-    writeln!(
-        file,
-        "Step {} {} {transition}: {}</br>",
-        format_right_aligned_int_html(step_no, 5),
-        TransitionSymbol2::field_id_to_string(tr_field_id),
-        crate::tape_utils::U64Ext::to_binary_split_html_string(&tape_shifted, transition),
-    )
-    .expect("Html write error");
+    let text = step_to_html_64(step_no, tr_field_id, transition, tape_shifted);
+    write_html(file, &text);
 }
 
 pub fn write_step_html_128(
@@ -255,14 +330,13 @@ pub fn write_step_html_128(
     transition: &TransitionSymbol2,
     tape_shifted: u128,
 ) {
-    writeln!(
-        file,
-        "Step {} {} {transition}: {}</br>",
-        format_right_aligned_int_html(step_no, 5),
-        TransitionSymbol2::field_id_to_string(tr_field_id),
-        crate::tape_utils::U128Ext::to_binary_split_html_string(&tape_shifted, transition),
-    )
-    .expect("Html write error");
+    let text = step_to_html_128(step_no, tr_field_id, transition, tape_shifted);
+    write_html(file, &text);
+}
+
+/// Writes a text into an open Html file. This does not give an error message back as at this point it is unlikely to occur.
+pub fn write_html(file: &mut File, text: &str) {
+    writeln!(file, "{text}",).expect("Html write error");
 }
 
 /// Writes a paragraphed text into an open Html file. This does not give an error message back as at this point it is unlikely to occur.

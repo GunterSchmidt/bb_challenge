@@ -99,7 +99,7 @@ pub struct TransitionSymbol2 {
 
 impl TransitionSymbol2 {
     /// New transition from human readable format, e.g. 1RB, 1RZ or ---. \
-    /// [symbol,direction,status]
+    /// \[symbol,direction,status\]
     /// With first char the symbol to write on the tape, can be 0, 1 or any other char as undefined. \
     /// The distinction between 0,1 and undefined is relevant in the last transition. \
     /// 0,1 will write and hold in the last transition, undefined will only hold. \
@@ -436,7 +436,7 @@ impl Display for TransitionSymbol2 {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionTableSymbol2 {
-    /// Transition[0] is used for additional information \
+    /// Transition\[0\] is used for additional information \
     /// n_states: bit 0-4
     /// has_self_referencing_transition: bit 7
     pub transitions: TransitionSym2Array1D,
@@ -485,7 +485,7 @@ impl TransitionTableSymbol2 {
     }
 
     /// Creates the transition table from the Standard TM Text Format or returns an error. \
-    /// https://www.sligocki.com/2022/10/09/standard-tm-format.html
+    /// <https://www.sligocki.com/2022/10/09/standard-tm-format.html>
     ///
     /// # Arguments
     /// * `standard_tm_text_format` - e.g. "1RB0LB_1LA0RA"
@@ -519,7 +519,7 @@ impl TransitionTableSymbol2 {
         transition_texts.join("_")
     }
 
-    /// Returns the transition table as formatted table.
+    /// Returns the transition table as formatted table (for print output).
     pub fn to_table_string(&self, show_header_0_1: bool) -> String {
         let states = self.n_states();
         let mut s = String::new();
@@ -548,6 +548,48 @@ impl TransitionTableSymbol2 {
                 s.push('\n');
             }
         }
+
+        s
+    }
+
+    /// Returns the transition table as formatted table (for print output).
+    pub fn to_table_html_string(&self, show_header_0_1: bool) -> String {
+        let states = self.n_states();
+        let mut s = String::from("<table>\n");
+        // table header, state 0 and 1 could be stated
+        // line begins with state as letter
+        if show_header_0_1 {
+            s.push_str("  <tr>\n");
+            s.push_str("    <th></th>\n");
+            s.push_str("    <th>0</th>\n");
+            s.push_str("    <th>1</th>\n");
+            s.push_str("  </tr>\n");
+        }
+
+        // rows
+        for (i, t) in self
+            .transitions
+            .iter()
+            .skip(2)
+            .step_by(2)
+            .enumerate()
+            .take(states)
+        {
+            s.push_str("  <tr>\n");
+            s.push_str("    <td>");
+            s.push((i as u8 + b'A') as char);
+            s.push_str("</td>\n");
+            // transition 0
+            s.push_str("    <td>");
+            s.push_str(&t.to_string());
+            s.push_str("</td>\n");
+            // transition 1
+            s.push_str("    <td>");
+            s.push_str(&self.transitions[(i + 1) * 2 + 1].to_string());
+            s.push_str("</td>\n");
+            s.push_str("  </tr>\n");
+        }
+        s.push_str("</table>\n");
 
         s
     }

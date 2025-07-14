@@ -22,7 +22,7 @@ const BYTES_MACHINE: usize = 30;
 const BYTES_MINI: usize = 8;
 const BATCH_SIZE: usize = 100_000;
 
-/// https://bbchallenge.org/method#format
+/// <https://bbchallenge.org/method#format>
 /// The machine is encoded using a 30-byte array, with R=0 and L=1:
 #[derive(Debug, Clone, Copy)]
 pub struct Header {

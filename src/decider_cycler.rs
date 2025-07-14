@@ -17,8 +17,12 @@
 //! Limit 2,500: For BB5 the first 100,000,000,000 can be tested in about 40 seconds, leaving only 172,913 undecided \
 //! Limit 5,000: For BB5 the first 100,000,000,000 can be tested in about 65 seconds, leaving only 132,196 undecided \
 //! Limit 10,000: For BB5 the first 100,000,000,000 can be tested in about 145 seconds, leaving only 115,224 undecided \
+//! Limit 25,000: For BB5 the first 100,000,000,000 can be tested in about 13 minutes, leaving only 110,727 undecided \
 //! The runtimes largely depend on how many CPUs the system has, this is measured on an older 8 core (4 core / 4 Hyper-threading) notebook.
+//! Limit 10,000: For BB5 the first 100,000,000,000 can be tested in about 75 seconds, leaving only 115,224 undecided on a faster 12 core (6/6) desktop system. \
+//! Limit 50,000: For BB5 the first 100,000,000,000 can be tested in about 30 minutes, leaving only 110,267 undecided on a faster 12 core (6/6) desktop system. \
 //! Therefore it is wiser to run the bouncer before attempting to catch the other cyclers.
+//! Limit 10,000: For the bb_challenge file of 88,664,064 machines, 62,291,319 are identified as cyclers.
 //! How it works: \
 //! When run, every step is recorded (StepCycler) so repeating steps can be identified.
 //! A map is created for all table fields which stores the steps which used this table field, \
@@ -27,6 +31,8 @@
 //! checked if each step is identical. \
 //! If this is the case then also the tape will be compared. It needs to match for the \
 //! relevant part, meaning all cells touched in this cycle will be compared.
+
+// TODO cycle validation with 3rd and 4th cycle
 
 #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
 use crate::tape_utils::U128Ext;
@@ -79,7 +85,7 @@ impl DeciderCycler {
 
         #[cfg(feature = "bb_enable_html_reports")]
         {
-            decider.data.path = crate::html::get_html_path("cycler_long", config);
+            decider.data.path = crate::html::get_html_path("cycler", config);
         }
 
         decider

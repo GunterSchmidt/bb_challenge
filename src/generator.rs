@@ -107,7 +107,7 @@ pub fn create_all_transition_permutations(n_states: usize) -> Vec<TransitionSymb
 
 /// Number of Turing machines for Alphabet 2 and n states (limit n = 7) \
 /// Formula (4n+1)^2n \
-/// Source: https://bbchallenge.org/story#definition-of-bb
+/// Source: <https://bbchallenge.org/story#definition-of-bb>
 pub fn num_turing_machine_permutations_u64(n_states: usize) -> u64 {
     // 4 * n_states + 1: Each state has 2 directions and 2 symbols, giving 4 permutations. Additional there is one hold permutation.
     // pow(2 * n_states): now a table is created for each state with two read symbols and each field can hold all permutations.
@@ -117,7 +117,7 @@ pub fn num_turing_machine_permutations_u64(n_states: usize) -> u64 {
 
 /// Number of Turing machines for Alphabet 2 and n states (limit n = 10) \
 /// Formula (4n+1)^2n \
-/// Source: https://bbchallenge.org/story#definition-of-bb
+/// Source: <https://bbchallenge.org/story#definition-of-bb>
 pub fn num_turing_machine_permutations(n_states: usize) -> u128 {
     assert!(n_states <= 10, "Limit for u128 is a maximum of 10 states.");
     ((4 * n_states + 1) as u128).pow(2 * n_states as u32)

@@ -1,3 +1,6 @@
+//! This crate hold the Config struct which is used to configure a decider run.
+// TODO doc function, the doc is on the fields
+
 use std::{fmt::Display, time::SystemTime};
 
 use hashbrown::HashMap;
@@ -25,7 +28,8 @@ const CPU_UTILIZATION_DEFAULT: usize = 100;
 
 const GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION: usize = 500_000;
 const GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION: usize = 5_000_000;
-const WRITE_HTML_STEP_LIMIT: u32 = 100_000;
+const WRITE_HTML_STEP_LIMIT: u32 = 50_000_000;
+const WRITE_HTML_LINE_LIMIT: u32 = 100_000;
 
 // --- Below are program defining definitions, where changes may have a serious impact. ---
 
@@ -54,7 +58,21 @@ pub(crate) const MAX_SYMBOLS_GENERIC: usize = 10;
 // TODO include file path?
 // Display for Config
 /// This sets the configuration for the decider run. \
-/// Use new_default(n_states) or the builder to create a Config.
+/// Use [Self::new_default] or the [Self::builder] to create a Config. \
+/// Since the config is designed immutable, one can use [Self::builder_from_config] to copy values of an existing config and make changes.
+/// # Example
+/// ```
+/// use bb_challenge::config::Config;
+///
+/// let config = Config::new_default(5);
+/// assert_eq!(5, config.n_states());
+/// // For assert, get the default step limit for the given n_states = 5.
+/// let step_limit = Config::step_limit_hold_default(5);
+/// assert_eq!(step_limit, config.step_limit_hold());
+///
+/// let config = Config::builder(5).step_limit_hold(10_000).build();
+/// assert_eq!(10_000, config.step_limit_hold());
+/// ```
 #[derive(Debug, Clone)]
 pub struct Config {
     n_states: usize,
@@ -98,6 +116,7 @@ pub struct Config {
     /// Outputs decider steps into an html file
     write_html_file: bool,
     write_html_step_limit: u32,
+    write_html_line_limit: u32,
 }
 
 impl Config {
@@ -106,7 +125,7 @@ impl Config {
         ConfigBuilder::new(n_states)
     }
 
-    /// Builder to initialize required values.
+    /// Builder to initialize required values taking over values of existing config.
     pub fn builder_from_config(config: &Config) -> ConfigBuilder {
         ConfigBuilder::new_config(config)
     }
@@ -135,6 +154,7 @@ impl Config {
             step_limit_cycler: Self::step_limit_cycler_default(n_states),
             write_html_file: false,
             write_html_step_limit: WRITE_HTML_STEP_LIMIT,
+            write_html_line_limit: WRITE_HTML_LINE_LIMIT,
         }
     }
 
@@ -295,6 +315,10 @@ impl Config {
         self.write_html_file
     }
 
+    pub fn write_html_line_limit(&self) -> u32 {
+        self.write_html_line_limit
+    }
+
     pub fn write_html_step_limit(&self) -> u32 {
         self.write_html_step_limit
     }
@@ -337,6 +361,7 @@ pub struct ConfigBuilder {
     use_local_time: Option<bool>,
     write_html_file: Option<bool>,
     write_html_step_limit: Option<u32>,
+    write_html_line_limit: Option<u32>,
 }
 
 impl ConfigBuilder {
@@ -366,6 +391,7 @@ impl ConfigBuilder {
             use_local_time: Some(config.use_local_time),
             write_html_file: Some(config.write_html_file),
             write_html_step_limit: Some(config.write_html_step_limit),
+            write_html_line_limit: Some(config.write_html_line_limit),
         }
     }
 
@@ -445,6 +471,11 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn write_html_line_limit(mut self, value: u32) -> Self {
+        self.write_html_line_limit = Some(value);
+        self
+    }
+
     pub fn build(self) -> Config {
         #[allow(unused_mut)]
         let mut config = Config {
@@ -483,6 +514,7 @@ impl ConfigBuilder {
             use_local_time: self.use_local_time.unwrap_or(true),
             write_html_file: self.write_html_file.unwrap_or(false),
             write_html_step_limit: self.write_html_step_limit.unwrap_or(WRITE_HTML_STEP_LIMIT),
+            write_html_line_limit: self.write_html_line_limit.unwrap_or(WRITE_HTML_LINE_LIMIT),
         };
 
         #[cfg(not(feature = "bb_enable_html_reports"))]
