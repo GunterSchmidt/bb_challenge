@@ -43,6 +43,7 @@ use crate::{
     machine::Machine,
     status::{EndlessReason, MachineStatus},
     step_record::StepRecordU128,
+    tape_utils::{MIDDLE_BIT_U128, TAPE_SIZE_BIT_U128},
     ResultUnitEndReason,
 };
 
@@ -51,16 +52,11 @@ const DEBUG_EXTRA: bool = true;
 #[cfg(debug_assertions)]
 const DEBUG_MIN_DISTANCE: usize = 75;
 
-type TapeType = u128;
-const TAPE_SIZE_BIT: StepTypeSmall = 128;
-const MIDDLE_BIT: StepTypeSmall = TAPE_SIZE_BIT / 2 - 1;
-
+/// Initial capacity for step recorder. Not so relevant.
 const MAX_INIT_CAPACITY: usize = 10_000;
 /// Reduces number of checks. This relies on a cycle which always has one tape side 0.
 const SEARCH_ONLY_0_SIDE_FROM: usize = 50;
 
-// TODO for clarity move tr and tape_shifted into this struct
-// TODO Implement Tape Long for larger cycles in v6
 #[derive(Debug)]
 pub struct DeciderCycler {
     data: DeciderData128,
@@ -312,19 +308,19 @@ impl DeciderCycler {
                     // When shifted, eventually all bits on that side are used after x cycles, check all
                     #[allow(clippy::comparison_chain)]
                     if total_shift > 0 {
-                        max_r = MIDDLE_BIT as isize // 31 / 63
+                        max_r = MIDDLE_BIT_U128 as isize // 31 / 63
                     } else if total_shift < 0 {
-                        min_l = TAPE_SIZE_BIT as isize / -2 // -32 / -64
+                        min_l = TAPE_SIZE_BIT_U128 as isize / -2 // -32 / -64
                     }
 
                     // extract relevant bits and compare (bits counted from right, starting with 0, middle is bit 31)
-                    let start_bit = MIDDLE_BIT as isize - max_r;
-                    let end_bit = MIDDLE_BIT as isize - min_l; // Inclusive
+                    let start_bit = MIDDLE_BIT_U128 as isize - max_r;
+                    let end_bit = MIDDLE_BIT_U128 as isize - min_l; // Inclusive
                     let num_bits = end_bit - start_bit + 1;
                     // Create the mask for the lowest 'num_bits' bits.
                     //    (1 << 10) gives 0b10000000000 (1 followed by 10 zeros)
                     //    Subtracting 1 gives 0b01111111111 (10 ones) -> 0x3FF in hex
-                    let mask = (((1 as TapeType) << num_bits) - 1) << start_bit;
+                    let mask: u128 = ((1 << num_bits) - 1) << start_bit;
                     // #[cfg(feature = "bb_debug_cycler")]
                     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
                     {
