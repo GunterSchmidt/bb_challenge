@@ -48,7 +48,7 @@ use crate::{
 };
 
 #[cfg(debug_assertions)]
-const DEBUG_EXTRA: bool = true;
+const DEBUG_EXTRA: bool = false;
 #[cfg(debug_assertions)]
 const DEBUG_MIN_DISTANCE: usize = 75;
 
@@ -71,7 +71,6 @@ pub struct DeciderCycler {
 impl DeciderCycler {
     pub fn new(config: &Config) -> Self {
         let cap = (config.step_limit_cycler() as usize).min(MAX_INIT_CAPACITY);
-        #[allow(unused_mut)]
         let mut decider = Self {
             data: DeciderData128::new(config),
             steps: Vec::with_capacity(cap),
@@ -95,8 +94,14 @@ impl DeciderCycler {
             map.clear();
         }
     }
+}
 
-    fn decide_machine_cycler(&mut self, machine: &Machine) -> MachineStatus {
+impl Decider for DeciderCycler {
+    fn decider_id() -> &'static decider::DeciderId {
+        &DECIDER_CYCLER_ID
+    }
+
+    fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
         // #[cfg(debug_assertions)]
         // {
         //     if machine.id != DEBUG_MACHINE_NO {
@@ -109,6 +114,9 @@ impl DeciderCycler {
         // if machine.id() >= 1_341_092 {
         //     print!("");
         // }
+
+        #[cfg(feature = "bb_enable_html_reports")]
+        self.data.write_html_file_start(Self::decider_id(), machine);
 
         // initialize decider
         self.clear();
@@ -143,6 +151,15 @@ impl DeciderCycler {
             {
                 self.data.num_steps = self.steps.len() as StepTypeBig;
                 if self.data.is_done() {
+                    #[cfg(feature = "bb_enable_html_reports")]
+                    {
+                        self.data.write_html_file_end();
+                        // close the file so it can be renamed (not sure if necessary)
+                        // self.file = None;
+
+                        // html::rename_file_to_status(&self.data.path.unwrap(), &self.data.file_name.unwrap(), &ms);
+                        self.data.rename_html_file_to_status();
+                    }
                     return self.data.status;
                 } else {
                     panic!("Logic error");
@@ -384,39 +401,6 @@ impl DeciderCycler {
                 }
             }
         }
-    }
-
-    #[cfg(feature = "bb_enable_html_reports")]
-    fn decide_machine_cycler_html(&mut self, machine: &Machine) -> MachineStatus {
-        #[cfg(feature = "bb_enable_html_reports")]
-        self.data.write_html_file_start(Self::decider_id(), machine);
-
-        let ms = self.decide_machine_cycler(machine);
-        self.data.write_html_file_end();
-        // close the file so it can be renamed (not sure if necessary)
-        // self.file = None;
-
-        // html::rename_file_to_status(&self.data.path.unwrap(), &self.data.file_name.unwrap(), &ms);
-        self.data.rename_html_file_to_status();
-
-        ms
-    }
-}
-
-impl Decider for DeciderCycler {
-    fn decider_id() -> &'static decider::DeciderId {
-        &DECIDER_CYCLER_ID
-    }
-
-    fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
-        #[cfg(feature = "bb_enable_html_reports")]
-        if self.data.is_write_html_file() {
-            self.decide_machine_cycler_html(machine)
-        } else {
-            self.decide_machine_cycler(machine)
-        }
-        #[cfg(not(feature = "bb_enable_html_reports"))]
-        self.decide_machine_cycler(machine)
     }
 
     // tape_long_bits in machine?
