@@ -17,9 +17,11 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, MAIN_SEPARATOR_STR};
 
-use crate::config::Config;
+use crate::config::{Config, StepTypeBig};
+use crate::decider_data_128::DeciderData128;
 use crate::machine::Machine;
 use crate::status::MachineStatus;
+use crate::tape_utils::TapeLongPositions;
 use crate::transition_symbol2::TransitionSymbol2;
 
 const CSS_FOLDER: &str = "styles";
@@ -284,62 +286,115 @@ pub fn write_file_end(file: &mut File) -> io::Result<()> {
     Ok(())
 }
 
-pub fn step_to_html_64(
-    step_no: usize,
-    tr_field_id: usize,
-    transition: &TransitionSymbol2,
-    tape_shifted: u64,
-) -> String {
-    format!(
-        "Step {} {} {transition}: {}</br>",
-        format_right_aligned_int_html(step_no, 5),
-        TransitionSymbol2::field_id_to_string(tr_field_id),
-        crate::tape_utils::U64Ext::to_binary_split_html_string(&tape_shifted, transition),
-    )
-}
-
-pub fn step_to_html_128(
-    step_no: usize,
-    tr_field_id: usize,
-    transition: &TransitionSymbol2,
-    tape_shifted: u128,
-) -> String {
-    format!(
-        "<p class=\"p_step\">Step {} {} {transition}: {}</p>",
-        format_right_aligned_int_html(step_no, 5),
-        TransitionSymbol2::field_id_to_string(tr_field_id),
-        crate::tape_utils::U128Ext::to_binary_split_html_string(&tape_shifted, transition),
-    )
-}
-
-pub fn write_step_html_64(
-    file: &mut File,
-    step_no: usize,
-    tr_field_id: usize,
-    transition: &TransitionSymbol2,
-    tape_shifted: u64,
-) {
-    let text = step_to_html_64(step_no, tr_field_id, transition, tape_shifted);
-    write_html(file, &text);
-}
-
+/// Deprecated
 pub fn write_step_html_128(
     file: &mut File,
-    step_no: usize,
+    step_no: StepTypeBig,
     tr_field_id: usize,
-    transition: &TransitionSymbol2,
+    transition: TransitionSymbol2,
     tape_shifted: u128,
+    pos_middle: usize,
 ) {
-    let text = step_to_html_128(step_no, tr_field_id, transition, tape_shifted);
-    write_html(file, &text);
+    let data = StepHtml {
+        step_no,
+        tr_field_id,
+        transition,
+        tape_shifted,
+        is_u128_tape: true,
+        pos_middle,
+        tape_long_positions: None,
+    };
+    data.write_step_html(file);
 }
 
-/// Writes a text into an open Html file. This does not give an error message back as at this point it is unlikely to occur.
+/// Writes a text into an open Html file.
+/// # Panics
+/// Panics on file write error. At this point it is unlikely to occur.
 pub fn write_html(file: &mut File, text: &str) {
     writeln!(file, "{text}",).expect("Html write error");
 }
 
-/// Writes a paragraphed text into an open Html file. This does not give an error message back as at this point it is unlikely to occur.
+/// Writes a paragraphed text into an open Html file.
+/// # Panics
+/// Panics on file write error. At this point it is unlikely to occur.
 pub fn write_html_p(file: &mut File, text: &str) {
     writeln!(file, "<p>{text}</p>",).expect("Html write error");
+}
+
+/// All data required to write a step to the html file and write functionality.
+pub struct StepHtml {
+    /// Current step no, starting at 1.
+    pub step_no: StepTypeBig,
+    /// Table field which lead to the current transition.
+    pub tr_field_id: usize,
+    /// Current transition
+    pub transition: TransitionSymbol2,
+    /// tape after the transition was executed
+    pub tape_shifted: u128,
+    /// if false the lower 64 bit will be used. This can also be used to only print the middle part if the tape is shifted before by 32 bit.
+    pub is_u128_tape: bool,
+    /// current pos_middle
+    pub pos_middle: usize,
+    /// current tape_long if available or necessary
+    pub tape_long_positions: Option<TapeLongPositions>,
+}
+
+impl StepHtml {
+    /// Write a single step to the html file.
+    /// # Panics
+    /// If file cannot be written. Unlikely as the file is already open for write.
+    pub fn write_step_html(&self, file: &mut File) {
+        write_html(file, &self.step_to_html());
+    }
+
+    /// Formats the line
+    fn step_to_html(&self) -> String {
+        let binary = if self.is_u128_tape {
+            crate::tape_utils::U128Ext::to_binary_split_html_string(
+                &self.tape_shifted,
+                &self.transition,
+            )
+        } else {
+            crate::tape_utils::U64Ext::to_binary_split_html_string(
+                &(self.tape_shifted as u64),
+                &self.transition,
+            )
+        };
+        let tl_pos = if let Some(tp) = &self.tape_long_positions {
+            format!(
+                " TL P{} {}..{}",
+                tp.tl_pos, tp.tl_low_bound, tp.tl_high_bound
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            "<p class=\"p_step\">Step {} {} {}: {binary} P: {}{}</p>",
+            Self::format_right_aligned_int_html(self.step_no, 5),
+            TransitionSymbol2::field_id_to_string(self.tr_field_id),
+            self.transition,
+            self.pos_middle,
+            tl_pos
+        )
+    }
+
+    /// Formats an Integer right aligned
+    pub fn format_right_aligned_int_html(number: StepTypeBig, size: usize) -> String {
+        let s = format!("{number:>size$}");
+        s.replace(" ", "&nbsp;")
+    }
+}
+
+impl From<&DeciderData128> for StepHtml {
+    fn from(data: &DeciderData128) -> Self {
+        Self {
+            step_no: data.step_no,
+            tr_field_id: data.tr_field,
+            transition: data.tr,
+            tape_shifted: data.tape_shifted(),
+            is_u128_tape: true,
+            pos_middle: data.tl.pos_middle(),
+            tape_long_positions: Some(data.tape_long_positions()),
+        }
+    }
 }

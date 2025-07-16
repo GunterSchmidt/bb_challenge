@@ -49,7 +49,8 @@ use crate::html;
 use crate::tape_utils::{VecU32Ext, TAPE_DISPLAY_RANGE_128};
 use crate::{
     config::{
-        Config, IdBig, StepTypeBig, StepTypeSmall, MAX_TAPE_GROWTH, TAPE_SIZE_INIT_CELL_BLOCKS,
+        Config, IdBig, StepTypeBig, StepTypeSmall, MAX_TAPE_GROWTH_BLOCKS,
+        TAPE_SIZE_INIT_CELL_BLOCKS,
     },
     decider::{self, Decider, DECIDER_HOLD_ID},
     decider_result::BatchData,
@@ -107,7 +108,7 @@ pub struct DeciderHoldU128Long {
     status: MachineStatus,
     step_limit: StepTypeBig,
     #[cfg(feature = "bb_enable_html_reports")]
-    write_html_step_limit: u32,
+    write_html_line_limit: u32,
     #[cfg(feature = "bb_enable_html_reports")]
     path: String,
     #[cfg(feature = "bb_enable_html_reports")]
@@ -135,8 +136,8 @@ impl DeciderHoldU128Long {
             status: MachineStatus::NoDecision,
             step_limit: config.step_limit_hold(),
             #[cfg(feature = "bb_enable_html_reports")]
-            write_html_step_limit: if config.write_html_file() {
-                config.write_html_step_limit()
+            write_html_line_limit: if config.write_html_file() {
+                config.write_html_line_limit()
             } else {
                 0
             },
@@ -227,7 +228,7 @@ impl DeciderHoldU128Long {
                 self.status = MachineStatus::DecidedHolds(self.num_steps);
                 // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
                 #[cfg(feature = "bb_enable_html_reports")]
-                if self.write_html_step_limit > 0 {
+                if self.write_html_line_limit > 0 {
                     self.write_step_html();
                     self.write_html_p(
                         format!("Decided: Holds after {} steps.", self.num_steps).as_str(),
@@ -237,7 +238,7 @@ impl DeciderHoldU128Long {
             } else if self.num_steps > self.step_limit {
                 self.status = self.undecided_step_limit();
                 #[cfg(feature = "bb_enable_html_reports")]
-                if self.write_html_step_limit > 0 {
+                if self.write_html_line_limit > 0 {
                     self.write_step_html();
                     self.write_html_p(
                         format!("Undecided: Limit of {} steps reached.", self.step_limit).as_str(),
@@ -537,7 +538,8 @@ impl DeciderHoldU128Long {
                 println!("{}", self.step_to_string());
             }
             #[cfg(feature = "bb_enable_html_reports")]
-            if self.write_html_step_limit > 0 && self.num_steps <= self.write_html_step_limit {
+            // TODO this is actually incorrect, but this decider is deprecated
+            if self.write_html_line_limit > 0 && self.num_steps <= self.write_html_line_limit {
                 self.write_step_html();
             }
         }
@@ -564,7 +566,7 @@ impl DeciderHoldU128Long {
                 // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
                 self.status = MachineStatus::DecidedHolds(self.num_steps);
                 #[cfg(feature = "bb_enable_html_reports")]
-                if self.write_html_step_limit > 0 {
+                if self.write_html_line_limit > 0 {
                     self.write_step_html();
                     self.write_html_p(
                         format!("Decided: Holds after {} steps.", self.num_steps).as_str(),
@@ -574,7 +576,7 @@ impl DeciderHoldU128Long {
             } else if self.num_steps > self.step_limit {
                 self.status = self.undecided_step_limit();
                 #[cfg(feature = "bb_enable_html_reports")]
-                if self.write_html_step_limit > 0 {
+                if self.write_html_line_limit > 0 {
                     self.write_step_html();
                     self.write_html_p(
                         format!("Undecided: Limit of {} steps reached.", self.step_limit).as_str(),
@@ -678,7 +680,7 @@ impl DeciderHoldU128Long {
                 println!("{}", self.step_to_string());
             }
             #[cfg(feature = "bb_enable_html_reports")]
-            if self.write_html_step_limit > 0 && self.num_steps <= self.write_html_step_limit {
+            if self.write_html_line_limit > 0 && self.num_steps <= self.write_html_line_limit {
                 self.write_step_html();
             }
         }
@@ -759,7 +761,7 @@ impl DeciderHoldU128Long {
         if self.tl_pos < self.tl_low_bound + 1 {
             if self.tl_pos == 0 {
                 // Example: len = 100, grow_by = 40 -> new len = 140, pos 0 -> pos 40
-                let grow_by = MAX_TAPE_GROWTH.min(self.tape_long.len());
+                let grow_by = MAX_TAPE_GROWTH_BLOCKS.min(self.tape_long.len());
                 let old_len = self.tape_long.len();
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 println!(
@@ -788,7 +790,7 @@ impl DeciderHoldU128Long {
             self.tl_high_bound += 1;
             if self.tl_high_bound == self.tape_long.len() {
                 // Example: len = 100, grow_by = 40 -> new len = 140, pos 96 -> pos 96
-                let grow_by = MAX_TAPE_GROWTH.min(self.tape_long.len());
+                let grow_by = MAX_TAPE_GROWTH_BLOCKS.min(self.tape_long.len());
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 println!(
                     "  Tape Resize at end: {} -> {}",
@@ -917,10 +919,11 @@ impl DeciderHoldU128Long {
     fn write_step_html(&mut self) {
         html::write_step_html_128(
             self.file.as_mut().unwrap(),
-            self.num_steps as usize,
+            self.num_steps,
             self.tr_field_id,
-            &self.tr,
+            self.tr,
             self.tape_shifted,
+            self.pos_middle,
         );
     }
 
@@ -953,7 +956,7 @@ impl Decider for DeciderHoldU128Long {
         self.transition_table = *machine.transition_table();
 
         #[cfg(feature = "bb_enable_html_reports")]
-        if self.write_html_step_limit > 0 {
+        if self.write_html_line_limit > 0 {
             let (file, _f_name) =
                 html::create_html_file_start(&self.path, Self::decider_id().name, machine)
                     .expect("Html file could not be written");
@@ -986,12 +989,12 @@ impl Decider for DeciderHoldU128Long {
         };
 
         #[cfg(feature = "bb_enable_html_reports")]
-        if self.write_html_step_limit > 0 {
-            if self.num_steps >= self.write_html_step_limit {
+        if self.write_html_line_limit > 0 {
+            if self.num_steps >= self.write_html_line_limit {
                 self.write_html_p(
                     format!(
                         "HTML Step Limit ({}) reached, total steps: {}.",
-                        self.write_html_step_limit, self.num_steps
+                        self.write_html_line_limit, self.num_steps
                     )
                     .as_str(),
                 );

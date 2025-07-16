@@ -38,7 +38,8 @@
 use crate::tape_utils::U128Ext;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES},
-    decider::{self, Decider, DeciderData128, DECIDER_CYCLER_ID},
+    decider::{self, Decider, DECIDER_CYCLER_ID},
+    decider_data_128::DeciderData128,
     decider_result::BatchData,
     machine::Machine,
     status::{EndlessReason, MachineStatus},
@@ -121,35 +122,28 @@ impl Decider for DeciderCycler {
         // initialize decider
         self.clear();
 
-        // tape for storage in Step with cell before transition at position u32 top bit
-        // this tape shifts in every step, so that the head is always at bit 31
-        // let mut tape_shifted: TapeType = 0;
-        // let mut high_bound: u32 = MIDDLE_BIT;
-        // let mut low_bound: i32 = MIDDLE_BIT as i32;
-
         // Initialize transition with A0 as start
-        // let mut tr; // = TRANSITION_SYM2_START;
         let mut read_symbol_next;
         let mut tr_field_next = 2;
 
         // loop over transitions to write tape
         loop {
             // use previously identified field
-            self.data.tr_field_id = tr_field_next;
+            self.data.tr_field = tr_field_next;
 
             // store next step
             // map for each transition, which step went into it
             // maps: store step id leading to this
-            self.maps_1d[self.data.tr_field_id].push(self.steps.len());
-            let mut step = StepRecordU128::new(self.data.tr_field_id, 0, self.data.tape_shifted());
-            self.data.tr = machine.transition(self.data.tr_field_id);
+            self.maps_1d[self.data.tr_field].push(self.steps.len());
+            let mut step = StepRecordU128::new(self.data.tr_field, 0, self.data.tape_shifted());
+            self.data.tr = machine.transition(self.data.tr_field);
             step.direction = self.data.tr.direction();
             self.steps.push(step);
 
             // check if done
             if self.data.tr.is_hold() || self.steps.len() as StepTypeSmall >= self.data.step_limit()
             {
-                self.data.num_steps = self.steps.len() as StepTypeBig;
+                self.data.step_no = self.steps.len() as StepTypeBig;
                 if self.data.is_done() {
                     #[cfg(feature = "bb_enable_html_reports")]
                     {
@@ -169,9 +163,11 @@ impl Decider for DeciderCycler {
             #[cfg(feature = "bb_enable_html_reports")]
             {
                 // required because num_steps is not updated normally
-                self.data.num_steps = self.steps.len() as StepTypeBig;
+                self.data.step_no = self.steps.len() as StepTypeBig;
             }
-            self.data.update_tape_single_step();
+            if !self.data.update_tape_single_step() {
+                return self.data.status;
+            };
 
             // get next transition
             read_symbol_next = self.data.get_current_symbol();
@@ -302,7 +298,7 @@ impl Decider for DeciderCycler {
                                 machine
                             );
                         }
-                        return MachineStatus::DecidedEndless(EndlessReason::Cycle(
+                        return MachineStatus::DecidedEndless(EndlessReason::Cycler(
                             self.steps.len() as StepTypeSmall,
                             distance as StepTypeSmall,
                         ));
@@ -390,7 +386,7 @@ impl Decider for DeciderCycler {
                                 machine
                             );
                         }
-                        return MachineStatus::DecidedEndless(EndlessReason::Cycle(
+                        return MachineStatus::DecidedEndless(EndlessReason::Cycler(
                             self.steps.len() as StepTypeSmall,
                             distance as StepTypeSmall,
                         ));
@@ -424,9 +420,7 @@ mod tests {
 
     #[test]
     fn decider_cycler_is_cycle_bb4_1166084() {
-        // check does not apply
         let transitions = "1RB1LD_1RC---_1LC0RA_0RA0RA";
-
         let machine = Machine::from_standard_tm_text_format(1166084, &transitions).unwrap();
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
@@ -436,15 +430,13 @@ mod tests {
         // println!("Status: {machine_status}");
         assert_eq!(
             machine_status,
-            MachineStatus::DecidedEndless(EndlessReason::Cycle(8, 2))
+            MachineStatus::DecidedEndless(EndlessReason::Cycler(8, 2))
         )
     }
 
     #[test]
     fn decider_cycler_is_cycle_bb4_43788688() {
-        // check does not apply
         let transitions = "1RB---_1LC0RC_0LD1LC_1RA0RA";
-
         let machine = Machine::from_standard_tm_text_format(43788688, &transitions).unwrap();
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
@@ -454,13 +446,12 @@ mod tests {
         // println!("Status: {machine_status}");
         assert_eq!(
             machine_status,
-            MachineStatus::DecidedEndless(EndlessReason::Cycle(90, 26))
+            MachineStatus::DecidedEndless(EndlessReason::Cycler(90, 26))
         )
     }
 
     #[test]
     fn decider_cycler_holds_after_107_steps() {
-        // check does not apply
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RC", "1LC"));
         transitions.push(("---", "1LD"));

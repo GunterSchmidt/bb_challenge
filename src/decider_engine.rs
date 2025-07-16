@@ -30,6 +30,9 @@ pub fn run_decider_chain_batch(
         first_decider.config(),
         batch_data.result_decided.steps_max(),
     );
+    for dc in decider_configs.iter().skip(1) {
+        result_batch.enhance_machines_un_decided(dc.config());
+    }
     // run first decider which includes pre-decider elimination
     // let mut undecided_available = true;
     let mut stop_run = false;
@@ -139,6 +142,9 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
     let mut duration_decider = Duration::default();
     data_provider.set_batch_size_for_num_threads(1);
     let mut result_main = DeciderResultStats::new(first_config);
+    for dc in decider_configs.iter() {
+        result_main.enhance_machines_un_decided(dc.config());
+    }
     loop {
         // generate or get one batch of machines
         let start_gen = Instant::now();
@@ -278,6 +284,9 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
         );
     }
     let mut result_main = DeciderResultStats::new(first_config);
+    for dc in decider_configs.iter() {
+        result_main.enhance_machines_un_decided(dc.config());
+    }
     let mut duration_data_provider = Duration::default();
     let mut duration_decider = Duration::default();
 
@@ -510,6 +519,9 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
     }
 
     let mut result_main = DeciderResultStats::new(first_config);
+    for dc in decider_configs.iter().skip(1) {
+        result_main.enhance_machines_un_decided(dc.config());
+    }
     let mut duration_data_provider = Duration::default();
     let mut duration_decider = Duration::default();
 

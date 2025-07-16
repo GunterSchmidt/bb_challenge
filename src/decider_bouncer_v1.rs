@@ -41,7 +41,7 @@ const POS_HALF: TapeType = 1 << MIDDLE_BIT;
 
 // const SINUS_RHYTHM_GIVE_UP: usize = 100;
 
-pub struct DeciderBouncer {
+pub struct DeciderBouncerV1 {
     step_limit: StepTypeSmall,
     /// Stores each step and its tape
     steps: Vec<StepExpanding>,
@@ -67,7 +67,7 @@ pub struct DeciderBouncer {
     machine_info: crate::machine_info::MachineInfo,
 }
 
-impl DeciderBouncer {
+impl DeciderBouncerV1 {
     pub fn new(config: &Config) -> Self {
         Self {
             step_limit: config.step_limit_bouncer(),
@@ -833,7 +833,7 @@ impl DeciderBouncer {
     }
 }
 
-impl Default for DeciderBouncer {
+impl Default for DeciderBouncerV1 {
     fn default() -> Self {
         let step_limit = Config::step_limit_bouncer_default(N_STATES_DEFAULT);
         Self {
@@ -859,7 +859,7 @@ impl Default for DeciderBouncer {
     }
 }
 
-impl Decider for DeciderBouncer {
+impl Decider for DeciderBouncerV1 {
     fn decider_id() -> &'static decider::DeciderId {
         &DECIDER_BOUNCER_ID
     }
@@ -980,7 +980,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_41399() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB3 41399 (low bound check)
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1002,7 +1002,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_84080() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB3 84080 (high bound check)
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1024,7 +1024,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_112641() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB3 112641
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1046,7 +1046,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_569564() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB3 569564
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1067,7 +1067,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_584567() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB3 584567 step_delta doubles
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1087,7 +1087,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_1265977() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB3 1265977 step_delta doubles
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1107,7 +1107,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_1970063() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB3 1970063 step_delta iterates same delta +-
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1127,7 +1127,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_3044529() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB3 3044529 A0 always same low_bound and pos = MIDDLE_BIT
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1147,7 +1147,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_3554911() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB3 3554911 A0 always same low_bound and pos = MIDDLE_BIT
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1167,7 +1167,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_6317243() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB4 Start out of sync
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1188,7 +1188,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_13318557() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB4 Start High bound out of sync
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1209,7 +1209,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_15783962() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB4 ascending shift with gap and linear growing distance between head pos
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1230,7 +1230,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_32538705() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB4 sinus, but not with A0
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1251,7 +1251,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb3_45935166() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB4 delta of delta rhythm 22, 14, 20 repeats; requires 128-bit tape
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1272,7 +1272,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb4_2793430() {
         let config = Config::new_default(4);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB4 every 2nd step
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1293,7 +1293,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_bb4_64379691() {
         let config = Config::new_default(4);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB4 every steps repeating, but with growing amount of identical steps
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1329,7 +1329,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_not_bb3_max_651320() {
         let config = Config::new_default(3);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB3 Max
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1349,7 +1349,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_not_bb4_max_322636617() {
         let config = Config::new_default(4);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB4 Max
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -1370,7 +1370,7 @@ mod tests {
     #[test]
     fn test_decider_expanding_sinus_applies_not_bb5_max() {
         let config = Config::new_default(5);
-        let mut decider = DeciderBouncer::new(&config);
+        let mut decider = DeciderBouncerV1::new(&config);
 
         // BB5 Max
         let mut transitions: Vec<(&str, &str)> = Vec::new();

@@ -17,10 +17,14 @@ pub enum PreDeciderReason {
     WritesOnlyZero,
 }
 
+/// Some defined reasons why the machine will never end.
+// TODO Display
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum EndlessReason {
-    /// Cycle (steps run, number of steps in the cycle)
-    Cycle(StepTypeSmall, StepTypeSmall),
+    /// Cycler (steps run, number of steps in the cycle)
+    Cycler(StepTypeSmall, StepTypeSmall),
+    /// Bouncer (steps run)
+    Bouncer(StepTypeSmall),
     ExpandingBouncer(ExpandingBouncerReason),
     ExpandingCycler,
 
@@ -124,7 +128,7 @@ impl Display for MachineStatus {
                                 .as_str(),
                             ),
                             UndecidedReason::TapeSizeLimit => s.push_str(
-                                format!("Undecided: Tape Size Limit {tape_size_limit} reached: left {steps} steps")
+                                format!("Undecided: Tape Size Limit {tape_size_limit} (blocks: {}) reached: {steps} steps", tape_size_limit / 32)
                                     .as_str(),
                             ),
                             UndecidedReason::Undefined => todo!(),

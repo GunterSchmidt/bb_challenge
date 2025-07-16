@@ -111,11 +111,10 @@
 // Step  4272 D0 1LA: 00000000000000000000000000000000_000000000000000000000000_00000000*01111100_100100100100100100100100_10010010010010010010010010010010
 use std::fmt::Display;
 
-#[cfg(all(debug_assertions, feature = "bb_debug"))]
-use crate::tape_utils::{VecU32Ext, TAPE_DISPLAY_RANGE_128};
 use crate::{
     config::Config,
-    decider::{self, Decider, DeciderData128, DECIDER_HOLD_ID},
+    decider::{self, Decider, DECIDER_HOLD_ID},
+    decider_data_128::DeciderData128,
     decider_result::BatchData,
     machine::Machine,
     status::MachineStatus,
@@ -167,7 +166,9 @@ impl DeciderHoldU128Long {
                 return self.data.status;
             }
 
-            self.data.update_tape_self_ref_speed_up();
+            if !self.data.update_tape_self_ref_speed_up() {
+                return self.data.status;
+            };
         }
     }
 
@@ -184,7 +185,9 @@ impl DeciderHoldU128Long {
                 return self.data.status;
             }
 
-            self.data.update_tape_single_step();
+            if !self.data.update_tape_single_step() {
+                return self.data.status;
+            };
         }
     }
 
@@ -262,6 +265,18 @@ impl Display for DeciderHoldU128Long {
 //
 //     assert_eq!(check_result, MachineStatus::DecidedHolds(107));
 // }
+
+pub fn test_decider_hold_u128(tm_text_format: &str) {
+    let machine = Machine::from_standard_tm_text_format(0, tm_text_format).unwrap();
+    // let config = Config::new_default(5);
+    let config = Config::builder(machine.n_states())
+        .write_html_file(true)
+        .step_limit_hold(50_000_000)
+        .build();
+    let check_result = DeciderHoldU128Long::decide_single_machine(&machine, &config);
+    println!("{}", check_result);
+    // assert_eq!(check_result, MachineStatus::DecidedHolds(47176870));
+}
 
 pub fn test_decider_hold_u128_applies_bb5_max() {
     let config = Config::new_default(5);

@@ -3,10 +3,12 @@ use crate::transition_symbol2::DirectionType;
 /// Record of every step to identify cycles.
 #[derive(Debug)]
 pub struct StepRecordU128 {
-    /// Allows quick compare of symbol & state in one step
+    /// Table field which holds the current transition, basically the state and current symbol which lead to this transition. \
+    /// Allows quick compare of symbol & state in one step.
     pub for_field_id: usize,
-    /// step goes to this direction, which is the result from symbol_state lookup
+    /// Direction of the current step; can be used to calculate -1 Left, 1 Right.
     pub direction: DirectionType,
+    /// tape before the current transition was executed
     pub tape_before: u128,
     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
     #[allow(dead_code)]

@@ -112,10 +112,10 @@ impl Machine {
     /// <https://www.sligocki.com/2022/10/09/standard-tm-format.html>
     pub fn from_standard_tm_text_format(
         machine_id: u64,
-        transitions_text: &str,
+        tm_text_format: &str,
     ) -> Result<Self, &'static str> {
         let tg = crate::transition_generic::TransitionTableGeneric::from_standard_tm_text_format(
-            transitions_text,
+            tm_text_format,
         )?;
         let t = TransitionTableSymbol2::try_from(tg)?;
         let m = Self::new(machine_id, t);

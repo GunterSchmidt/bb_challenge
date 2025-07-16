@@ -14,10 +14,11 @@ pub(crate) const FILE_PATH_BB5_CHALLENGE_DATA_FILE: &str =
     "res/all_5_states_undecided_machines_with_global_header";
 
 // Tape
-pub(crate) const TAPE_SIZE_INIT_CELL_BLOCKS: usize = 8;
+// TODO higher value
+pub(crate) const TAPE_SIZE_INIT_CELL_BLOCKS: usize = 64;
 /// Initial size tape long, min is 256. Must be a multiple of 32.
 pub(crate) const TAPE_SIZE_INIT_CELLS: usize = TAPE_SIZE_INIT_CELL_BLOCKS * 32;
-pub(crate) const MAX_TAPE_GROWTH: usize = 2 << 20; // 1 MB
+pub(crate) const MAX_TAPE_GROWTH_BLOCKS: usize = 2 << 17; // 131 KB
 
 /// Only used in Default to initialize, use new_default() instead.
 pub(crate) const N_STATES_DEFAULT: usize = 5;
@@ -28,7 +29,6 @@ const CPU_UTILIZATION_DEFAULT: usize = 100;
 
 const GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION: usize = 500_000;
 const GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION: usize = 5_000_000;
-const WRITE_HTML_STEP_LIMIT: u32 = 50_000_000;
 const WRITE_HTML_LINE_LIMIT: u32 = 100_000;
 
 // --- Below are program defining definitions, where changes may have a serious impact. ---
@@ -115,7 +115,10 @@ pub struct Config {
     use_local_time: bool,
     /// Outputs decider steps into an html file
     write_html_file: bool,
-    write_html_step_limit: u32,
+    /// First step No for output, allows basically e.g. [782_000_000..] and is ended by write_html_line_limit. \
+    /// Steps 0-1000 are always written.
+    write_html_step_start: StepTypeBig,
+    /// Limits the actually written steps. If set to 0 no html output is done.
     write_html_line_limit: u32,
 }
 
@@ -153,7 +156,7 @@ impl Config {
             step_limit_bouncer: Self::step_limit_bouncer_default(n_states),
             step_limit_cycler: Self::step_limit_cycler_default(n_states),
             write_html_file: false,
-            write_html_step_limit: WRITE_HTML_STEP_LIMIT,
+            write_html_step_start: 0,
             write_html_line_limit: WRITE_HTML_LINE_LIMIT,
         }
     }
@@ -176,9 +179,9 @@ impl Config {
         match n_states {
             1 => 1_000,
             2 => 1_000,
-            3 => 5_000,
-            4 => 20_000,
-            5 => 150_000,
+            3 => 1_000,
+            4 => 2_000,
+            5 => 2_000,
             _ => panic!("Cannot handle this step limit!"),
         }
     }
@@ -190,8 +193,8 @@ impl Config {
             1 => 100,
             2 => 100,
             3 => 250,
-            4 => 500,
-            5 => 5_100,
+            4 => 1_500,
+            5 => 1_500,
             _ => panic!("Cannot handle this step limit!"),
         }
     }
@@ -319,8 +322,8 @@ impl Config {
         self.write_html_line_limit
     }
 
-    pub fn write_html_step_limit(&self) -> u32 {
-        self.write_html_step_limit
+    pub fn write_html_step_start(&self) -> StepTypeBig {
+        self.write_html_step_start
     }
 
     // TODO TOML config file
@@ -360,7 +363,7 @@ pub struct ConfigBuilder {
     config_key_value: Option<HashMap<String, String>>,
     use_local_time: Option<bool>,
     write_html_file: Option<bool>,
-    write_html_step_limit: Option<u32>,
+    write_html_step_start: Option<StepTypeBig>,
     write_html_line_limit: Option<u32>,
 }
 
@@ -390,7 +393,7 @@ impl ConfigBuilder {
             config_key_value: Some(config.config_key_value.clone()),
             use_local_time: Some(config.use_local_time),
             write_html_file: Some(config.write_html_file),
-            write_html_step_limit: Some(config.write_html_step_limit),
+            write_html_step_start: Some(config.write_html_step_start),
             write_html_line_limit: Some(config.write_html_line_limit),
         }
     }
@@ -466,8 +469,8 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn write_html_step_limit(mut self, value: u32) -> Self {
-        self.write_html_step_limit = Some(value);
+    pub fn write_html_step_start(mut self, value: StepTypeBig) -> Self {
+        self.write_html_step_start = Some(value);
         self
     }
 
@@ -513,7 +516,7 @@ impl ConfigBuilder {
             creation_time: SystemTime::now(),
             use_local_time: self.use_local_time.unwrap_or(true),
             write_html_file: self.write_html_file.unwrap_or(false),
-            write_html_step_limit: self.write_html_step_limit.unwrap_or(WRITE_HTML_STEP_LIMIT),
+            write_html_step_start: self.write_html_step_start.unwrap_or(0),
             write_html_line_limit: self.write_html_line_limit.unwrap_or(WRITE_HTML_LINE_LIMIT),
         };
 

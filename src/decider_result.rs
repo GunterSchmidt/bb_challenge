@@ -187,6 +187,18 @@ impl DeciderResultStats {
         }
     }
 
+    pub fn enhance_machines_un_decided(&mut self, config: &Config) {
+        if self.limit_machines_decided < config.limit_machines_decided() {
+            self.limit_machines_decided = config.limit_machines_decided();
+            if self.machines_decided.is_none() {
+                self.machines_decided = Some(Vec::new());
+            }
+        }
+        if self.limit_machines_undecided < config.limit_machines_undecided() {
+            self.limit_machines_undecided = config.limit_machines_undecided();
+        }
+    }
+
     // /// Set steps_max a bit higher to avoid saving a lot of machines with low steps
     // pub fn init_steps_max(n_states: usize) -> StepTypeBig {
     //     match n_states {
@@ -736,7 +748,9 @@ impl EndlessCount {
             // EndlessReason::WritesOnlyZero => self.num_writes_only_zeros += 1,
             EndlessReason::WritesOnlyZero => todo!(),
             EndlessReason::ExpandingBouncer(_) => self.num_expanding_bouncer += 1,
-            EndlessReason::Cycle(steps, cycle_size) => {
+            // TODO steps? differentiate to expanding bouncer
+            EndlessReason::Bouncer(_) => self.num_expanding_bouncer += 1,
+            EndlessReason::Cycler(steps, cycle_size) => {
                 self.num_cycle += 1;
                 if *cycle_size > self.longest_cycle {
                     self.longest_cycle = *cycle_size;
@@ -1316,7 +1330,7 @@ impl CounterStats {
 
     pub fn add_endless_cycle(&mut self, endless_reason: &EndlessReason) {
         match endless_reason {
-            EndlessReason::Cycle(steps, cycle_size) => {
+            EndlessReason::Cycler(steps, cycle_size) => {
                 if *cycle_size < COUNTER_ARRAY_SIZE as StepTypeBig {
                     self.cycle_size_stats[*cycle_size as usize] += 1;
                 } else {

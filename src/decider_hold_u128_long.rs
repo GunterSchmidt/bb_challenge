@@ -49,7 +49,8 @@ use crate::html;
 use crate::tape_utils::{VecU32Ext, TAPE_DISPLAY_RANGE_128};
 use crate::{
     config::{
-        Config, IdBig, StepTypeBig, StepTypeSmall, MAX_TAPE_GROWTH, TAPE_SIZE_INIT_CELL_BLOCKS,
+        Config, IdBig, StepTypeBig, StepTypeSmall, MAX_TAPE_GROWTH_BLOCKS,
+        TAPE_SIZE_INIT_CELL_BLOCKS,
     },
     decider::{self, Decider, DECIDER_HOLD_ID},
     decider_result::BatchData,
@@ -136,7 +137,7 @@ impl DeciderHoldU128Long {
             step_limit: config.step_limit_hold(),
             #[cfg(feature = "bb_enable_html_reports")]
             write_html_step_limit: if config.write_html_file() {
-                config.write_html_step_limit()
+                config.write_html_line_limit()
             } else {
                 0
             },
@@ -627,7 +628,7 @@ impl DeciderHoldU128Long {
         if self.tl_pos < self.tl_low_bound + 1 {
             if self.tl_pos == 0 {
                 // Example: len = 100, grow_by = 40 -> new len = 140, pos 0 -> pos 40
-                let grow_by = MAX_TAPE_GROWTH.min(self.tape_long.len());
+                let grow_by = MAX_TAPE_GROWTH_BLOCKS.min(self.tape_long.len());
                 let old_len = self.tape_long.len();
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 println!(
@@ -656,7 +657,7 @@ impl DeciderHoldU128Long {
             self.tl_high_bound += 1;
             if self.tl_high_bound == self.tape_long.len() {
                 // Example: len = 100, grow_by = 40 -> new len = 140, pos 96 -> pos 96
-                let grow_by = MAX_TAPE_GROWTH.min(self.tape_long.len());
+                let grow_by = MAX_TAPE_GROWTH_BLOCKS.min(self.tape_long.len());
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 println!(
                     "  Tape Resize at end: {} -> {}",
@@ -785,10 +786,11 @@ impl DeciderHoldU128Long {
     fn write_step_html(&mut self) {
         html::write_step_html_128(
             self.file.as_mut().unwrap(),
-            self.num_steps as usize,
+            self.num_steps,
             self.tr_field_id,
-            &self.tr,
+            self.tr,
             self.tape_shifted,
+            self.pos_middle,
         );
     }
 
@@ -943,7 +945,7 @@ mod tests {
         // let config = Config::new_default(5);
         let config = Config::builder(5)
             .write_html_file(false)
-            .write_html_step_limit(1_000_000)
+            .write_html_line_limit(1_000_000)
             // .step_limit_hold(1_000_000)
             .build();
         // BB5 Max

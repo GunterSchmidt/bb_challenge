@@ -25,8 +25,8 @@ const GENERATOR_LIMIT: u64 = 50_000_000;
 criterion_group!(
     benches,
     benchmark_tape_type,
-    // benchmark_generator,
-    // benchmark_decider_gen_bb3,
+    benchmark_generator,
+    benchmark_decider_gen_bb3,
     benchmark_decider_gen_bb4,
 );
 criterion_main!(benches);
@@ -54,22 +54,30 @@ fn benchmark_decider_gen_bb3(c: &mut Criterion) {
     group.sample_size(10);
 
     // full single
-    group.bench_function("Decider (Data Provider Generator Full) BB3", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, false, Cores::SingleCore))
-    });
+    group.bench_function(
+        "Decider Cycler (Data Provider Generator Full) Single BB3",
+        |b| {
+            b.iter(|| {
+                bench_decider_data_provider_gen(&dc_cycler, &config, false, Cores::SingleCore)
+            })
+        },
+    );
 
     // reduced single
-    group.bench_function("Decider (Data Provider Generator Reduced) BB3", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, true, Cores::SingleCore))
-    });
+    group.bench_function(
+        "Decider Cycler (Data Provider Generator Reduced) Single BB3",
+        |b| {
+            b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, true, Cores::SingleCore))
+        },
+    );
 
     // full threaded
-    group.bench_function("Decider (Generator Full) Threaded BB3", |b| {
+    group.bench_function("Decider Cycler (Generator Full) Threaded BB3", |b| {
         b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, false, Cores::MultiCore))
     });
 
     // full reduced
-    group.bench_function("Decider (Generator Reduced) Threaded BB3", |b| {
+    group.bench_function("Decider Cycler (Generator Reduced) Threaded BB3", |b| {
         b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, true, Cores::MultiCore))
     });
 
@@ -86,14 +94,22 @@ fn benchmark_decider_gen_bb4(c: &mut Criterion) {
     group.sample_size(10);
 
     // full single
-    group.bench_function("Decider V2 (Data Provider Generator Full) BB4", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, false, Cores::SingleCore))
-    });
+    group.bench_function(
+        "Decider Cycler (Data Provider Generator Full) Single BB4",
+        |b| {
+            b.iter(|| {
+                bench_decider_data_provider_gen(&dc_cycler, &config, false, Cores::SingleCore)
+            })
+        },
+    );
 
     // reduced single
-    group.bench_function("Decider V2 (Data Provider Generator Reduced) BB4", |b| {
-        b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, true, Cores::SingleCore))
-    });
+    group.bench_function(
+        "Decider Cycler (Data Provider Generator Reduced) Single BB4",
+        |b| {
+            b.iter(|| bench_decider_data_provider_gen(&dc_cycler, &config, true, Cores::SingleCore))
+        },
+    );
 
     // full threaded
     group.bench_function("Decider (Generator Full) Threaded BB4", |b| {
@@ -141,13 +157,13 @@ fn benchmark_tape_type(c: &mut Criterion) {
     // group.bench_function("u128 hold decider BB4 max object", |b| {
     //     b.iter(|| bench_decider_hold_u128_object(&machine_p_bb4_max, 107))
     // });
-    group.bench_function("u128 long hold decider BB4 max", |b| {
+    group.bench_function("u128 long hold decider BB4 max V2", |b| {
         b.iter(|| bench_decider_hold_u128_long_v2(&machine_p_bb4_max, 4, 107))
     });
     // group.bench_function("u128 long hold decider BB5 max V1", |b| {
     //     b.iter(|| bench_decider_hold_u128_long_v1(&machine_bb5_max, 47176870))
     // });
-    group.bench_function("u128 long hold decider BB5 max", |b| {
+    group.bench_function("u128 long hold decider BB5 max V2", |b| {
         b.iter(|| bench_decider_hold_u128_long_v2(&machine_p_bb5_max, 5, 47176870))
     });
 
