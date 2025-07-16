@@ -29,7 +29,7 @@ const CPU_UTILIZATION_DEFAULT: usize = 100;
 
 const GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION: usize = 500_000;
 const GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION: usize = 5_000_000;
-const WRITE_HTML_LINE_LIMIT: u32 = 100_000;
+const WRITE_HTML_LINE_LIMIT: u32 = 10_000;
 
 // --- Below are program defining definitions, where changes may have a serious impact. ---
 

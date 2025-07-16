@@ -98,6 +98,7 @@ pub fn run_decider_chain_batch(
             // add remaining undecided to final result
             for (i, m) in batch_data.machines_undecided.machines.iter().enumerate() {
                 if !result_batch.add(m, &batch_data.machines_undecided.states[i]) {
+                    // println!("result decided/undecided full");
                     break;
                 }
             }
@@ -401,7 +402,10 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
                     //     "Decider batch {}/{} finished send",
                     //     decider_result.batch_no, num_batches
                     // );
-                    send_finished_thread_dec.send(decider_result).unwrap();
+                    // unwrap error can occur if stop is requested while other threads are still running
+                    send_finished_thread_dec
+                        .send(decider_result)
+                        .unwrap_or_default();
                 });
             }
 
@@ -447,6 +451,18 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
                 //     );
                 // }
                 break;
+            }
+            match result_main.end_reason {
+                EndReason::AllMachinesChecked => todo!(),
+                EndReason::Error(_, _) => todo!(),
+                EndReason::IsLastBatch => todo!(),
+                EndReason::MachineLimitReached(_) => todo!(),
+                EndReason::NoMoreData => todo!(),
+                EndReason::StopRequested(_, _) => break,
+                EndReason::RecordLimitDecidedReached(_) => break,
+                EndReason::RecordLimitUndecidedReached(_) => break,
+                EndReason::NoBatchData => todo!(),
+                EndReason::None => {}
             }
 
             if do_sleep {

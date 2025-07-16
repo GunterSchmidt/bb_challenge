@@ -13,10 +13,10 @@
 //! All this is done on my Notebook in about 15 seconds.
 //!
 //! For BB5, first 100,000,000,000: \
-//! Cycler (limit 1_500): undecided = 204,762 (runtime 40 seconds) \
-//! Bouncer (limit 20_000): undecided = 9,708 (runtime 43 seconds) \
-//! Cycler (limit 100_000): undecided = 4,956 (runtime 100 seconds) \
-//! Hold (limit 50_000_000): undecided = 4,956 (runtime 3,5 minutes) \
+//! Cycler (limit 1_500): undecided = 204,762 (runtime 32 seconds) \
+//! Bouncer (limit 20_000): undecided = 9,708 (runtime 34 seconds) \
+//! Cycler (limit 110_000): undecided = 4,954 (runtime 125 seconds) \
+//! Hold (limit 50_000_000): undecided = 4,954 (runtime 3,5 minutes) \
 //!
 //! # Examples
 //! When left is 0, then right must be expanding with the same bits as before, \

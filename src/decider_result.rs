@@ -220,8 +220,10 @@ impl DeciderResultStats {
     // }
 
     /// Add one single result to these totals
-    /// Returns false if <limit_machines_(un)decided> (Un)decided Machines have been stored
-    /// which allows the caller to stop further processing. In this case the end_reason is set also.  
+    /// # Returns
+    /// False if <limit_machines_(un)decided> (Un)decided Machines have been stored
+    /// which allows the caller to stop further processing. \
+    /// In this case the end_reason is set also.  
     pub fn add(&mut self, machine: &Machine, status: &MachineStatus) -> bool {
         // self.num_checked_total += 1;
         let mut is_decided = true;
