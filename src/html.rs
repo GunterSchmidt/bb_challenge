@@ -590,7 +590,9 @@ impl StepHtml {
         let tl_pos = if let Some(tp) = &self.tape_long_positions {
             format!(
                 " TL P{} {}..{}",
-                tp.tl_pos, tp.tl_low_bound, tp.tl_high_bound
+                Self::format_right_aligned_int_html(tp.tl_pos as u32, 3),
+                tp.tl_low_bound,
+                tp.tl_high_bound
             )
         } else {
             String::new()
@@ -609,26 +611,5 @@ impl StepHtml {
     pub fn format_right_aligned_int_html(number: StepTypeBig, size: usize) -> String {
         let s = format!("{number:>size$}");
         s.replace(" ", "&nbsp;")
-    }
-}
-
-#[cfg(feature = "bb_enable_html_reports")]
-impl From<&crate::decider_data_128::DeciderData128> for StepHtml {
-    fn from(data: &crate::decider_data_128::DeciderData128) -> Self {
-        let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit;
-        let tape_shifted = if is_u128_tape {
-            data.tape_shifted()
-        } else {
-            data.tape_shifted() >> 32
-        };
-        Self {
-            step_no: data.step_no,
-            tr_field_id: data.tr_field,
-            transition: data.tr,
-            tape_shifted,
-            is_u128_tape,
-            pos_middle: data.tl.pos_middle(),
-            tape_long_positions: Some(data.tape_long_positions()),
-        }
     }
 }

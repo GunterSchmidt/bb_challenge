@@ -27,9 +27,11 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # default = ["bb_enable_html_reports", "bb_debug_cycler"]
 # default = ["bb_enable_html_reports", "bb_no_self_ref"]
 # default = ["bb_enable_html_reports", "bb_debug"]
-default = ["bb_enable_html_reports"]
+# default = ["bb_enable_html_reports", "bb_debug_tape"]
+# default = ["bb_enable_html_reports"]
 bb_debug = []
 bb_debug_cycler = []
+bb_debug_tape = []
 bb_counter_stats = []
 # Allow optional output to html files but will have a 10%-30% performance hit even if write_html_file = false.
 bb_enable_html_reports = []

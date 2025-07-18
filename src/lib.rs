@@ -19,6 +19,7 @@ pub mod decider_result;
 pub mod decider_result_worker;
 pub mod decider_u64;
 pub mod error;
+pub mod examples;
 pub mod generator;
 pub mod generator_full;
 pub mod generator_reduced;

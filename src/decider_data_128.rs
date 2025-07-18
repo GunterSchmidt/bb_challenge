@@ -112,6 +112,7 @@ impl DeciderData128 {
             if !self.tr.is_symbol_undefined() {
                 self.tl.set_current_symbol(self.tr);
             }
+            // println!("{}", self.tl.tape_shifted.to_binary_split_string());
             self.status = MachineStatus::DecidedHolds(self.step_no);
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
             #[cfg(feature = "bb_enable_html_reports")]
@@ -167,7 +168,6 @@ impl DeciderData128 {
     }
 
     /// Returns the status of the decider and additionally written Ones on tape and Tape Size
-    /// TODO NOTE: This is incorrect! see count_ones
     pub fn status_full(&self) -> MachineStatus {
         match self.status {
             MachineStatus::DecidedHolds(steps) => {
@@ -485,9 +485,7 @@ impl DeciderData128 {
                 .create_html_file_start(decider_id, machine)
                 .expect("Html file could not be written");
             self.write_html_p(
-                "Note: Here only the 128 Bit Tape is shown. Whenever the tape 'jumps' a few bytes \
-                    the working area needed to be shifted or previously shifted out data is reloaded.<br> \
-                    'tape_long' stores the remaining tape.",
+                "Note: Here only the 128 Bit Tape is shown, the underlying long tape holds more data.",
             );
             if self
                 .transition_table
@@ -556,5 +554,26 @@ impl Display for DeciderData128 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO other fields
         write!(f, "{}", self.step_to_string(),)
+    }
+}
+
+#[cfg(feature = "bb_enable_html_reports")]
+impl From<&crate::decider_data_128::DeciderData128> for crate::html::StepHtml {
+    fn from(data: &crate::decider_data_128::DeciderData128) -> Self {
+        let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit;
+        let tape_shifted = if is_u128_tape {
+            data.tl.get_clean_tape_shifted()
+        } else {
+            data.tl.get_clean_tape_shifted() >> 32
+        };
+        Self {
+            step_no: data.step_no,
+            tr_field_id: data.tr_field,
+            transition: data.tr,
+            tape_shifted,
+            is_u128_tape,
+            pos_middle: data.tl.pos_middle(),
+            tape_long_positions: Some(data.tape_long_positions()),
+        }
     }
 }

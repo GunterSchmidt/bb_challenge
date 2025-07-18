@@ -194,10 +194,15 @@ impl Decider for DeciderBouncerV2 {
 
             // no need to run further if tape size limit is reached, check only every 32 steps
             if self.data.step_no & 0b00011111 == 0 && !self.data.is_tape_shifted_clean() {
-                // println!(
-                //     "tape shifted not clean: Step {}, {machine}",
-                //     self.data.step_no
-                // );
+                #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                {
+                    let text = format!(
+                        "tape_shifted not clean: Step {}, {machine}",
+                        self.data.step_no
+                    );
+                    println!("{text}");
+                    self.data.write_html_p(&text);
+                }
                 self.data.status = MachineStatus::Undecided(
                     crate::status::UndecidedReason::TapeSizeLimit,
                     self.data.step_no,
@@ -230,6 +235,12 @@ impl Decider for DeciderBouncerV2 {
                     tape_after: self.data.tape_shifted() as u64,
                 };
                 self.steps.push(step);
+                #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                {
+                    let text = format!("  Step {}: tape LEFT empty: comparing", self.data.step_no);
+                    println!("{text}");
+                    self.data.write_html_p(&text);
+                }
                 // compare and check if same expanding bits for three consecutive steps
                 if self.steps.len() > 7 {
                     let i = self.steps.len() - 3;
@@ -239,9 +250,15 @@ impl Decider for DeciderBouncerV2 {
                         Changed::new(self.data.tape_shifted() as u64, self.steps[i].tape_after),
                     ];
                     is_bouncing_right = Changed::is_bouncer_3(&changed);
-                    #[cfg(feature = "bb_debug")]
-                    if is_bouncing_right {
-                        println!("right bouncing!");
+                    #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                    {
+                        let text = if is_bouncing_right {
+                            "  Bouncing right!"
+                        } else {
+                            "  Not Bouncing right!"
+                        };
+                        println!("{text}");
+                        self.data.write_html_p(&text);
                     }
                     // compare and check if same expanding bits for three steps but leaving one out each time
                     if self.steps.len() > 13 {
@@ -261,9 +278,15 @@ impl Decider for DeciderBouncerV2 {
                             ),
                         ];
                         is_bouncing_right = Changed::is_bouncer_3(&changed);
-                        #[cfg(feature = "bb_debug")]
-                        if is_bouncing_right {
-                            println!("right bouncing!");
+                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                        {
+                            let text = if is_bouncing_right {
+                                "  Bouncing right double"
+                            } else {
+                                "  Not Bouncing right double"
+                            };
+                            println!("{text}");
+                            self.data.write_html_p(&text);
                         }
                     }
                 }
@@ -295,6 +318,12 @@ impl Decider for DeciderBouncerV2 {
                     tape_after: (self.data.tape_shifted() >> 64) as u64,
                 };
                 self.steps.push(step);
+                #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                {
+                    let text = format!("  Step {}: tape RIGHT empty: comparing", self.data.step_no);
+                    println!("{text}");
+                    self.data.write_html_p(&text);
+                }
                 // compare and check if same expanding bits for both sides
                 if is_bouncing_right && self.steps.len() > 7 {
                     let i = self.steps.len() - 3;
@@ -307,8 +336,16 @@ impl Decider for DeciderBouncerV2 {
                         ),
                     ];
                     if Changed::is_bouncer_3(&changed) {
-                        #[cfg(feature = "bb_debug")]
-                        println!("Found a bouncer!");
+                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                        {
+                            let text = if is_bouncing_right {
+                                "  Found a bouncer!"
+                            } else {
+                                "  Not Bouncing right!"
+                            };
+                            println!("{text}");
+                            self.data.write_html_p(&text);
+                        }
                         self.data.status = MachineStatus::DecidedEndless(EndlessReason::Bouncer(
                             self.data.step_no,
                         ));
@@ -331,8 +368,16 @@ impl Decider for DeciderBouncerV2 {
                             ),
                         ];
                         if Changed::is_bouncer_3(&changed) {
-                            #[cfg(feature = "bb_debug")]
-                            println!("Found a bouncer!");
+                            #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                            {
+                                let text = if is_bouncing_right {
+                                    "  Found a bouncer (double step)!"
+                                } else {
+                                    "  Not a bouncer double."
+                                };
+                                println!("{text}");
+                                self.data.write_html_p(&text);
+                            }
                             self.data.status = MachineStatus::DecidedEndless(
                                 EndlessReason::Bouncer(self.data.step_no),
                             );

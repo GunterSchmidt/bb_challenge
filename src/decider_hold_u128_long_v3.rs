@@ -306,9 +306,13 @@ mod tests {
 
         // BB4 Max
         let machine = Machine::build_machine("BB4_MAX").unwrap();
-        let check_result = DeciderHoldU128Long::decide_single_machine(&machine, &config);
+        let mut decider = DeciderHoldU128Long::new(&config);
+        let check_result = decider.decide_machine(&machine);
         // println!("{}", check_result);
         assert_eq!(check_result, MachineStatus::DecidedHolds(107));
+        let full = decider.data.status_full();
+        println!("{}", full);
+        assert_eq!(full, MachineStatus::DecidedHoldsDetail(107, 128, 12));
     }
 
     #[test]
@@ -317,9 +321,8 @@ mod tests {
         // let config = Config::new_default(5);
         let config = Config::builder(5)
             .write_html_file(true)
-            // .write_html_step_limit(100_000_000)
-            // .write_html_line_limit(100_0)
-            // .step_limit_hold(1_000_000)
+            .write_html_line_limit(100_000)
+            .step_limit_hold(50_000_000)
             .build();
         // BB5 Max
         let machine = Machine::build_machine("BB5_MAX").unwrap();

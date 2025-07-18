@@ -82,7 +82,7 @@ pub struct TransitionSymbol2 {
     ///   in combination with state the last 5 bits directly give the transition array id. \
     ///   value 0,1 or 2 for undefined, TODO old 3 for unused (for unused transitions in array)
     /// - direction:  bits 6, 7: direction \
-    ///   value right 3, left 1 or 2 for undefined, calculated with -2 to get direction.
+    ///   value right 3, left 1 or 2 for undefined (because -2 = 0, not change in direction), calculated with -2 to get direction.
     /// - next state: bits 1-4: The value is naturally doubled for faster array id calculation \
     ///   value state or 0 for hold
     pub transition: TransitionType,
@@ -263,9 +263,9 @@ impl TransitionSymbol2 {
         ((self.transition & FILTER_DIR) >> 6) as DirectionType - 2
     }
 
-    /// returns direction for left = -1, for right 1
-    pub fn direction_unmodified_todo(&self) -> TransitionType {
-        self.transition & FILTER_DIR
+    /// returns direction with left = 1, right 3, undefined = 2
+    pub fn direction_unmodified(&self) -> TransitionType {
+        (self.transition & FILTER_DIR) >> 6
     }
 
     pub fn state(&self) -> TransitionType {
@@ -323,7 +323,7 @@ impl TransitionSymbol2 {
 
     pub fn is_symbol_undefined(&self) -> bool {
         // Filter on direction is correct, as direction and symbol are always together defined or undefined.
-        self.transition & FILTER_DIR == 0
+        self.transition & FILTER_DIR == DIRECTION_UNDEFINED
     }
 
     pub fn is_unused(&self) -> bool {

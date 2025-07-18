@@ -111,7 +111,13 @@ impl Display for MachineStatus {
             MachineStatus::DecidedNotMaxNotAllStatesUsed => {
                 s.push_str("Decided: Not max as not all states are used.")
             }
-            MachineStatus::DecidedHoldsDetail(_, _, _) => todo!(),
+            MachineStatus::DecidedHoldsDetail(steps, tape_size, ones) => s.push_str(
+                format!(
+                    "Decided: Holds after {} steps, {ones} ones written, tape_size (approx): {tape_size}",
+                    steps.to_formatted_string(&locale)
+                )
+                .as_str(),
+            ),
             MachineStatus::Undecided(reason, steps, tape_size_limit) => {
                 match reason {
                             UndecidedReason::DeciderNoResult => s.push_str("Undecided: No result"),
