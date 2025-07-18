@@ -552,8 +552,8 @@ mod tests {
         config::Config,
         decider::DeciderStandard,
         decider_engine::{
-            run_decider_chain_data_provider_single_thread,
-            run_decider_chain_threaded_data_provider_multi_thread,
+            batch_run_decider_chain_data_provider_single_thread,
+            batch_run_decider_chain_threaded_data_provider_multi_thread,
         },
         decider_result::result_max_steps_known,
         generator_full::GeneratorFull,
@@ -667,7 +667,7 @@ mod tests {
         let config = config_bench(n_states);
         let dc = DeciderStandard::Cycler.decider_config(&config);
         let generator = GeneratorReduced::new(&config);
-        let result = run_decider_chain_data_provider_single_thread(&vec![dc], generator);
+        let result = batch_run_decider_chain_data_provider_single_thread(&vec![dc], generator);
         println!("{}", result);
         println!("{}", result.machines_max_steps_to_string(10));
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
@@ -677,7 +677,8 @@ mod tests {
         let config = config_bench(n_states);
         let dc = DeciderStandard::Cycler.decider_config(&config);
         let generator = GeneratorReduced::new(&config);
-        let result = run_decider_chain_threaded_data_provider_multi_thread(&vec![dc], generator);
+        let result =
+            batch_run_decider_chain_threaded_data_provider_multi_thread(&vec![dc], generator);
         // println!("{}", result);
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
     }

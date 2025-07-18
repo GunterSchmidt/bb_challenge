@@ -6,6 +6,12 @@ use crate::{
     transition_symbol2::{TransitionSymbol2, TRANSITION_SYM2_HOLD},
 };
 
+#[non_exhaustive]
+pub enum GeneratorStandard {
+    GeneratorFull,
+    GeneratorReduced,
+}
+
 // TODO remove what is in DataProvider
 pub trait Generator: DataProvider {
     /// Create new generator for random batch no. \

@@ -9,9 +9,11 @@ use num_format::ToFormattedString;
 use crate::utils::file_exists;
 
 // File path, can always be passed as parameter.
-pub(crate) const PATH_DATA: &str = "./data/";
-pub(crate) const FILE_PATH_BB5_CHALLENGE_DATA_FILE: &str =
-    "res/all_5_states_undecided_machines_with_global_header";
+// TODO move to TOML
+pub const PATH_RESULT_HTML: &str = "../bb_result/";
+pub const PATH_DATA: &str = "./data/";
+pub const FILE_PATH_BB5_CHALLENGE_DATA_FILE: &str =
+    "../bb_res/all_5_states_undecided_machines_with_global_header";
 
 // Tape
 // TODO higher value
@@ -120,6 +122,8 @@ pub struct Config {
     write_html_step_start: StepTypeBig,
     /// Limits the actually written steps. If set to 0 no html output is done.
     write_html_line_limit: u32,
+    /// reduces 128 bit tape_shifted to 64 bits, which can be printed on a landscape page
+    write_html_tape_shifted_64_bit: bool,
 }
 
 impl Config {
@@ -158,6 +162,7 @@ impl Config {
             write_html_file: false,
             write_html_step_start: 0,
             write_html_line_limit: WRITE_HTML_LINE_LIMIT,
+            write_html_tape_shifted_64_bit: false,
         }
     }
 
@@ -329,12 +334,16 @@ impl Config {
     // TODO TOML config file
     /// Directory for all file outputs
     pub fn get_result_path() -> String {
-        let path = "./result";
+        let path = PATH_RESULT_HTML;
         if !file_exists(path) {
             // create dir
             std::fs::create_dir(path).expect("Path could not be created.");
         }
         path.to_string()
+    }
+
+    pub fn write_html_tape_shifted_64_bit(&self) -> bool {
+        self.write_html_tape_shifted_64_bit
     }
 }
 
@@ -365,6 +374,7 @@ pub struct ConfigBuilder {
     write_html_file: Option<bool>,
     write_html_step_start: Option<StepTypeBig>,
     write_html_line_limit: Option<u32>,
+    write_html_tape_shifted_64_bit: Option<bool>,
 }
 
 impl ConfigBuilder {
@@ -395,6 +405,7 @@ impl ConfigBuilder {
             write_html_file: Some(config.write_html_file),
             write_html_step_start: Some(config.write_html_step_start),
             write_html_line_limit: Some(config.write_html_line_limit),
+            write_html_tape_shifted_64_bit: Some(config.write_html_tape_shifted_64_bit),
         }
     }
 
@@ -479,6 +490,11 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn write_html_tape_shifted_64_bit(mut self, value: bool) -> Self {
+        self.write_html_tape_shifted_64_bit = Some(value);
+        self
+    }
+
     pub fn build(self) -> Config {
         #[allow(unused_mut)]
         let mut config = Config {
@@ -518,6 +534,7 @@ impl ConfigBuilder {
             write_html_file: self.write_html_file.unwrap_or(false),
             write_html_step_start: self.write_html_step_start.unwrap_or(0),
             write_html_line_limit: self.write_html_line_limit.unwrap_or(WRITE_HTML_LINE_LIMIT),
+            write_html_tape_shifted_64_bit: self.write_html_tape_shifted_64_bit.unwrap_or(false),
         };
 
         #[cfg(not(feature = "bb_enable_html_reports"))]

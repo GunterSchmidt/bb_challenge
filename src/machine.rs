@@ -5,7 +5,7 @@ use crate::{
     bb_file_reader::BBFileReader,
     config::Config,
     decider::Decider,
-    decider_hold_u128_long::DeciderHoldU128Long,
+    decider_hold_u128_long_v3::DeciderHoldU128Long,
     machine_info::MachineInfo,
     pre_decider::run_pre_decider_simple,
     status::MachineStatus,

@@ -81,7 +81,9 @@ impl DeciderCycler {
 
         #[cfg(feature = "bb_enable_html_reports")]
         {
-            decider.data.path = crate::html::get_html_path("cycler", config);
+            decider
+                .data
+                .set_path_option(crate::html::get_html_path("cycler", config));
         }
 
         decider
@@ -333,6 +335,9 @@ impl Decider for DeciderCycler {
                     // Create the mask for the lowest 'num_bits' bits.
                     //    (1 << 10) gives 0b10000000000 (1 followed by 10 zeros)
                     //    Subtracting 1 gives 0b01111111111 (10 ones) -> 0x3FF in hex
+                    if num_bits > 127 {
+                        println!("{machine}");
+                    }
                     let mask: u128 = ((1 << num_bits) - 1) << start_bit;
                     // #[cfg(feature = "bb_debug_cycler")]
                     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]

@@ -14,12 +14,14 @@
 //! are written, which makes it possible to write the full output to a 19,1 MB large html file.
 
 use std::fs::File;
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, MAIN_SEPARATOR_STR};
+use std::time::Instant;
 
 use crate::config::{Config, StepTypeBig};
-use crate::decider_data_128::DeciderData128;
+use crate::decider::{Decider, DeciderId};
 use crate::machine::Machine;
+use crate::machine_info::MachineInfo;
 use crate::status::MachineStatus;
 use crate::tape_utils::TapeLongPositions;
 use crate::transition_symbol2::TransitionSymbol2;
@@ -62,6 +64,189 @@ td {
     margin-left: 10px;
 }";
 
+#[derive(Debug)]
+pub struct HtmlWriter {
+    // pub decider_id: &'static DeciderId,
+    /// HTML step limit limits output to file. Set to 0 if write_html_file is false.
+    pub write_html_line_limit: u32,
+    pub write_html_line_count: u32,
+    pub write_html_step_start: StepTypeBig,
+    pub write_html_tape_shifted_64_bit: bool,
+    pub path: Option<String>,
+    pub file_name: Option<String>,
+    // pub file: Option<File>,
+    buf_writer: Option<BufWriter<File>>,
+}
+
+impl HtmlWriter {
+    pub fn new(config: &Config) -> Self {
+        Self {
+            // decider_id,
+            write_html_line_limit: if config.write_html_file() {
+                config.write_html_line_limit()
+            } else {
+                0
+            },
+            write_html_line_count: 0,
+            write_html_step_start: if config.write_html_file() {
+                config.write_html_step_start()
+            } else {
+                0
+            },
+            write_html_tape_shifted_64_bit: config.write_html_tape_shifted_64_bit(),
+
+            path: None,
+            file_name: None,
+            buf_writer: None,
+        }
+    }
+
+    /// Returns true if html is enabled and the step_no is < 1000 or > config.write_html_step_start .
+    /// step_no must be smaller or equal \
+    /// line count must be smaller, so one more can fit
+    pub fn is_write_html_in_limit(&self, step_no: StepTypeBig) -> bool {
+        self.write_html_line_limit != 0
+            && (step_no <= 1000 || step_no >= self.write_html_step_start)
+            && self.write_html_line_count < self.write_html_line_limit
+    }
+
+    /// Checks if config.write_html_file was set to true and if the path is set
+    pub fn is_write_html_file(&self) -> bool {
+        self.write_html_line_limit != 0 && self.path.is_some()
+    }
+
+    pub fn path(&self) -> Option<&String> {
+        self.path.as_ref()
+    }
+
+    pub fn set_path(&mut self, path: &str) {
+        self.path = Some(path.to_string());
+    }
+
+    pub fn set_path_option(&mut self, path_option: Option<String>) {
+        self.path = path_option;
+    }
+
+    /// Write a single step to the html file.
+    /// # Panics
+    /// If file cannot be written. Unlikely as the file is already open for write.
+    pub fn write_step_html(&mut self, step_data: &StepHtml) {
+        if self.is_write_html_in_limit(step_data.step_no) {
+            step_data.write_step_html(self.buf_writer.as_mut().unwrap());
+            self.write_html_line_count += 1;
+        }
+    }
+
+    pub fn write_html_p(&mut self, text: &str) {
+        if let Some(buf_writer) = self.buf_writer.as_mut() {
+            crate::html::write_html_p(buf_writer, text);
+        }
+    }
+
+    /// Writes to html header and the start of the body to the file.
+    /// # Arguments
+    /// - path of the html file
+    /// - file_name_prefix
+    /// - machine to write, uses tm_standard_name for file name
+    ///
+    /// Example: ("data", "hold", m) creates /data/hold_1RB0RC_1RA0RA_0RB1RC.html
+    ///
+    /// # Returns
+    /// (File, FileName)
+    pub fn create_html_file_start(
+        &mut self,
+        decider_id: &DeciderId,
+        machine: &Machine,
+    ) -> io::Result<()> {
+        match &self.path {
+            Some(path) => {
+                if !std::fs::exists(path)? {
+                    std::fs::create_dir_all(path)?;
+                }
+                let file_name =
+                    decider_id.name.to_owned() + "_" + machine.file_name().as_str() + ".html";
+                let p = Path::new(&path).join(&file_name);
+                let mut file = File::create(&p)?;
+                write_html_header(&mut file, &machine.to_standard_tm_text_format())?;
+                writeln!(file, "<body>")?;
+                let m_id = if machine.id() == 0 {
+                    String::new()
+                } else {
+                    format!(" Id: {}", machine.id())
+                };
+                // write header, machine, e.g.
+                // BB4 Decider Cycler Machine Id: 32538705 0RC1LC_---1RC_1LD1RB_1RA0RA
+                writeln!(
+                    file,
+                    "  <h2>BB{} {} Machine{m_id} {}</h2>",
+                    machine.n_states(),
+                    decider_id.name,
+                    machine.to_standard_tm_text_format()
+                )?;
+                // Machine transitions as table
+                writeln!(
+                    file,
+                    "{}",
+                    machine.transition_table().to_table_html_string(true)
+                )?;
+                // start with an opening <p> tag, as the lines end with </br>, but this actually leads to nested paragraphs.
+                // writeln!(file, "  <p>")?;
+
+                self.buf_writer = Some(BufWriter::new(file));
+                self.file_name = Some(file_name);
+                Ok(())
+            }
+            None => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "No path defined",
+            )),
+        }
+    }
+
+    pub fn write_html_file_end(&mut self, step_no: StepTypeBig, status: &MachineStatus) {
+        if self.buf_writer.is_some() {
+            use num_format::ToFormattedString;
+            let locale = crate::config::user_locale();
+            if self.write_html_line_count >= self.write_html_line_limit {
+                self.write_html_p(
+                    format!(
+                        "HTML Line Limit ({}) reached, total lines: {}.",
+                        self.write_html_line_count.to_formatted_string(&locale),
+                        step_no.to_formatted_string(&locale)
+                    )
+                    .as_str(),
+                );
+            } else if self.write_html_line_count < step_no {
+                let p =
+                    ((self.write_html_line_count as f64 / step_no as f64) * 1000.0).round() / 100.0;
+                self.write_html_p(
+                    format!(
+                        "Steps executed (single step or step jump): {} of {} = {p} %.",
+                        self.write_html_line_count.to_formatted_string(&locale),
+                        step_no.to_formatted_string(&locale)
+                    )
+                    .as_str(),
+                );
+            }
+            // if self.step_no >= self.write_html_step_limit {
+            //     self.write_html_p(
+            //         format!(
+            //             "HTML Step Limit ({}) reached, total steps: {}.",
+            //             self.write_html_step_limit.to_formatted_string(&locale),
+            //             self.step_no.to_formatted_string(&locale)
+            //         )
+            //         .as_str(),
+            //     );
+            // }
+            let text = format!("{}", status);
+            self.write_html_p(&text);
+            if let Some(buf_writer) = self.buf_writer.as_mut() {
+                crate::html::write_file_end(buf_writer).expect("Html file could not be written")
+            }
+        }
+    }
+}
+
 /// Returns a String with the number of blanks specified, which does not compress in html ("\&nbsp;\&nbsp;").
 pub fn blanks(num_blanks: usize) -> String {
     "&nbsp;".repeat(num_blanks)
@@ -102,6 +287,7 @@ pub fn create_css(path: &str) -> io::Result<()> {
 ///
 /// # Returns
 /// (File, FileName)
+#[deprecated]
 pub fn create_html_file_start(
     path: &str,
     decider_name: &str,
@@ -148,7 +334,7 @@ pub fn format_right_aligned_int_html(number: usize, size: usize) -> String {
 
 /// Creates the folder path of the html file and the css files in the folder if not already existing.
 /// # Returns
-/// - the path for the html files, usually '/result/<sub_path>_bb5', e.g. '/result/cycler_bb5' \
+/// - the path for the html files, like '/result/<sub_path>_bb5', e.g. '/result/cycler_bb5' \
 /// - None if write_html_file in [Config] is set to false.
 pub fn get_html_path(sub_path: &str, config: &Config) -> Option<String> {
     if config.write_html_file() {
@@ -279,16 +465,15 @@ fn write_dark_css_content(file: &mut File) -> io::Result<()> {
     Ok(())
 }
 
-pub fn write_file_end(file: &mut File) -> io::Result<()> {
-    // writeln!(file, "  </p>")?;
-    writeln!(file, "</body>")?;
-    writeln!(file, "</html>")?;
+pub fn write_file_end(buf_writer: &mut BufWriter<File>) -> io::Result<()> {
+    writeln!(buf_writer, "</body>")?;
+    writeln!(buf_writer, "</html>")?;
     Ok(())
 }
 
-/// Deprecated
+#[deprecated]
 pub fn write_step_html_128(
-    file: &mut File,
+    buf_writer: &mut BufWriter<File>,
     step_no: StepTypeBig,
     tr_field_id: usize,
     transition: TransitionSymbol2,
@@ -304,24 +489,66 @@ pub fn write_step_html_128(
         pos_middle,
         tape_long_positions: None,
     };
-    data.write_step_html(file);
+    data.write_step_html(buf_writer);
 }
 
-/// Writes a text into an open Html file.
+/// Writes a text into an open Html file and adds a line break.
 /// # Panics
 /// Panics on file write error. At this point it is unlikely to occur.
-pub fn write_html(file: &mut File, text: &str) {
-    writeln!(file, "{text}",).expect("Html write error");
+pub fn write_html(buf_writer: &mut BufWriter<File>, text: &str) {
+    writeln!(buf_writer, "{text}",).expect("Html write error");
 }
 
 /// Writes a paragraphed text into an open Html file.
 /// # Panics
 /// Panics on file write error. At this point it is unlikely to occur.
-pub fn write_html_p(file: &mut File, text: &str) {
-    writeln!(file, "<p>{text}</p>",).expect("Html write error");
+pub fn write_html_p(buf_writer: &mut BufWriter<File>, text: &str) {
+    writeln!(buf_writer, "<p>{text}</p>",).expect("Html write error");
+}
+
+pub fn write_machines_to_html(
+    machine_infos: &[MachineInfo],
+    description: &str,
+    config: &Config,
+    limit_num_files: usize,
+    as_64_bit: bool,
+) {
+    println!(
+        "Writing {} '{description}' machines to html...",
+        machine_infos.len()
+    );
+    let config = Config::builder_from_config(config)
+        .write_html_file(true)
+        .write_html_tape_shifted_64_bit(as_64_bit)
+        // .step_limit_cycler(100_000)
+        // .step_limit_bouncer(100_000)
+        // .step_limit_hold(100_000)
+        // .write_html_line_limit(25_000)
+        .build();
+    if config.write_html_file() {
+        let mut last_progress_info = Instant::now();
+        for (i, m_info) in machine_infos.iter().take(limit_num_files).enumerate() {
+            let machine = Machine::from(m_info);
+            // write hold (because self ref)
+            crate::decider_hold_u128_long_v3::DeciderHoldU128Long::decide_single_machine(
+                &machine, &config,
+            );
+            // write bouncer (because single step)
+            crate::decider_bouncer_v2::DeciderBouncerV2::decide_single_machine(&machine, &config);
+            // write cycler (because single step)
+            crate::decider_cycler::DeciderCycler::decide_single_machine(&machine, &config);
+            let dur = Instant::now() - last_progress_info;
+            if dur.as_millis() > 5000 {
+                println!("progress: {} / {}", i + 1, machine_infos.len());
+                last_progress_info = Instant::now();
+            }
+        }
+        println!("done.");
+    }
 }
 
 /// All data required to write a step to the html file and write functionality.
+#[derive(Debug, Clone, Copy)]
 pub struct StepHtml {
     /// Current step no, starting at 1.
     pub step_no: StepTypeBig,
@@ -340,15 +567,15 @@ pub struct StepHtml {
 }
 
 impl StepHtml {
-    /// Write a single step to the html file.
+    /// Write a single step to the html file. \
     /// # Panics
     /// If file cannot be written. Unlikely as the file is already open for write.
-    pub fn write_step_html(&self, file: &mut File) {
-        write_html(file, &self.step_to_html());
+    pub fn write_step_html(&self, buf_writer: &mut BufWriter<File>) {
+        write_html(buf_writer, &self.step_to_html_fmt());
     }
 
     /// Formats the line
-    fn step_to_html(&self) -> String {
+    pub fn step_to_html_fmt(&self) -> String {
         let binary = if self.is_u128_tape {
             crate::tape_utils::U128Ext::to_binary_split_html_string(
                 &self.tape_shifted,
@@ -385,14 +612,21 @@ impl StepHtml {
     }
 }
 
-impl From<&DeciderData128> for StepHtml {
-    fn from(data: &DeciderData128) -> Self {
+#[cfg(feature = "bb_enable_html_reports")]
+impl From<&crate::decider_data_128::DeciderData128> for StepHtml {
+    fn from(data: &crate::decider_data_128::DeciderData128) -> Self {
+        let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit;
+        let tape_shifted = if is_u128_tape {
+            data.tape_shifted()
+        } else {
+            data.tape_shifted() >> 32
+        };
         Self {
             step_no: data.step_no,
             tr_field_id: data.tr_field,
             transition: data.tr,
-            tape_shifted: data.tape_shifted(),
-            is_u128_tape: true,
+            tape_shifted,
+            is_u128_tape,
             pos_middle: data.tl.pos_middle(),
             tape_long_positions: Some(data.tape_long_positions()),
         }

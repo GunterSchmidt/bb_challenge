@@ -5,7 +5,6 @@ use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 
-use crate::config::FILE_PATH_BB5_CHALLENGE_DATA_FILE;
 use crate::data_provider::{
     DataProvider, DataProviderBatch, DataProviderError, ResultDataProvider,
 };
@@ -32,6 +31,7 @@ pub struct Header {
     pub is_sorted: bool,
 }
 
+// TODO use config.machine_limit if set
 #[derive(Debug)]
 pub struct BBFileReader {
     // file: File,
@@ -427,16 +427,16 @@ pub struct BBFileDataProviderBuilder<'a> {
     id_range: Option<Range<u64>>,
     // PhantomData is used to tie the builder to the lifetime 'a
     // even though it doesn't directly hold a reference with that lifetime.
+    // TODO not sure why this was needed
     _phantom: std::marker::PhantomData<&'a ()>,
 }
 
 impl<'a> BBFileDataProviderBuilder<'a> {
     /// Creates a new builder for `BBDataProvider`.
-    /// The `file_path` defaults to `FILE_PATH_BB5_CHALLENGE_DATA_FILE`.
-    pub fn new() -> Self {
+    pub fn builder(file_path: String) -> Self {
         Self {
             batch_size: BATCH_SIZE,
-            file_path: FILE_PATH_BB5_CHALLENGE_DATA_FILE.to_string(),
+            file_path,
             id_range: None,
             _phantom: std::marker::PhantomData,
         }
@@ -449,10 +449,10 @@ impl<'a> BBFileDataProviderBuilder<'a> {
     }
 
     /// Sets the file path for the data provider.
-    pub fn file_path(mut self, path: String) -> Self {
-        self.file_path = path;
-        self
-    }
+    // pub fn file_path(mut self, path: String) -> Self {
+    //     self.file_path = path;
+    //     self
+    // }
 
     /// Sets the ID range for the data provider. None will use full range.
     pub fn id_range(mut self, id_range: Option<Range<u64>>) -> Self {

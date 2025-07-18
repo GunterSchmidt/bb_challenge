@@ -14,8 +14,6 @@ pub mod decider_bouncer_v2;
 pub mod decider_cycler;
 pub mod decider_data_128;
 pub mod decider_engine;
-pub mod decider_hold_u128_long;
-pub mod decider_hold_u128_long_v2;
 pub mod decider_hold_u128_long_v3;
 pub mod decider_result;
 pub mod decider_result_worker;
@@ -39,9 +37,9 @@ pub mod utils;
 
 pub type ResultUnitEndReason = Result<(), decider_result::EndReason>;
 
-// #[allow(clippy::enum_variant_names)]
-/// This enum can be used to call the different variants.
-pub enum Cores {
+/// This is used to define the CPU usage during generator and decider run.
+// TODO possibly move CPU percent into this enum, remove from Config
+pub enum CoreUsage {
     SingleCore,
     SingleCoreGeneratorMultiCoreDecider,
     MultiCore,

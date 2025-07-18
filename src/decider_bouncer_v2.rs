@@ -18,6 +18,11 @@
 //! Cycler (limit 110_000): undecided = 4,954 (runtime 125 seconds) \
 //! Hold (limit 50_000_000): undecided = 4,954 (runtime 3,5 minutes) \
 //!
+//! Running BB5 complete, with first cycler and first bouncer only takes about 50 Minutes
+//! for 16,679,880,978,201 machines with a pre-decider reducing this to 59,649,822,720
+//! which need to be evaluated.
+//! 7,827,594 machines are left undecided.
+//!
 //! # Examples
 //! When left is 0, then right must be expanding with the same bits as before, \
 //! e.g. 11337065 1RB0LB_1LA0LC_---1RD_0RA0RA: \
@@ -139,7 +144,9 @@ impl DeciderBouncerV2 {
 
         #[cfg(feature = "bb_enable_html_reports")]
         {
-            decider.data.path = crate::html::get_html_path("bouncer", config);
+            decider
+                .data
+                .set_path_option(crate::html::get_html_path("bouncer", config));
         }
 
         decider
@@ -186,19 +193,17 @@ impl Decider for DeciderBouncerV2 {
             }
 
             // no need to run further if tape size limit is reached, check only every 32 steps
-            if self.data.step_no & 0b00011111 == 0 {
-                if !self.data.is_tape_shifted_clean() {
-                    // println!(
-                    //     "tape shifted not clean: Step {}, {machine}",
-                    //     self.data.step_no
-                    // );
-                    self.data.status = MachineStatus::Undecided(
-                        crate::status::UndecidedReason::TapeSizeLimit,
-                        self.data.step_no,
-                        TAPE_SIZE_BIT_U128 as u32,
-                    );
-                    break;
-                }
+            if self.data.step_no & 0b00011111 == 0 && !self.data.is_tape_shifted_clean() {
+                // println!(
+                //     "tape shifted not clean: Step {}, {machine}",
+                //     self.data.step_no
+                // );
+                self.data.status = MachineStatus::Undecided(
+                    crate::status::UndecidedReason::TapeSizeLimit,
+                    self.data.step_no,
+                    TAPE_SIZE_BIT_U128 as u32,
+                );
+                break;
             }
 
             // get first step where left half tape is empty
@@ -347,7 +352,8 @@ impl Decider for DeciderBouncerV2 {
             // html::rename_file_to_status(&self.data.path.unwrap(), &self.data.file_name.unwrap(), &ms);
             self.data.rename_html_file_to_status();
         }
-        return self.data.status;
+
+        self.data.status
     }
 
     // tape_long_bits in machine?

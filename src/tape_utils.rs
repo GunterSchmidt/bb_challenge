@@ -410,7 +410,7 @@ impl TapeLong {
     #[inline(always)]
     pub fn update_tape_single_step(&mut self, transition: TransitionSymbol2) -> bool {
         self.set_current_symbol(transition);
-        let shift_ok = if transition.is_dir_right() {
+        if transition.is_dir_right() {
             self.tape_shifted <<= 1;
             self.pos_middle += 1;
             self.shift_tape_long_head_dir_right()
@@ -418,11 +418,11 @@ impl TapeLong {
             self.tape_shifted >>= 1;
             self.pos_middle -= 1;
             self.shift_tape_long_head_dir_left()
-        };
-        shift_ok
+        }
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct TapeLongPositions {
     /// tl_pos represents the start of the 128 tape in the long tape (covering four u32 cell blocks)
     pub tl_pos: usize,
@@ -464,7 +464,7 @@ impl U64Ext for u64 {
                 &n[2..8]
             );
             format!(
-                "{:024b}_{:08b} {t}_{:024b}",
+                "{:024b}_{:08b}&rarr;{t}_{:024b}",
                 self >> 40,
                 (self >> 32) as u8,
                 (*self as u32) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
@@ -478,7 +478,7 @@ impl U64Ext for u64 {
                 &n[7..8]
             );
             format!(
-                "{:024b}_{t} {:08b}_{:024b}",
+                "{:024b}_{t}&larr;{:08b}_{:024b}",
                 self >> 40,
                 (self >> 24) as u8,
                 (*self as u32) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
@@ -533,7 +533,7 @@ impl U128Ext for u128 {
                 &n[2..8]
             );
             format!(
-                "{:032b}_{:024b}_{:08b}*{t}_{:024b}_{:032b}",
+                "{:032b}_{:024b}_{:08b}&rarr;{t}_{:024b}_{:032b}",
                 (*self >> 96) as u32,
                 (*self >> 72) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
                 (*self >> 64) as u8,
@@ -549,7 +549,7 @@ impl U128Ext for u128 {
                 &n[7..8]
             );
             format!(
-                "{:032b}_{:024b}_{t}*{:08b}_{:024b}_{:032b}",
+                "{:032b}_{:024b}_{t}&larr;{:08b}_{:024b}_{:032b}",
                 (*self >> 96) as u32,
                 (*self >> 72) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
                 (*self >> 56) as u8,

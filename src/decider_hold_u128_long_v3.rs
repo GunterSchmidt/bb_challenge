@@ -150,7 +150,9 @@ impl DeciderHoldU128Long {
 
         #[cfg(feature = "bb_enable_html_reports")]
         {
-            decider.data.path = crate::html::get_html_path("hold", config);
+            decider
+                .data
+                .set_path_option(crate::html::get_html_path("hold", config));
         }
 
         decider

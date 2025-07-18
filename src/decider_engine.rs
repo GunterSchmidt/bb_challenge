@@ -1,3 +1,8 @@
+//! This crates holds functions to control the decider runs.
+//! Mostly relevant are the functions [run_decider_gen] and [run_decider_chain_gen] to execute the
+//! generator with the different deciders and to run over the bb_challenge file [run_deciders_bb_challenge_file].
+//!
+
 use std::{
     thread,
     time::{Duration, Instant},
@@ -7,15 +12,179 @@ use crate::{
     data_provider::{DataProvider, DataProviderThreaded},
     decider::{DeciderConfig, ThreadResultDataProvider, ThreadResultDecider},
     decider_result::{BatchData, DeciderResultStats, DurationDataProvider, EndReason},
+    generator::GeneratorStandard,
+    generator_full::GeneratorFull,
+    generator_reduced::GeneratorReduced,
     pre_decider::PreDeciderRun,
     reporter::Reporter,
     utils::num_cpus_percentage,
+    CoreUsage,
 };
 
+/// General function to call a single decider. \
+/// See [crate::config::Config] for configuration details. \
+/// See [DeciderConfig] on how to add a function to work with the results (e.g. write to file).
+/// # Returns
+/// Result stats [DeciderResultStats]. \
+/// See [crate::config::Config] limit_machines_undecided if some undecided machines should be returned in full.
+/// # Example
+/// ```
+/// use bb_challenge::CoreUsage;
+/// use bb_challenge::config::Config;
+/// use bb_challenge::decider::DeciderStandard;
+/// use bb_challenge::generator::GeneratorStandard;
+/// let config_cycler = Config::builder(4)
+/// // Set limit to 0 or 10_000_000_000 to test all machines of BB4 (6,975,757,441 machines total).
+/// // On a fast machine run for all machines will take less than 2 seconds (release mode).
+/// // Luckily the longest machine is in the first 250_000_000 generated entries.
+///   .machine_limit(250_000_000)
+///   .step_limit_cycler(150)        
+///   .build();
+/// let mut dc_cycler = DeciderStandard::Cycler.decider_config(&config_cycler);
+/// let result = bb_challenge::decider_engine::run_decider(
+///     dc_cycler,
+///     CoreUsage::MultiCore,
+///     GeneratorStandard::GeneratorReduced,
+/// );
+/// println!("{}", result.to_string_with_duration());
+/// assert_eq!(107, result.machine_max_steps().unwrap().steps());
+/// ```
+pub fn run_decider_gen(
+    decider_config: DeciderConfig,
+    generator_std: GeneratorStandard,
+    multi_core: CoreUsage,
+) -> DeciderResultStats {
+    run_decider_chain_gen(&[decider_config], generator_std, multi_core)
+}
+
+/// General function to call a decider chain.
+pub fn run_decider_chain_gen(
+    decider_config: &[DeciderConfig],
+    generator_std: GeneratorStandard,
+    multi_core: CoreUsage,
+) -> DeciderResultStats {
+    let first_config = decider_config.first().expect("No decider given").config();
+
+    match generator_std {
+        GeneratorStandard::GeneratorFull => {
+            let generator = GeneratorFull::new(first_config);
+            match multi_core {
+                CoreUsage::SingleCore => {
+                    batch_run_decider_chain_data_provider_single_thread(decider_config, generator)
+                }
+                CoreUsage::SingleCoreGeneratorMultiCoreDecider => {
+                    batch_run_decider_chain_threaded_data_provider_single_thread(
+                        decider_config,
+                        generator,
+                    )
+                }
+                CoreUsage::MultiCore => {
+                    batch_run_decider_chain_threaded_data_provider_multi_thread(
+                        decider_config,
+                        generator,
+                    )
+                } // _ => panic!("use 0: single, 1: multi with single generator, 2: multi"),
+            }
+        }
+        GeneratorStandard::GeneratorReduced => {
+            let generator = GeneratorReduced::new(first_config);
+            match multi_core {
+                CoreUsage::SingleCore => {
+                    batch_run_decider_chain_data_provider_single_thread(decider_config, generator)
+                }
+                CoreUsage::SingleCoreGeneratorMultiCoreDecider => {
+                    batch_run_decider_chain_threaded_data_provider_single_thread(
+                        decider_config,
+                        generator,
+                    )
+                }
+                CoreUsage::MultiCore => {
+                    batch_run_decider_chain_threaded_data_provider_multi_thread(
+                        decider_config,
+                        generator,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/// General function run deciders over the bb_challenge BB5 file. \
+/// See [crate::config::Config] for configuration details. \
+/// See [DeciderConfig] on how to add a function to work with the results (e.g. write to file).
+/// # Returns
+/// Result stats [DeciderResultStats]. \
+/// See [crate::config::Config] limit_machines_undecided if some undecided machines should be returned in full.
+/// # Example
+/// ```
+/// use bb_challenge::CoreUsage;
+/// use bb_challenge::config::Config;
+/// use bb_challenge::decider::DeciderStandard;
+/// use bb_challenge::generator::GeneratorStandard;
+/// let config_cycler = Config::builder(4)
+/// // Set limit to 0 or 100_000_000 to test all machines.
+/// // On a fast machine run for all machines will take less than 2 seconds (release mode).
+///   .file_id_range(0..100_000)
+///   .step_limit_cycler(150)        
+///   .build();
+/// let mut dc_cycler = DeciderStandard::Cycler.decider_config(&config_cycler);
+/// let result = bb_challenge::decider_engine::run_deciders_bb_challenge_file(
+///     &[dc_cycler],
+///     CoreUsage::SingleCoreGeneratorMultiCoreDecider,
+///     "../".to_string() + bb_challenge::config::FILE_PATH_BB5_CHALLENGE_DATA_FILE
+/// );
+/// println!("{}", result.to_string_with_duration());
+/// assert_eq!(107, result.machine_max_steps().unwrap().steps());
+/// ```
+pub fn run_deciders_bb_challenge_file(
+    decider_config: &[DeciderConfig],
+    multi_core: CoreUsage,
+    file_path: String,
+) -> DeciderResultStats {
+    let first_config = decider_config.first().unwrap().config();
+    let reader = crate::bb_file_reader::BBFileDataProviderBuilder::builder(file_path)
+        .id_range(first_config.file_id_range())
+        .batch_size(200)
+        .build();
+    let bb_file_reader = match reader {
+        Ok(f) => f,
+        Err(e) => {
+            panic!("File Reader could not be build: {e}");
+        }
+    };
+    // println!("Reader: {:?}", bb_file_reader);
+    // let r = bb_file_reader.machine_batch_next();
+    // println!("machines: {}", r.machines.len());
+
+    run_decider_chain_data_provider_single(decider_config, bb_file_reader, multi_core)
+}
+
+/// General function to call a decider chain.
+pub fn run_decider_chain_data_provider_single(
+    decider_config: &[DeciderConfig],
+    data_provider: impl DataProvider,
+    multi_core: CoreUsage,
+) -> DeciderResultStats {
+    match multi_core {
+        CoreUsage::SingleCore => {
+            batch_run_decider_chain_data_provider_single_thread(decider_config, data_provider)
+        }
+        CoreUsage::SingleCoreGeneratorMultiCoreDecider => {
+            batch_run_decider_chain_threaded_data_provider_single_thread(
+                decider_config,
+                data_provider,
+            )
+        }
+        CoreUsage::MultiCore => {
+            panic!("MultiCore requires trait DataProviderThreaded and can't be used here.")
+        }
+    }
+}
+
 /// Runs the deciders (using the thread called from). \
-/// This is more an internal function but can be used if own data provider handling is used.
+/// This is build as an internal function but can be used if own data provider handling is used.
 /// Return DeciderResultStats with an EndReason which needs to be evaluated.
-pub fn run_decider_chain_batch(
+pub fn decide_batch_chain(
     batch_data: BatchData,
     // data: DataProviderResult,
     // num_batches: usize,
@@ -116,12 +285,12 @@ pub fn run_decider_chain_batch(
 
 /// Runs the data provider and the deciders both on the main thread
 /// using the standard reporter.
-pub fn run_decider_chain_data_provider_single_thread(
+pub fn batch_run_decider_chain_data_provider_single_thread(
     decider_configs: &[DeciderConfig],
     data_provider: impl DataProvider,
 ) -> DeciderResultStats {
     let total = data_provider.num_machines_total();
-    run_decider_chain_data_provider_single_thread_reporting(
+    batch_run_decider_chain_data_provider_single_thread_reporting(
         decider_configs,
         data_provider,
         Some(Reporter::new_default(total)),
@@ -131,7 +300,7 @@ pub fn run_decider_chain_data_provider_single_thread(
 /// Runs the data provider and the deciders both on the main thread
 /// using a custom reporter (or None to omit reporting).
 // TODO check end_result like in multi
-pub fn run_decider_chain_data_provider_single_thread_reporting(
+pub fn batch_run_decider_chain_data_provider_single_thread_reporting(
     decider_configs: &[DeciderConfig],
     mut data_provider: impl DataProvider,
     mut reporter: Option<Reporter>,
@@ -181,7 +350,7 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
                         config: first_config,
                         run_predecider: data_provider.requires_pre_decider_check(),
                     };
-                    let dc_result = run_decider_chain_batch(batch_data, decider_configs);
+                    let dc_result = decide_batch_chain(batch_data, decider_configs);
                     result_main.add_result(&dc_result);
                     duration_decider += start_decider.elapsed();
                     match dc_result.end_reason {
@@ -253,12 +422,12 @@ pub fn run_decider_chain_data_provider_single_thread_reporting(
 
 /// Runs the data provider and the deciders in separate threads (deciders can have multiple threads)
 /// using the standard reporter.
-pub fn run_decider_chain_threaded_data_provider_single_thread(
+pub fn batch_run_decider_chain_threaded_data_provider_single_thread(
     decider_configs: &[DeciderConfig],
     data_provider: impl DataProvider,
 ) -> DeciderResultStats {
     let total = data_provider.num_machines_total();
-    run_decider_chain_threaded_data_provider_single_thread_reporting(
+    batch_run_decider_chain_threaded_data_provider_single_thread_reporting(
         decider_configs,
         data_provider,
         Some(Reporter::new_default(total)),
@@ -268,7 +437,7 @@ pub fn run_decider_chain_threaded_data_provider_single_thread(
 /// Runs the data provider and the deciders in separate threads (deciders can have multiple threads)
 /// using a custom reporter (or None to omit reporting).
 // TODO check end_result like in multi
-pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
+pub fn batch_run_decider_chain_threaded_data_provider_single_thread_reporting(
     decider_configs: &[DeciderConfig],
     mut data_provider: impl DataProvider,
     mut reporter: Option<Reporter>,
@@ -278,7 +447,7 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
     let max_threads = num_cpus_percentage(first_config.cpu_utilization_percent());
     // if single thread run single
     if max_threads == 1 {
-        return run_decider_chain_data_provider_single_thread_reporting(
+        return batch_run_decider_chain_data_provider_single_thread_reporting(
             decider_configs,
             data_provider,
             reporter,
@@ -392,7 +561,7 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
                         config: &config,
                         run_predecider,
                     };
-                    let dr = run_decider_chain_batch(batch_data, decider_configs);
+                    let dr = decide_batch_chain(batch_data, decider_configs);
                     let decider_result = ThreadResultDecider {
                         batch_no: gen_result.batch_no,
                         result: dr,
@@ -490,12 +659,12 @@ pub fn run_decider_chain_threaded_data_provider_single_thread_reporting(
 
 /// Runs the data provider and the deciders in separate threads (both can have multiple threads)
 /// using the standard reporter.
-pub fn run_decider_chain_threaded_data_provider_multi_thread(
+pub fn batch_run_decider_chain_threaded_data_provider_multi_thread(
     decider_configs: &[DeciderConfig],
     data_provider: impl DataProviderThreaded + std::marker::Send,
 ) -> DeciderResultStats {
     let total = data_provider.num_machines_total();
-    run_decider_chain_threaded_data_provider_multi_thread_reporting(
+    batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
         decider_configs,
         data_provider,
         Some(Reporter::new_default(total)),
@@ -517,7 +686,7 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread(
 // work in parallel and vice versa.
 // Contains a lot of code to optimize thread usage.
 // TODO thread recycling.
-pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
+pub fn batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
     decider_configs: &[DeciderConfig],
     data_provider: impl DataProviderThreaded + std::marker::Send,
     mut reporter: Option<Reporter>,
@@ -527,7 +696,7 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
     let max_threads = num_cpus_percentage(first_config.cpu_utilization_percent());
     // if single thread run single
     if max_threads == 1 {
-        return run_decider_chain_data_provider_single_thread_reporting(
+        return batch_run_decider_chain_data_provider_single_thread_reporting(
             decider_configs,
             data_provider,
             reporter,
@@ -705,7 +874,7 @@ pub fn run_decider_chain_threaded_data_provider_multi_thread_reporting(
                     //     num_batches,
                     //     batch_data.machines.len(),
                     // );
-                    let dr = run_decider_chain_batch(batch_data, decider_configs);
+                    let dr = decide_batch_chain(batch_data, decider_configs);
                     let decider_result = ThreadResultDecider {
                         batch_no: gen_result.batch_no,
                         result: dr,

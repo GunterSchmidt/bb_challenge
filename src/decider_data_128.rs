@@ -1,6 +1,4 @@
 use std::fmt::Display;
-#[cfg(feature = "bb_enable_html_reports")]
-use std::fs::File;
 
 use crate::{
     config::{Config, StepTypeBig},
@@ -12,11 +10,12 @@ use crate::{
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_SYM2_START},
 };
 #[cfg(feature = "bb_enable_html_reports")]
-use crate::{decider::DeciderId, machine::Machine};
+use crate::{decider::DeciderId, html::HtmlWriter, machine::Machine};
 
 /// This contains the functionality for a hold decider and can be used to create more elaborate deciders. \
 #[derive(Debug)]
 pub struct DeciderData128 {
+    // decider_id: &'static DeciderId,
     /// Number of steps or current step no, where first step is 1
     pub step_no: StepTypeBig,
     /// Current transition
@@ -40,23 +39,18 @@ pub struct DeciderData128 {
     pub status: MachineStatus,
     /// HTML step limit limits output to file. Set to 0 if write_html_file is false.
     #[cfg(feature = "bb_enable_html_reports")]
-    pub write_html_line_limit: u32,
+    pub html_writer: HtmlWriter,
     #[cfg(feature = "bb_enable_html_reports")]
-    pub write_html_line_count: u32,
-    #[cfg(feature = "bb_enable_html_reports")]
-    pub write_html_step_start: StepTypeBig,
-    #[cfg(feature = "bb_enable_html_reports")]
-    pub path: Option<String>,
+    path: Option<String>,
     #[cfg(feature = "bb_enable_html_reports")]
     pub file_name: Option<String>,
-    #[cfg(feature = "bb_enable_html_reports")]
-    pub file: Option<File>,
 }
 
 impl DeciderData128 {
     // Sets the defaults and start transition A0.
     pub fn new(config: &Config) -> Self {
         Self {
+            // decider_id,
             tl: TapeLong::new(config.tape_size_limit_u32_blocks()),
 
             step_no: 0,
@@ -69,27 +63,13 @@ impl DeciderData128 {
             // transition_table: TransitionTableSymbol2::default(),
             status: MachineStatus::NoDecision,
             step_limit: config.step_limit_hold(),
+            #[cfg(feature = "bb_enable_html_reports")]
+            html_writer: HtmlWriter::new(config),
             // tape_size_limit_u32_blocks: config.tape_size_limit_u32_blocks(),
-            #[cfg(feature = "bb_enable_html_reports")]
-            write_html_line_limit: if config.write_html_file() {
-                config.write_html_line_limit()
-            } else {
-                0
-            },
-            #[cfg(feature = "bb_enable_html_reports")]
-            write_html_line_count: 0,
-            #[cfg(feature = "bb_enable_html_reports")]
-            write_html_step_start: if config.write_html_file() {
-                config.write_html_step_start()
-            } else {
-                0
-            },
             #[cfg(feature = "bb_enable_html_reports")]
             path: None,
             #[cfg(feature = "bb_enable_html_reports")]
             file_name: None,
-            #[cfg(feature = "bb_enable_html_reports")]
-            file: None,
         }
     }
 
@@ -156,14 +136,12 @@ impl DeciderData128 {
     /// line count must be smaller, so one more can fit
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn is_write_html_in_limit(&self) -> bool {
-        self.write_html_line_limit != 0
-            && (self.step_no <= 1000 || self.step_no >= self.write_html_step_start)
-            && self.write_html_line_count < self.write_html_line_limit
+        self.html_writer.is_write_html_in_limit(self.step_no)
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn is_write_html_file(&self) -> bool {
-        self.write_html_line_limit != 0
+        self.html_writer.is_write_html_file()
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
@@ -502,88 +480,42 @@ impl DeciderData128 {
     // Creates
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn write_html_file_start(&mut self, decider_id: &DeciderId, machine: &Machine) {
-        if self.is_write_html_file() {
-            if let Some(path) = self.path.as_ref() {
-                let (file, _f_name) =
-                    crate::html::create_html_file_start(path, decider_id.name, &machine)
-                        .expect("Html file could not be written");
-                self.file = Some(file);
-                // file_name = f_name;
-                self.write_html_p(
+        if self.html_writer.is_write_html_file() {
+            self.html_writer
+                .create_html_file_start(decider_id, machine)
+                .expect("Html file could not be written");
+            self.write_html_p(
                 "Note: Here only the 128 Bit Tape is shown. Whenever the tape 'jumps' a few bytes \
                     the working area needed to be shifted or previously shifted out data is reloaded.<br> \
                     'tape_long' stores the remaining tape.",
             );
-                if self
-                    .transition_table
-                    .eval_set_has_self_referencing_transition()
-                {
-                    self.write_html_p("Note: This machine has self-referencing transitions (e.g. Field A1: 1RA) \
+            if self
+                .transition_table
+                .eval_set_has_self_referencing_transition()
+            {
+                self.write_html_p("Note: This machine has self-referencing transitions (e.g. Field A1: 1RA) \
                 which leads to repeatedly calling itself in case of tape head reads 1. This is used to speed up the \
                 decider by jumping over these repeated steps. Max jump is currently 32 steps.");
-                }
             }
         }
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn write_html_file_end(&mut self) {
-        if self.file.is_some() {
-            use num_format::ToFormattedString;
-            let locale = crate::config::user_locale();
-            if self.write_html_line_count >= self.write_html_line_limit {
-                self.write_html_p(
-                    format!(
-                        "HTML Line Limit ({}) reached, total lines: {}.",
-                        self.write_html_line_count.to_formatted_string(&locale),
-                        self.step_no.to_formatted_string(&locale)
-                    )
-                    .as_str(),
-                );
-            } else if self.write_html_line_count < self.step_no {
-                let p = ((self.write_html_line_count as f64 / self.step_no as f64) * 1000.0)
-                    .round()
-                    / 100.0;
-                self.write_html_p(
-                    format!(
-                        "Steps executed (single step or step jump): {} of {} = {p} %.",
-                        self.write_html_line_count.to_formatted_string(&locale),
-                        self.step_no.to_formatted_string(&locale)
-                    )
-                    .as_str(),
-                );
-            }
-            // if self.step_no >= self.write_html_step_limit {
-            //     self.write_html_p(
-            //         format!(
-            //             "HTML Step Limit ({}) reached, total steps: {}.",
-            //             self.write_html_step_limit.to_formatted_string(&locale),
-            //             self.step_no.to_formatted_string(&locale)
-            //         )
-            //         .as_str(),
-            //     );
-            // }
-            let text = format!("{}", self.status);
-            self.write_html_p(&text);
-            if let Some(file) = self.file.as_mut() {
-                crate::html::write_file_end(file).expect("Html file could not be written")
-            }
-        }
+        self.html_writer
+            .write_html_file_end(self.step_no, &self.status);
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn write_html_p(&mut self, text: &str) {
-        if let Some(file) = self.file.as_mut() {
-            crate::html::write_html_p(file, text);
-        }
+        self.html_writer.write_html_p(text);
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn write_step_html(&mut self) {
         if self.is_write_html_in_limit() {
-            self.write_html_line_count += 1;
-            let html_data = crate::html::StepHtml::from(&*self);
-            html_data.write_step_html(self.file.as_mut().unwrap());
+            let step_data = crate::html::StepHtml::from(&*self);
+            self.html_writer.write_step_html(&step_data);
         }
     }
 
@@ -600,6 +532,23 @@ impl DeciderData128 {
             self.tr.state_to_char(),
             self.tl.get_current_symbol(),
         )
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    pub fn path(&self) -> Option<&String> {
+        self.path.as_ref()
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    pub fn set_path(&mut self, path: &str) {
+        self.path = Some(path.to_string());
+        self.html_writer.set_path(path);
+    }
+
+    #[cfg(feature = "bb_enable_html_reports")]
+    pub fn set_path_option(&mut self, path_option: Option<String>) {
+        self.path = path_option.clone();
+        self.html_writer.set_path_option(path_option);
     }
 }
 
