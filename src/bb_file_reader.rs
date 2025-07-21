@@ -433,10 +433,10 @@ pub struct BBFileDataProviderBuilder<'a> {
 
 impl<'a> BBFileDataProviderBuilder<'a> {
     /// Creates a new builder for `BBDataProvider`.
-    pub fn builder(file_path: String) -> Self {
+    pub fn builder(file_path: &str) -> Self {
         Self {
             batch_size: BATCH_SIZE,
-            file_path,
+            file_path: file_path.to_string(),
             id_range: None,
             _phantom: std::marker::PhantomData,
         }

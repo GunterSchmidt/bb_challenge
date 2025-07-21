@@ -39,7 +39,7 @@ use crate::tape_utils::U128Ext;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES},
     decider::{self, Decider, DECIDER_CYCLER_ID},
-    decider_data_128::DeciderData128,
+    decider_data_long_128::DeciderDataLong128,
     decider_result::BatchData,
     machine::Machine,
     status::{EndlessReason, MachineStatus},
@@ -60,7 +60,7 @@ const SEARCH_ONLY_0_SIDE_FROM: usize = 50;
 
 #[derive(Debug)]
 pub struct DeciderCycler {
-    data: DeciderData128,
+    data: DeciderDataLong128,
     /// Store all steps to do comparisons (test if a cycle is repeating)
     steps: Vec<StepRecordU128>,
     /// Stores the step ids (2 = 3rd step) for each field in the transition table. \
@@ -73,7 +73,7 @@ impl DeciderCycler {
     pub fn new(config: &Config) -> Self {
         let cap = (config.step_limit_cycler() as usize).min(MAX_INIT_CAPACITY);
         let mut decider = Self {
-            data: DeciderData128::new(config),
+            data: DeciderDataLong128::new(config),
             steps: Vec::with_capacity(cap),
             maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
         };

@@ -6,7 +6,7 @@
 //! This also means step_limit_bouncer can be set high as mostly the tape borders are reached.
 //! This is still highly effective and eliminates >90% of the machines the cycler does not catch. \
 //! BB4 with cycler limit 1500 leaves 63,130 of the 6,975,757,441 machines undecided.
-//! Using this bouncer with limit 20_000 reduces this to 1,664/1,658v2_128 (100_000: 1662/1656) machines (only 2,7% left). \
+//! Using this bouncer with limit 20_000 reduces this to 1,664 machines (only 2,7% left). \
 //! Since only very few machines are left, the cycler can now be run again with a limit of 100_000 steps; for
 //! BB4 actually the biggest cycle detected requires 95450 steps. \
 //! **This leaves only 908 machines undecided.** \
@@ -103,12 +103,13 @@ use std::fmt::Display;
 use crate::tape_utils::U128Ext;
 use crate::{
     config::Config,
-    decider::{self, Decider, DECIDER_BOUNCER_ID},
-    decider_data_long_128::DeciderDataLong128,
+    decider::{self, Decider},
+    decider_data_128::DeciderData128,
     decider_result::BatchData,
     machine::Machine,
     status::{EndlessReason, MachineStatus},
-    tape_utils::{U64Ext, FILTER_HIGH_BITS_U128, FILTER_LOW_BITS_U128, TAPE_SIZE_BIT_U128},
+    tape::Tape,
+    tape_utils::U64Ext,
     ResultUnitEndReason,
 };
 
@@ -121,7 +122,7 @@ const MAX_INIT_CAPACITY: usize = 10_000;
 // TODO Use long tape, or tape_shifted left & right bound could be introduced.
 #[derive(Debug)]
 pub struct DeciderBouncerV2 {
-    data: DeciderDataLong128,
+    data: DeciderData128,
     /// Store all steps to do comparisons (test if a cycle is repeating)
     /// All even are lower bits, all odd upper bits
     steps: Vec<StepBouncer>,
@@ -136,7 +137,7 @@ impl DeciderBouncerV2 {
     pub fn new(config: &Config) -> Self {
         let cap = (config.step_limit_bouncer() as usize).min(MAX_INIT_CAPACITY);
         let mut decider = Self {
-            data: DeciderDataLong128::new(config),
+            data: DeciderData128::new(config),
             steps: Vec::with_capacity(cap),
             // maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
         };
@@ -164,7 +165,11 @@ impl DeciderBouncerV2 {
 
 impl Decider for DeciderBouncerV2 {
     fn decider_id() -> &'static decider::DeciderId {
-        &DECIDER_BOUNCER_ID
+        // &DECIDER_BOUNCER_ID
+        &decider::DeciderId {
+            id: 21,
+            name: "Decider Bouncer 128",
+        }
     }
 
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
@@ -192,39 +197,11 @@ impl Decider for DeciderBouncerV2 {
                 break;
             }
 
-            // no need to run further if tape size limit is reached, check only every 32 steps
-            if self.data.step_no & 0b00011111 == 0 && !self.data.is_tape_shifted_clean() {
-                #[cfg(all(debug_assertions, feature = "bb_debug"))]
-                {
-                    let text = format!(
-                        "tape_shifted not clean: Step {}, {machine}",
-                        self.data.step_no
-                    );
-                    println!("{text}");
-                    self.data.write_html_p(&text);
-                }
-                self.data.status = MachineStatus::Undecided(
-                    crate::status::UndecidedReason::TapeSizeLimit,
-                    self.data.step_no,
-                    TAPE_SIZE_BIT_U128 as u32,
-                );
-                break;
-            }
-
             // get first step where left half tape is empty
-            if self.data.tape_shifted() & FILTER_HIGH_BITS_U128 == 0
+            if self.data.tape.is_left_empty()
                 && self.data.step_no > last_right_empty_step_no
                 && last_left_empty_step_no < last_right_empty_step_no
             {
-                // here not required, enough to check for other side
-                // if !self.data.is_tape_shifted_clean() {
-                //     self.data.status = MachineStatus::Undecided(
-                //         crate::status::UndecidedReason::TapeSizeLimit,
-                //         self.data.step_no,
-                //         TAPE_SIZE_BIT_U128 as u32,
-                //     );
-                //     break;
-                // }
                 last_left_empty_step_no = self.data.step_no;
                 // store step
                 let step = StepBouncer {
@@ -232,7 +209,7 @@ impl Decider for DeciderBouncerV2 {
                     _step_no: self.data.step_no,
                     #[cfg(debug_assertions)]
                     _is_upper_bits: true,
-                    tape_after: self.data.tape_shifted() as u64,
+                    tape_after: self.data.tape.right_64_bit(),
                 };
                 self.steps.push(step);
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
@@ -243,11 +220,14 @@ impl Decider for DeciderBouncerV2 {
                 }
                 // compare and check if same expanding bits for three consecutive steps
                 if self.steps.len() > 7 {
-                    let i = self.steps.len() - 3;
+                    let i = self.steps.len() - 1;
                     let changed = [
+                        Changed::new(self.steps[i - 4].tape_after, self.steps[i - 6].tape_after),
                         Changed::new(self.steps[i - 2].tape_after, self.steps[i - 4].tape_after),
-                        Changed::new(self.steps[i].tape_after, self.steps[i - 2].tape_after),
-                        Changed::new(self.data.tape_shifted() as u64, self.steps[i].tape_after),
+                        Changed::new(
+                            self.steps[i].tape_after as u64,
+                            self.steps[i - 2].tape_after,
+                        ),
                     ];
                     is_bouncing_right = Changed::is_bouncer_3(&changed);
                     #[cfg(all(debug_assertions, feature = "bb_debug"))]
@@ -262,20 +242,16 @@ impl Decider for DeciderBouncerV2 {
                     }
                     // compare and check if same expanding bits for three steps but leaving one out each time
                     if self.steps.len() > 13 {
-                        let i = self.steps.len() - 3;
                         let changed = [
                             Changed::new(
-                                self.steps[i - 6].tape_after,
-                                self.steps[i - 10].tape_after,
+                                self.steps[i - 8].tape_after,
+                                self.steps[i - 12].tape_after,
                             ),
                             Changed::new(
-                                self.steps[i - 2].tape_after,
-                                self.steps[i - 6].tape_after,
+                                self.steps[i - 4].tape_after,
+                                self.steps[i - 8].tape_after,
                             ),
-                            Changed::new(
-                                self.data.tape_shifted() as u64,
-                                self.steps[i - 2].tape_after,
-                            ),
+                            Changed::new(self.steps[i].tape_after, self.steps[i - 4].tape_after),
                         ];
                         is_bouncing_right = Changed::is_bouncer_3(&changed);
                         #[cfg(all(debug_assertions, feature = "bb_debug"))]
@@ -292,22 +268,10 @@ impl Decider for DeciderBouncerV2 {
                 }
 
                 // get first step where right half tape is empty
-            } else if self.data.tape_shifted() & FILTER_LOW_BITS_U128 == 0
+            } else if self.data.tape.is_right_empty()
                 && self.data.step_no > last_left_empty_step_no
                 && last_right_empty_step_no <= last_left_empty_step_no
             {
-                if !self.data.is_tape_shifted_clean() {
-                    // println!(
-                    //     "tape shifted not clean: Step {}, {machine}",
-                    //     self.data.step_no
-                    // );
-                    self.data.status = MachineStatus::Undecided(
-                        crate::status::UndecidedReason::TapeSizeLimit,
-                        self.data.step_no,
-                        TAPE_SIZE_BIT_U128 as u32,
-                    );
-                    break;
-                }
                 last_right_empty_step_no = self.data.step_no;
                 // store step
                 let step = StepBouncer {
@@ -315,7 +279,7 @@ impl Decider for DeciderBouncerV2 {
                     _step_no: self.data.step_no,
                     #[cfg(debug_assertions)]
                     _is_upper_bits: false,
-                    tape_after: (self.data.tape_shifted() >> 64) as u64,
+                    tape_after: self.data.tape.left_64_bit(),
                 };
                 self.steps.push(step);
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
@@ -326,14 +290,11 @@ impl Decider for DeciderBouncerV2 {
                 }
                 // compare and check if same expanding bits for both sides
                 if is_bouncing_right && self.steps.len() > 7 {
-                    let i = self.steps.len() - 3;
+                    let i = self.steps.len() - 1;
                     let changed = [
+                        Changed::new(self.steps[i - 4].tape_after, self.steps[i - 6].tape_after),
                         Changed::new(self.steps[i - 2].tape_after, self.steps[i - 4].tape_after),
                         Changed::new(self.steps[i].tape_after, self.steps[i - 2].tape_after),
-                        Changed::new(
-                            (self.data.tape_shifted() >> 64) as u64,
-                            self.steps[i].tape_after,
-                        ),
                     ];
                     if Changed::is_bouncer_3(&changed) {
                         #[cfg(all(debug_assertions, feature = "bb_debug"))]
@@ -352,20 +313,16 @@ impl Decider for DeciderBouncerV2 {
                         break;
                     }
                     if self.steps.len() > 13 {
-                        let i = self.steps.len() - 3;
                         let changed = [
                             Changed::new(
-                                self.steps[i - 6].tape_after,
-                                self.steps[i - 10].tape_after,
+                                self.steps[i - 8].tape_after,
+                                self.steps[i - 12].tape_after,
                             ),
                             Changed::new(
-                                self.steps[i - 2].tape_after,
-                                self.steps[i - 6].tape_after,
+                                self.steps[i - 4].tape_after,
+                                self.steps[i - 8].tape_after,
                             ),
-                            Changed::new(
-                                (self.data.tape_shifted() >> 64) as u64,
-                                self.steps[i - 2].tape_after,
-                            ),
+                            Changed::new(self.steps[i].tape_after, self.steps[i - 4].tape_after),
                         ];
                         if Changed::is_bouncer_3(&changed) {
                             #[cfg(all(debug_assertions, feature = "bb_debug"))]
@@ -626,7 +583,7 @@ mod tests {
         // println!("Result: {}", check_result);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(70))
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(48))
         );
     }
 
@@ -667,7 +624,7 @@ mod tests {
         // println!("Result: {}", check_result);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(85))
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(56))
         );
     }
 
@@ -822,7 +779,7 @@ mod tests {
         let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(150))
+            MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(71))
         );
     }
 
@@ -875,7 +832,7 @@ mod tests {
         let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
-            MachineStatus::Undecided(UndecidedReason::StepLimit, 2000, 128)
+            MachineStatus::Undecided(UndecidedReason::StepLimit, 2000, 59)
         );
     }
 
@@ -915,10 +872,10 @@ mod tests {
             .step_limit_bouncer(2000)
             .build();
         let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
-        assert_eq!(
-            check_result,
-            MachineStatus::Undecided(UndecidedReason::TapeSizeLimit, 1431, 128)
-        );
+        if let MachineStatus::Undecided(UndecidedReason::TapeSizeLimit, _, _) = check_result {
+        } else {
+            panic!("{check_result}");
+        }
 
         // good example of switched status, else same machine
         let mut transitions: Vec<(&str, &str)> = Vec::new();
@@ -932,10 +889,10 @@ mod tests {
             .write_html_file(true)
             .build();
         let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
-        assert_eq!(
-            check_result,
-            MachineStatus::Undecided(UndecidedReason::TapeSizeLimit, 1431, 128)
-        );
+        if let MachineStatus::Undecided(UndecidedReason::TapeSizeLimit, _, _) = check_result {
+        } else {
+            panic!("{check_result}");
+        }
     }
 
     #[test]

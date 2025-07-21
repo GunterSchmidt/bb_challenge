@@ -296,7 +296,7 @@ impl Generator for GeneratorReduced {
                         match check_pre {
                             // store machine only in this case
                             PreDeciderReason::None => {
-                                permutation.set_eval_has_self_referencing_transition();
+                                permutation.has_self_referencing_transition_store_result();
                                 permutations.push(permutation);
                                 #[cfg(feature = "bb_print_non_pre_perm")]
                                 println!(
@@ -600,7 +600,7 @@ mod tests {
         let (mut machines, _) = g.generate_permutation_batch_no(batch_no);
         for mf in machines.iter_mut() {
             if mf.id() == mr.id() {
-                mf.set_eval_has_self_referencing_transition();
+                mf.has_self_referencing_transition_store_result();
                 // println!("m full    {}: {}", mf.id(), mf.to_standard_tm_text_format());
                 assert_eq!(mr, *mf);
                 return;
@@ -627,7 +627,7 @@ mod tests {
             for mf in machines_full[start_id..].iter_mut() {
                 if mf.id() == mr.id() {
                     start_id = mf.id() as usize;
-                    mf.set_eval_has_self_referencing_transition();
+                    mf.has_self_referencing_transition_store_result();
                     // if mr != *mf {
                     //     println!("r {}: {}", mr.id(), mr.to_standard_tm_text_format());
                     //     println!("f {}: {}", mf.id(), mf.to_standard_tm_text_format());

@@ -152,15 +152,17 @@ impl Machine {
     //     &self.transition_table
     // }
 
-    /// This only returns the correct value if [Self::set_eval_has_self_referencing_transition] was run.
+    /// Returns true if at least one self-referencing transition exists (D1 1LD). \
+    /// Slightly slower then [has_self_referencing_transition_store_result] if called repeatedly.
     pub fn has_self_referencing_transition(&self) -> bool {
         self.transition_table.has_self_referencing_transition()
     }
 
-    /// This needs to be run once to identify self referencing transitions. Somewhat time consuming.
-    pub fn set_eval_has_self_referencing_transition(&mut self) -> bool {
+    /// Returns true if at least one self-referencing transition exists (D1 1LD). \
+    /// Also sets an internal marker to avoid another complex identification.
+    pub fn has_self_referencing_transition_store_result(&mut self) -> bool {
         self.transition_table
-            .eval_set_has_self_referencing_transition()
+            .has_self_referencing_transition_store_result()
     }
 
     pub fn n_states(&self) -> usize {
@@ -257,7 +259,7 @@ impl Machine {
             _ => return None,
         }
         let mut m = Self::from_string_tuple(id, &transitions);
-        m.set_eval_has_self_referencing_transition();
+        m.has_self_referencing_transition_store_result();
 
         Some(m)
     }

@@ -70,12 +70,12 @@ pub enum MachineStatus {
     /// Hold for fast evaluation
     DecidedHolds(StepTypeBig),
     /// Holds after steps, tape size, ones on tape
-    DecidedHoldsDetail(StepTypeBig, StepTypeSmall, StepTypeSmall),
+    DecidedHoldsDetail(StepTypeBig, StepTypeSmall, u32),
     DecidedNotMaxTooManyHoldTransitions,
     DecidedNotMaxNotAllStatesUsed,
     EliminatedPreDecider(PreDeciderReason),
-    /// Undecided, stopped after steps, tape size
-    Undecided(UndecidedReason, StepTypeBig, StepTypeSmall),
+    /// UndecidedReason, stopped after steps, tape size in cells
+    Undecided(UndecidedReason, StepTypeBig, u32),
     // UndecidedFastTapeBoundReached,
 }
 
@@ -133,10 +133,16 @@ impl Display for MachineStatus {
                                 )
                                 .as_str(),
                             ),
-                            UndecidedReason::TapeSizeLimit => s.push_str(
-                                format!("Undecided: Tape Size Limit {tape_size_limit} (blocks: {}) reached: {steps} steps", tape_size_limit / 32)
-                                    .as_str(),
-                            ),
+                            UndecidedReason::TapeSizeLimit => {
+                                let s_limit =if *tape_size_limit > 128{
+                                format!("Undecided: Tape size limit {tape_size_limit} (blocks: {}) reached: {steps} steps", 
+                                tape_size_limit.div_ceil(32))
+                                    
+                                } else {
+                                format!("Undecided: Tape size or bound limit {tape_size_limit} reached: {steps} steps")
+                                };
+                                    s.push_str(&s_limit)
+                            }
                             UndecidedReason::Undefined => todo!(),
                             UndecidedReason::NoSinusRhythmIdentified => {
                                 s.push_str(

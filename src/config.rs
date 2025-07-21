@@ -337,7 +337,11 @@ impl Config {
         let path = PATH_RESULT_HTML;
         if !file_exists(path) {
             // create dir
-            std::fs::create_dir(path).expect("Path could not be created.");
+            if let Err(e) = std::fs::create_dir(path) {
+                if e.kind() != std::io::ErrorKind::AlreadyExists {
+                    panic!("Path could not be created: {path}\n Error {e}.");
+                }
+            }
         }
         path.to_string()
     }

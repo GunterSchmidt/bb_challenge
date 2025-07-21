@@ -142,14 +142,14 @@ pub fn run_deciders_bb_challenge_file(
     file_path: String,
 ) -> DeciderResultStats {
     let first_config = decider_config.first().unwrap().config();
-    let reader = crate::bb_file_reader::BBFileDataProviderBuilder::builder(file_path)
+    let reader = crate::bb_file_reader::BBFileDataProviderBuilder::builder(&file_path)
         .id_range(first_config.file_id_range())
         .batch_size(200)
         .build();
     let bb_file_reader = match reader {
         Ok(f) => f,
         Err(e) => {
-            panic!("File Reader could not be build: {e}");
+            panic!("File Reader could not be build:\npath: {file_path}\nError: {e}");
         }
     };
     // println!("Reader: {:?}", bb_file_reader);

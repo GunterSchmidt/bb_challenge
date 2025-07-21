@@ -114,7 +114,7 @@ use std::fmt::Display;
 use crate::{
     config::Config,
     decider::{self, Decider, DECIDER_HOLD_ID},
-    decider_data_128::DeciderData128,
+    decider_data_long_128::DeciderDataLong128,
     decider_result::BatchData,
     machine::Machine,
     status::MachineStatus,
@@ -133,9 +133,14 @@ use crate::{
 // TODO performance html: keep 1000 lines in memory, then write
 // TO DO many steps: stop after limit, but write last 1000 lines (this is difficult without creating the lines anyway)
 // TO DO speedup u64 than handover? Probably only very small gain
+// TODO Find self-ref cycle, e.g. ID_29439_1RB0RZ_0RC0RA_0LC1RD_1LE1RA_1RD0LD:
+// - A0 1RB -> B1 0RA: check 63 0 and 62 1 and right repeat 01 (x*0101) 10101010←01010101_010101010101010101010101_01010101010101010101010100000000
+// - D0 1LE -> E1 0LD: check 63 1 and 64 0 and left repeat 01 (01010*1) 011101010101010101010101_01010101→00101010
+// BB5_MAX:
+// - A1 1LC -> C1 0LE -> E1 0LA: check 63 1, 64 1 and 65 1 and left repeat 1 (1111*1) 00000000000000001111111111111111_111111111111111111111111_11111111→10010010
 // This is the same as decider_hold_u128_long_v2 only with split and moved functionality to DeciderData128. May have an insignificant performance loss.
 pub struct DeciderHoldU128Long {
-    data: DeciderData128,
+    data: DeciderDataLong128,
     // machine id, just for debugging
     // machine_id: IdBig,
 }
@@ -144,7 +149,7 @@ impl DeciderHoldU128Long {
     pub fn new(config: &Config) -> Self {
         #[allow(unused_mut)]
         let mut decider = Self {
-            data: DeciderData128::new(config),
+            data: DeciderDataLong128::new(config),
             // machine_id: 0,
         };
 
@@ -219,7 +224,7 @@ impl Decider for DeciderHoldU128Long {
         } else if self
             .data
             .transition_table
-            .eval_set_has_self_referencing_transition()
+            .has_self_referencing_transition_store_result()
         {
             self.decide_machine_with_self_referencing_transition()
         } else {

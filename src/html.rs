@@ -163,8 +163,10 @@ impl HtmlWriter {
                 if !std::fs::exists(path)? {
                     std::fs::create_dir_all(path)?;
                 }
-                let file_name =
-                    decider_id.name.to_owned() + "_" + machine.file_name().as_str() + ".html";
+                let file_name = decider_id.name.replace(" ", "_")
+                    + "_"
+                    + machine.file_name().as_str()
+                    + ".html";
                 let p = Path::new(&path).join(&file_name);
                 let mut file = File::create(&p)?;
                 write_html_header(&mut file, &machine.to_standard_tm_text_format())?;
@@ -189,6 +191,21 @@ impl HtmlWriter {
                     "{}",
                     machine.transition_table().to_table_html_string(true)
                 )?;
+
+                // write self-referencing
+                if machine.has_self_referencing_transition() {
+                    let ts = machine
+                        .transition_table()
+                        .get_self_referencing_transitions();
+                    let mut s = vec![String::from("Self-referencing transitions:")];
+                    for t in ts.iter() {
+                        s.push(format!("{} {t}", t.array_id_to_string()));
+                    }
+
+                    let text = s.join("</br>");
+                    writeln!(file, "<p>{text}</p>",)?;
+                }
+
                 // start with an opening <p> tag, as the lines end with </br>, but this actually leads to nested paragraphs.
                 // writeln!(file, "  <p>")?;
 
@@ -478,7 +495,7 @@ pub fn write_step_html_128(
     tr_field_id: usize,
     transition: TransitionSymbol2,
     tape_shifted: u128,
-    pos_middle: usize,
+    pos_middle: u32,
 ) {
     let data = StepHtml {
         step_no,
@@ -556,12 +573,12 @@ pub struct StepHtml {
     pub tr_field_id: usize,
     /// Current transition
     pub transition: TransitionSymbol2,
-    /// tape after the transition was executed
+    /// Tape after the transition was executed. Displayed as 128-Bit with head as bit 63.
     pub tape_shifted: u128,
     /// if false the lower 64 bit will be used. This can also be used to only print the middle part if the tape is shifted before by 32 bit.
     pub is_u128_tape: bool,
     /// current pos_middle
-    pub pos_middle: usize,
+    pub pos_middle: u32,
     /// current tape_long if available or necessary
     pub tape_long_positions: Option<TapeLongPositions>,
 }

@@ -59,7 +59,10 @@ const FILTER_DIR: TransitionType = 0b1100_0000;
 pub(crate) const FILTER_STATE: TransitionType = 0b0001_1110;
 const FILTER_ARRAY_ID: TransitionType = 0b0001_1111;
 const FILTER_SELF_REF: TransitionType = 0b0000_0001_0000_0000;
-const FILTER_TABLE_SELF_REF: TransitionType = 0b1000_0000;
+const FILTER_TABLE_SELF_REF: TransitionType = 0b1100_0000;
+// const SELF_REF_NOT_CHECKED: TransitionType = 0b0000_0000;
+const SELF_REF_SET_TRUE: TransitionType = 0b1000_0000;
+const SELF_REF_SET_FALSE: TransitionType = 0b0100_0000;
 const FILTER_TABLE_N_STATES: TransitionType = 0b0000_1111;
 // TODO why?
 pub const TRANSITION_HOLD: TransitionType = DIRECTION_UNDEFINED; // | SYMBOL_UNDEFINED | STATE_HOLD;
@@ -258,6 +261,10 @@ impl TransitionSymbol2 {
         (self.transition & FILTER_ARRAY_ID) as usize
     }
 
+    pub fn array_id_to_string(&self) -> String {
+        Self::field_id_to_string(self.array_id())
+    }
+
     /// returns direction for left = -1, for right 1
     pub fn direction(&self) -> DirectionType {
         ((self.transition & FILTER_DIR) >> 6) as DirectionType - 2
@@ -437,8 +444,8 @@ impl Display for TransitionSymbol2 {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionTableSymbol2 {
     /// Transition\[0\] is used for additional information \
-    /// n_states: bit 0-4
-    /// has_self_referencing_transition: bit 7
+    /// n_states: bits 0-4: Always set with new() variants
+    /// has_self_referencing_transition: bits 76: 00: not checked, 01: has none, 10: has some
     pub transitions: TransitionSym2Array1D,
 }
 
@@ -662,24 +669,46 @@ impl TransitionTableSymbol2 {
         self.transitions[0].transition |= n_states as TransitionType;
     }
 
-    pub fn has_self_referencing_transition(&self) -> bool {
-        (self.transitions[0].transition & FILTER_TABLE_SELF_REF) != 0
-    }
-
-    /// Evaluates and sets self referencing transition marker.
-    /// A transition is self referencing when state and symbol do not change, e.g. field B1: 1RB
-    pub fn eval_set_has_self_referencing_transition(&mut self) -> bool {
+    pub fn get_self_referencing_transitions(&self) -> Vec<TransitionSymbol2> {
+        let mut v = Vec::new();
         for (id, t) in self.transitions_used_eval().iter().enumerate() {
             if t.array_id() == id + 2 {
-                self.transitions[0].transition |= FILTER_TABLE_SELF_REF;
+                v.push(*t);
+            }
+        }
+
+        v
+    }
+
+    /// Returns true if at least one self-referencing transition exists (D1 1LD). \
+    /// Slightly slower then [has_self_referencing_transition_store_result] if called repeatedly.
+    pub fn has_self_referencing_transition(&self) -> bool {
+        for (id, t) in self.transitions_used_eval().iter().enumerate() {
+            if t.array_id() == id + 2 {
                 return true;
             }
         }
         false
     }
 
-    pub fn set_has_self_referencing_transition(&mut self) {
-        self.transitions[0].transition |= FILTER_TABLE_SELF_REF;
+    /// Checks and returns if this table has at least one self referencing transition. \
+    /// Stores the result internally and is much faster on second check.
+    pub fn has_self_referencing_transition_store_result(&mut self) -> bool {
+        match self.transitions[0].transition & FILTER_TABLE_SELF_REF {
+            SELF_REF_SET_TRUE => true,
+            SELF_REF_SET_FALSE => false,
+            // SELF_REF_NOT_CHECKED
+            _ => {
+                for (id, t) in self.transitions_used_eval().iter().enumerate() {
+                    if t.array_id() == id + 2 {
+                        self.transitions[0].transition |= SELF_REF_SET_TRUE;
+                        return true;
+                    }
+                }
+                self.transitions[0].transition |= SELF_REF_SET_FALSE;
+                false
+            }
+        }
     }
 
     pub fn clear_has_self_referencing_transition(&mut self) {
