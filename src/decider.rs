@@ -3,8 +3,8 @@ use std::{fmt::Display, time::Duration};
 
 use crate::{
     config::Config,
+    decider_bouncer_128::DeciderBouncer128,
     decider_bouncer_v1::DeciderBouncerV1,
-    decider_bouncer_v2::DeciderBouncerV2,
     decider_result::{BatchData, DeciderResultStats, EndReason, PreDeciderCount},
     decider_result_worker::FnResultWorker,
     machine::Machine,
@@ -37,7 +37,7 @@ pub type FnDeciderRunBatchV2 = fn(&mut BatchData) -> ResultUnitEndReason;
 
 pub enum DeciderStandard {
     BouncerV1,
-    BouncerV2,
+    Bouncer128,
     Cycler,
     Hold,
 }
@@ -48,8 +48,8 @@ impl DeciderStandard {
             DeciderStandard::BouncerV1 => {
                 DeciderCaller::new(&DECIDER_BOUNCER_ID, DeciderBouncerV1::decider_run_batch)
             }
-            DeciderStandard::BouncerV2 => {
-                DeciderCaller::new(&DECIDER_BOUNCER_ID, DeciderBouncerV2::decider_run_batch)
+            DeciderStandard::Bouncer128 => {
+                DeciderCaller::new(&DECIDER_BOUNCER_ID, DeciderBouncer128::decider_run_batch)
             }
             DeciderStandard::Cycler => DeciderCaller::new(
                 &DECIDER_CYCLER_ID,
@@ -69,9 +69,9 @@ impl DeciderStandard {
                 DeciderBouncerV1::decider_run_batch,
                 config,
             ),
-            DeciderStandard::BouncerV2 => DeciderConfig::new(
+            DeciderStandard::Bouncer128 => DeciderConfig::new(
                 &DECIDER_BOUNCER_ID,
-                DeciderBouncerV2::decider_run_batch,
+                DeciderBouncer128::decider_run_batch,
                 config,
             ),
             DeciderStandard::Cycler => DeciderConfig::new(

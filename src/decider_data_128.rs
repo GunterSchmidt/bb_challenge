@@ -6,7 +6,6 @@ use crate::{
     status::{MachineStatus, UndecidedReason},
     tape::Tape,
     tape_128::Tape128,
-    tape_long::TapeLong,
     tape_utils::{
         TapeLongPositions, CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128,
         POS_HALF_U128, TAPE_SIZE_BIT_U128, TAPE_SIZE_HALF_128,
@@ -156,7 +155,7 @@ impl DeciderData128 {
         MachineStatus::Undecided(
             UndecidedReason::StepLimit,
             self.step_no as StepTypeBig,
-            self.tape.tape_size(),
+            self.tape.tape_size_cells(),
         )
     }
 
@@ -170,7 +169,7 @@ impl DeciderData128 {
         match self.status {
             MachineStatus::DecidedHolds(steps) => MachineStatus::DecidedHoldsDetail(
                 steps,
-                self.tape.tape_size(),
+                self.tape.tape_size_cells(),
                 self.tape.count_ones(),
             ),
             _ => self.status,
@@ -559,9 +558,9 @@ impl From<&crate::decider_data_128::DeciderData128> for crate::html::StepHtml {
     fn from(data: &crate::decider_data_128::DeciderData128) -> Self {
         let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit;
         let tape_shifted = if is_u128_tape {
-            data.tape.tape_shifted()
+            data.tape.tape_shifted_clean()
         } else {
-            data.tape.tape_shifted() >> 32
+            data.tape.tape_shifted_clean() >> 32
         };
         Self {
             step_no: data.step_no,
@@ -569,7 +568,7 @@ impl From<&crate::decider_data_128::DeciderData128> for crate::html::StepHtml {
             transition: data.tr,
             tape_shifted,
             is_u128_tape,
-            pos_middle: data.tape.pos_middle(),
+            pos_middle_shifted: data.tape.pos_middle(),
             tape_long_positions: None,
         }
     }

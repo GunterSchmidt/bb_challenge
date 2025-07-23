@@ -3,10 +3,11 @@ use std::fmt::Display;
 use crate::{
     config::{Config, StepTypeBig},
     status::{MachineStatus, UndecidedReason},
+    tape::Tape,
     tape_long::TapeLong,
     tape_utils::{
-        TapeLongPositions, CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128,
-        POS_HALF_U128, TAPE_SIZE_HALF_128,
+        CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128, POS_HALF_U128,
+        TAPE_SIZE_HALF_128,
     },
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_SYM2_START},
 };
@@ -26,7 +27,7 @@ pub struct DeciderDataLong128 {
 
     /// The tape_long is a ```Vec<u64>``` which allows to copy half of u128 tape_shifted to
     /// be copied into the long tape when a bound is reached.
-    pub tl: TapeLong,
+    pub tape: TapeLong,
 
     // machine id, just for debugging
     // machine_id: IdBig,
@@ -52,7 +53,7 @@ impl DeciderDataLong128 {
     pub fn new(config: &Config) -> Self {
         Self {
             // decider_id,
-            tl: TapeLong::new(config.tape_size_limit_u32_blocks()),
+            tape: TapeLong::new(config),
 
             step_no: 0,
             transition_table: TransitionTableSymbol2::default(),
@@ -77,7 +78,7 @@ impl DeciderDataLong128 {
     #[inline]
     // resets the decider for a different machine
     pub fn clear(&mut self) {
-        self.tl.clear();
+        self.tape.clear();
 
         self.step_no = 0;
         self.tr = TRANSITION_SYM2_START;
@@ -89,14 +90,14 @@ impl DeciderDataLong128 {
     #[inline(always)]
     pub fn get_current_symbol(&self) -> usize {
         // resolves to one if bit is set
-        ((self.tl.tape_shifted & POS_HALF_U128) != 0) as usize
+        ((self.tape.tape_shifted & POS_HALF_U128) != 0) as usize
     }
 
     // Returns the next transition and updates the step counter, but does not update the tape yet
     #[inline(always)]
     pub fn next_transition(&mut self) {
         self.step_no += 1;
-        self.tr_field = self.tr.state_x2() + self.tl.get_current_symbol();
+        self.tr_field = self.tr.state_x2() + self.tape.get_current_symbol() as usize;
         self.tr = self.transition_table.transition(self.tr_field);
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
         println!("{}", self.step_to_string());
@@ -111,7 +112,7 @@ impl DeciderDataLong128 {
         if self.tr.is_hold() {
             // write last symbol
             if !self.tr.is_symbol_undefined() {
-                self.tl.set_current_symbol(self.tr);
+                self.tape.set_current_symbol(self.tr);
             }
             // println!("{}", self.tl.tape_shifted.to_binary_split_string());
             self.status = MachineStatus::DecidedHolds(self.step_no);
@@ -130,7 +131,7 @@ impl DeciderDataLong128 {
 
     /// Tape shifted is clean (contains the correct cell values) as long the bounds have not been breached.
     pub fn is_tape_shifted_clean(&self) -> bool {
-        self.tl.tl_high_bound() - self.tl.tl_low_bound() == 3
+        self.tape.tl_high_bound() - self.tape.tl_low_bound() == 3
     }
 
     /// Returns true if html is enabled and the step_no is < 1000 or > config.write_html_step_start .
@@ -159,7 +160,7 @@ impl DeciderDataLong128 {
         MachineStatus::Undecided(
             UndecidedReason::StepLimit,
             self.step_no as StepTypeBig,
-            self.tl.tape_size(),
+            self.tape.tape_size_cells(),
         )
     }
 
@@ -171,9 +172,11 @@ impl DeciderDataLong128 {
     /// Returns the status of the decider and additionally written Ones on tape and Tape Size
     pub fn status_full(&self) -> MachineStatus {
         match self.status {
-            MachineStatus::DecidedHolds(steps) => {
-                MachineStatus::DecidedHoldsDetail(steps, self.tl.tape_size(), self.tl.count_ones())
-            }
+            MachineStatus::DecidedHolds(steps) => MachineStatus::DecidedHoldsDetail(
+                steps,
+                self.tape.tape_size_cells(),
+                self.tape.count_ones(),
+            ),
             _ => self.status,
         }
     }
@@ -201,12 +204,8 @@ impl DeciderDataLong128 {
     //     }
     // }
 
-    pub fn tape_long_positions(&self) -> TapeLongPositions {
-        self.tl.tape_long_positions()
-    }
-
     pub fn tape_shifted(&self) -> u128 {
-        self.tl.tape_shifted
+        self.tape.tape_shifted
     }
     /// Updates tape_shifted and tape_long.
     /// Also prints and writes step to html if feature is set.
@@ -215,12 +214,12 @@ impl DeciderDataLong128 {
     #[must_use]
     #[inline(always)]
     pub fn update_tape_single_step(&mut self) -> bool {
-        let shift_ok = self.tl.update_tape_single_step(self.tr);
+        let shift_ok = self.tape.update_tape_single_step(self.tr);
         if !shift_ok {
             self.status = MachineStatus::Undecided(
                 UndecidedReason::TapeSizeLimit,
                 self.step_no,
-                self.tl.tape_size(),
+                self.tape.tape_size_cells(),
             );
         }
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
@@ -250,7 +249,7 @@ impl DeciderDataLong128 {
             // Self referencing means also that the symbol does not change, ergo no need to update the fields
             if self.tr.array_id() == self.tr_field {
                 // get jump within tape_shifted, which is only the lower part and thus a maximum of 63 bits
-                let mut jump = self.tl.count_right(self.tr_field & 1);
+                let mut jump = self.tape.count_right(self.tr_field & 1);
                 // if self.num_steps > 50_000 {
                 //     // #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 //     println!("  jump R {jump}, {}", self.step_to_string());
@@ -258,15 +257,15 @@ impl DeciderDataLong128 {
                 // The content is either always 0 or always 1, which makes looping over multiple u32 fields easy
                 // Interestingly, the version with the long_jump logic runs faster.
                 let mut long_jump = false;
-                if jump == 32 && self.tl.pos_middle + jump == HIGH32_SWITCH_U128 {
+                if jump == 32 && self.tape.pos_middle + jump == HIGH32_SWITCH_U128 {
                     // check further for larger jump
                     // compare depending on symbol
                     let v32 = if self.tr_field & 1 == 0 { 0 } else { u32::MAX };
                     // head goes right, tape shifts left
                     // tl_pos + 2 is now a known required value v32, because that is what count_right just tested
-                    let mut p = self.tl.tl_pos() + 3;
+                    let mut p = self.tape.tl_pos() + 3;
                     let mut j = 1;
-                    while p < self.tl.tl_high_bound() && self.tl.tape_long[p] == v32 {
+                    while p < self.tape.tl_high_bound() && self.tape.tape_long[p] == v32 {
                         p += 1;
                         j += 1;
                     }
@@ -281,22 +280,22 @@ impl DeciderDataLong128 {
                         //     j * 32
                         // );
                         // shift out high bit after moving 32 bit
-                        let tape_shifted_left_1 = (self.tl.tape_shifted >> 64) as u32;
-                        let p_tmp = self.tl.tl_pos() + 1;
-                        self.tl.tape_long[p_tmp] = tape_shifted_left_1;
-                        self.tl.set_tl_pos(p - 3);
+                        let tape_shifted_left_1 = (self.tape.tape_shifted >> 64) as u32;
+                        let p_tmp = self.tape.tl_pos() + 1;
+                        self.tape.tape_long[p_tmp] = tape_shifted_left_1;
+                        self.tape.set_tl_pos(p - 3);
                         // println!("before {}", self.tape_shifted.to_binary_split_string());
-                        self.tl.tape_shifted = if self.tr_field & 1 == 0 {
+                        self.tape.tape_shifted = if self.tr_field & 1 == 0 {
                             0
                         } else {
                             CLEAR_LOW63_00BITS_U128
                         };
                         // println!("filled {}", self.tape_shifted.to_binary_split_string());
-                        self.tl.pos_middle = HIGH32_SWITCH_U128;
+                        self.tape.pos_middle = HIGH32_SWITCH_U128;
                         self.step_no += j * 32 - 1;
                         // shift in low bits (low part is already cleared)
-                        self.tl.tape_shifted |=
-                            (self.tl.tape_long[self.tl.tl_pos() + 3] as u128) << 32;
+                        self.tape.tape_shifted |=
+                            (self.tape.tape_long[self.tape.tl_pos() + 3] as u128) << 32;
                         // println!("fill 2 {}", self.tape_shifted.to_binary_split_string());
                         long_jump = true;
                     }
@@ -310,16 +309,16 @@ impl DeciderDataLong128 {
                     //                         }
                 }
                 if !long_jump {
-                    if self.tl.pos_middle + jump > HIGH32_SWITCH_U128 {
-                        jump = HIGH32_SWITCH_U128 - self.tl.pos_middle;
+                    if self.tape.pos_middle + jump > HIGH32_SWITCH_U128 {
+                        jump = HIGH32_SWITCH_U128 - self.tape.pos_middle;
                         #[cfg(all(debug_assertions, feature = "bb_debug"))]
                         println!("  jump right adjusted {jump}");
                     }
-                    self.tl.pos_middle += jump;
+                    self.tape.pos_middle += jump;
 
                     // shift tape
                     // self.set_current_symbol();
-                    self.tl.tape_shifted <<= jump;
+                    self.tape.tape_shifted <<= jump;
                     self.step_no += jump as StepTypeBig - 1;
                 }
                 // #[cfg(feature = "bb_enable_html_reports")]
@@ -339,34 +338,34 @@ impl DeciderDataLong128 {
                 //     self.write_html_p(&s);
                 // }
             } else {
-                self.tl.pos_middle += 1;
+                self.tape.pos_middle += 1;
 
                 // shift tape
-                self.tl.set_current_symbol(self.tr);
-                self.tl.tape_shifted <<= 1;
+                self.tape.set_current_symbol(self.tr);
+                self.tape.tape_shifted <<= 1;
             }
 
-            self.tl.shift_tape_long_head_dir_right()
+            self.tape.shift_tape_long_head_dir_right()
         } else {
             // normal shift LEFT -> tape moves right
 
             // Check if self referencing, which speeds up the shift greatly.
             if self.tr.array_id() == self.tr_field {
-                let mut jump = self.tl.count_left(self.tr_field & 1);
+                let mut jump = self.tape.count_left(self.tr_field & 1);
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 println!("  jump left {jump}");
                 // The content is either always 0 or always 1, which makes looping over multiple u32 fields easy
                 // Interestingly, the version with the long_jump logic runs faster.
                 let mut long_jump = false;
-                if jump == 33 && LOW32_SWITCH_U128 - 1 + jump == self.tl.pos_middle {
+                if jump == 33 && LOW32_SWITCH_U128 - 1 + jump == self.tape.pos_middle {
                     // check further for larger jump
                     // compare depending on symbol
                     let v32 = if self.tr_field & 1 == 0 { 0 } else { u32::MAX };
                     // head goes left, tape shifts right
                     // tl_pos + 1 is known required value v32, because that is what count_left just tested
-                    let mut p = self.tl.tl_pos();
+                    let mut p = self.tape.tl_pos();
                     let mut j = 1;
-                    while p >= self.tl.tl_low_bound() && self.tl.tape_long[p] == v32 {
+                    while p >= self.tape.tl_low_bound() && self.tape.tape_long[p] == v32 {
                         p -= 1;
                         j += 1;
                     }
@@ -382,22 +381,22 @@ impl DeciderDataLong128 {
                         //     j * 32
                         // );
                         // shift out low bit after moving 32 bit
-                        let tape_shifted_left_2 = (self.tl.tape_shifted >> 32) as u32;
-                        let p_tmp = self.tl.tl_pos() + 2;
-                        self.tl.tape_long[p_tmp] = tape_shifted_left_2;
-                        self.tl.set_tl_pos(p);
+                        let tape_shifted_left_2 = (self.tape.tape_shifted >> 32) as u32;
+                        let p_tmp = self.tape.tl_pos() + 2;
+                        self.tape.tape_long[p_tmp] = tape_shifted_left_2;
+                        self.tape.set_tl_pos(p);
                         // println!("before {}", self.tape_shifted.to_binary_split_string());
-                        self.tl.tape_shifted = if self.tr_field & 1 == 0 {
+                        self.tape.tape_shifted = if self.tr_field & 1 == 0 {
                             0
                         } else {
                             u64::MAX as u128
                         };
                         // println!("filled {}", self.tape_shifted.to_binary_split_string());
-                        self.tl.pos_middle = LOW32_SWITCH_U128;
+                        self.tape.pos_middle = LOW32_SWITCH_U128;
                         self.step_no += j * 32 - 1;
                         // shift in high bits (high part is already cleared)
-                        self.tl.tape_shifted |=
-                            (self.tl.tape_long[self.tl.tl_pos()] as u128) << TAPE_SIZE_HALF_128;
+                        self.tape.tape_shifted |=
+                            (self.tape.tape_long[self.tape.tl_pos()] as u128) << TAPE_SIZE_HALF_128;
                         // println!("fill 2 {}", self.tape_shifted.to_binary_split_string());
                         long_jump = true;
                     }
@@ -411,16 +410,16 @@ impl DeciderDataLong128 {
                     //                         }
                 }
                 if !long_jump {
-                    if self.tl.pos_middle < LOW32_SWITCH_U128 + jump {
-                        jump = self.tl.pos_middle - LOW32_SWITCH_U128;
+                    if self.tape.pos_middle < LOW32_SWITCH_U128 + jump {
+                        jump = self.tape.pos_middle - LOW32_SWITCH_U128;
                         #[cfg(all(debug_assertions, feature = "bb_debug"))]
                         println!("  jump left adjusted {jump}");
                     }
-                    self.tl.pos_middle -= jump;
+                    self.tape.pos_middle -= jump;
 
                     // self.set_current_symbol();
                     // shift tape
-                    self.tl.tape_shifted >>= jump;
+                    self.tape.tape_shifted >>= jump;
                     self.step_no += jump as StepTypeBig - 1;
                 }
                 // #[cfg(feature = "bb_enable_html_reports")]
@@ -441,13 +440,13 @@ impl DeciderDataLong128 {
                 //     self.write_html_p(&s);
                 // }
             } else {
-                self.tl.pos_middle -= 1;
+                self.tape.pos_middle -= 1;
 
-                self.tl.set_current_symbol(self.tr);
+                self.tape.set_current_symbol(self.tr);
                 // shift tape
-                self.tl.tape_shifted >>= 1;
+                self.tape.tape_shifted >>= 1;
             }
-            self.tl.shift_tape_long_head_dir_left()
+            self.tape.shift_tape_long_head_dir_left()
         };
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
         {
@@ -459,12 +458,12 @@ impl DeciderDataLong128 {
         #[cfg(feature = "bb_enable_html_reports")]
         self.write_step_html();
         if !shift_ok {
-            if self.tl.tl_pos() >= self.tl.tape_long.len() {
+            if self.tape.tl_pos() >= self.tape.tape_long.len() {
                 println!(
                     "\n *** Error shift: TL len {}, tl_pos {}, tl_high_bound {}, machine {}",
-                    self.tl.tape_long.len(),
-                    self.tl.tl_pos(),
-                    self.tl.tl_high_bound(),
+                    self.tape.tape_long.len(),
+                    self.tape.tl_pos(),
+                    self.tape.tl_high_bound(),
                     self.transition_table
                 );
                 return false;
@@ -472,7 +471,7 @@ impl DeciderDataLong128 {
             self.status = MachineStatus::Undecided(
                 UndecidedReason::TapeSizeLimit,
                 self.step_no,
-                self.tl.tape_size(),
+                self.tape.tape_size_cells(),
             );
         }
         shift_ok
@@ -524,12 +523,12 @@ impl DeciderDataLong128 {
             "Step {:3} {}: P{}-{} {} Next {}{}",
             self.step_no,
             self.tr,
-            self.tl.tl_pos(),
-            self.tl.pos_middle,
-            crate::tape_utils::U128Ext::to_binary_split_string(&self.tl.tape_shifted),
+            self.tape.tl_pos(),
+            self.tape.pos_middle,
+            crate::tape_utils::U128Ext::to_binary_split_string(&self.tape.tape_shifted),
             // self.get_tape_size(),
             self.tr.state_to_char(),
-            self.tl.get_current_symbol(),
+            self.tape.get_current_symbol(),
         )
     }
 
@@ -563,9 +562,9 @@ impl From<&crate::decider_data_long_128::DeciderDataLong128> for crate::html::St
     fn from(data: &crate::decider_data_long_128::DeciderDataLong128) -> Self {
         let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit;
         let tape_shifted = if is_u128_tape {
-            data.tl.get_clean_tape_shifted()
+            data.tape.tape_shifted_clean()
         } else {
-            data.tl.get_clean_tape_shifted() >> 32
+            data.tape.tape_shifted_clean() >> 32
         };
         Self {
             step_no: data.step_no,
@@ -573,8 +572,8 @@ impl From<&crate::decider_data_long_128::DeciderDataLong128> for crate::html::St
             transition: data.tr,
             tape_shifted,
             is_u128_tape,
-            pos_middle: data.tl.pos_middle(),
-            tape_long_positions: Some(data.tape_long_positions()),
+            pos_middle_shifted: data.tape.pos_middle(),
+            tape_long_positions: data.tape.tape_long_positions(),
         }
     }
 }

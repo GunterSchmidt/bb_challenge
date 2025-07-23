@@ -70,7 +70,7 @@ pub enum MachineStatus {
     /// Hold for fast evaluation
     DecidedHolds(StepTypeBig),
     /// Holds after steps, tape size, ones on tape
-    DecidedHoldsDetail(StepTypeBig, StepTypeSmall, u32),
+    DecidedHoldsDetail(StepTypeBig, u32, u32),
     DecidedNotMaxTooManyHoldTransitions,
     DecidedNotMaxNotAllStatesUsed,
     EliminatedPreDecider(PreDeciderReason),

@@ -121,7 +121,7 @@ const MAX_INIT_CAPACITY: usize = 10_000;
 
 // TODO Use long tape, or tape_shifted left & right bound could be introduced.
 #[derive(Debug)]
-pub struct DeciderBouncerV2 {
+pub struct DeciderBouncer128 {
     data: DeciderData128,
     /// Store all steps to do comparisons (test if a cycle is repeating)
     /// All even are lower bits, all odd upper bits
@@ -132,7 +132,7 @@ pub struct DeciderBouncerV2 {
     // maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)],
 }
 
-impl DeciderBouncerV2 {
+impl DeciderBouncer128 {
     /// Creates a new bouncer. Only uses step_limit_bouncer from config.
     pub fn new(config: &Config) -> Self {
         let cap = (config.step_limit_bouncer() as usize).min(MAX_INIT_CAPACITY);
@@ -163,7 +163,7 @@ impl DeciderBouncerV2 {
     }
 }
 
-impl Decider for DeciderBouncerV2 {
+impl Decider for DeciderBouncer128 {
     fn decider_id() -> &'static decider::DeciderId {
         // &DECIDER_BOUNCER_ID
         &decider::DeciderId {
@@ -398,7 +398,7 @@ pub fn test_decider(transition_tm_format: &str) {
         .write_html_line_limit(500_000)
         .step_limit_bouncer(800_000_000)
         .build();
-    let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+    let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
     println!("{}", check_result);
     // assert_eq!(check_result, MachineStatus::DecidedHolds(47176870));
 }
@@ -477,7 +477,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         // println!("{}", check_result);
         assert_eq!(
             check_result,
@@ -504,7 +504,7 @@ mod tests {
             .write_html_file(true)
             .step_limit_bouncer(500)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         println!("{}", check_result);
         assert_eq!(
             check_result,
@@ -534,7 +534,7 @@ mod tests {
             .write_html_file(true)
             .step_limit_bouncer(500)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         println!("{}", check_result);
         // assert_eq!(
         //     check_result,
@@ -556,7 +556,7 @@ mod tests {
             .write_html_file(true)
             .build();
         // let check_result = DeciderCycler::decide_single_machine(&machine, &config);
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         let ok = if let MachineStatus::Undecided(_, _, _) = check_result {
             true
         } else {
@@ -579,7 +579,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         // println!("Result: {}", check_result);
         assert_eq!(
             check_result,
@@ -600,7 +600,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         // println!("Result: {}", check_result);
         assert_eq!(
             check_result,
@@ -620,7 +620,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         // println!("Result: {}", check_result);
         assert_eq!(
             check_result,
@@ -640,7 +640,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(112))
@@ -659,7 +659,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(123))
@@ -678,7 +678,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(113))
@@ -697,7 +697,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(93))
@@ -716,7 +716,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(87))
@@ -736,7 +736,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(138))
@@ -756,7 +756,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(37))
@@ -776,7 +776,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(71))
@@ -796,7 +796,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(106))
@@ -829,7 +829,7 @@ mod tests {
             .write_html_file(true)
             .step_limit_bouncer(2000)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::Undecided(UndecidedReason::StepLimit, 2000, 59)
@@ -849,7 +849,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(
             check_result,
             MachineStatus::DecidedEndless(crate::status::EndlessReason::Bouncer(132))
@@ -871,7 +871,7 @@ mod tests {
             .write_html_file(true)
             .step_limit_bouncer(2000)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         if let MachineStatus::Undecided(UndecidedReason::TapeSizeLimit, _, _) = check_result {
         } else {
             panic!("{check_result}");
@@ -888,7 +888,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         if let MachineStatus::Undecided(UndecidedReason::TapeSizeLimit, _, _) = check_result {
         } else {
             panic!("{check_result}");
@@ -907,7 +907,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(check_result, MachineStatus::DecidedHolds(21));
     }
 
@@ -924,7 +924,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         assert_eq!(check_result, MachineStatus::DecidedHolds(107));
     }
 
@@ -942,7 +942,7 @@ mod tests {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         let ok = if let MachineStatus::Undecided(_, _, _) = check_result {
             true
         } else {
@@ -965,7 +965,7 @@ mod tests {
             .write_html_line_limit(500_000)
             .step_limit_bouncer(800_000_000)
             .build();
-        let check_result = DeciderBouncerV2::decide_single_machine(&machine, &config);
+        let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
         println!("{}", check_result);
         let ok = if let MachineStatus::Undecided(_, _, _) = check_result {
             true

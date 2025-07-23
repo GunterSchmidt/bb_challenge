@@ -1,4 +1,4 @@
-use crate::{config::Config, transition_symbol2::TransitionSymbol2};
+use crate::{config::Config, tape_utils::TapeLongPositions, transition_symbol2::TransitionSymbol2};
 
 /// This trait provided defined function for a tape. While the trait is not used directly, it
 /// allows to switch tapes quickly in the deciders to do tests, e.g. performance or results.
@@ -29,12 +29,15 @@ pub trait Tape: std::fmt::Display {
     /// Update tape: write symbol at head position into cell
     fn set_current_symbol(&mut self, transition: TransitionSymbol2);
 
+    /// For HTML output, tape long positions if available.
+    fn tape_long_positions(&self) -> Option<TapeLongPositions>;
+
+    /// Tape as 128-Bit with head as bit 63. Displays the actual current bits, not the working tape_shifted.
+    fn tape_shifted_clean(&self) -> u128;
+
     /// Returns the approximate tape size, which is actually not known exactly. \
     /// The high/low bound may indicate the actual used tape or may have shifted to the first 1 in that direction.
-    fn tape_size(&self) -> u32;
-
-    /// Tape as 128-Bit with head as bit 63. Displays the actual current bits not the working tape_shifted.
-    fn tape_shifted(&self) -> u128;
+    fn tape_size_cells(&self) -> u32;
 
     /// Updates tape_shifted and tape_long. \
     /// Also prints and writes step to html if feature is set.

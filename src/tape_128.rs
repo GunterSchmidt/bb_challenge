@@ -9,76 +9,22 @@ use crate::{
     transition_symbol2::TransitionSymbol2,
 };
 
-/// The `tape_long` is a `Vec<u32>` which allows to copy top or bottom 32 bit of u128 tape_shifted
-/// into the long tape when a bound is reached.
-/// TODO The tape has an initial size of e.g. 128 u64 which is 1024 Byte or 8192 tape cells.
-/// The size will double every time its limit is reached. E.g it doubles 1x times to get a size of 256 or 16284 cells,
-/// which is the size for BB5 Max tape length.
-/// Once 131072 u64 is reached (1 MB), it will grow by 1 MB each time.
-/// Here the head is moving within the tape, the tape does not shift at all.
-// TODO limit access, pub removal
+/// This tape was designed to be more performant than the tape_long on the first steps as tape_long does not need
+/// to be maintained. It turns out it does not speed up anything, since tape_long is not used anyhow in these cases. \
+/// There are a few edge cases but these are less than 1% (of the already found cases) and make it irrelevant. \
+/// It is kept for comparison reasons.
 #[derive(Debug)]
 pub struct Tape128 {
-    /// Partial fast Turing tape which shifts in every step, so that the head is always at the MIDDLE_BIT.
-    /// The tape is 128 bit wide, but since data is shifted to the long tape, it may be 'dirty', meaning it
-    /// does not contain the correct cell values. The cell values will be shifted in only if required. \
-    /// In case the head goes left for a large number of steps, the bits next to the head will only be loaded
-    /// one step before. The tape is clean as long as it never reached the outer limits.
+    /// Partial fast Turing tape which shifts in every step, so that the head is always at the MIDDLE_BIT. \
+    /// The tape is 128 bit wide and cannot extend. The used section will shrink to the outmost one to use the
+    /// tape as far as possible. In turn the tape size is not exact. \
     tape_shifted: u128,
-    /// Indication where the original pos_middle has moved within tape_shifted. Used to load data from long_tape.
+    /// Indication where the original pos_middle has moved within tape_shifted. Used to find boundaries.
     pos_middle: u32,
-    // /// Vec of u32 blocks, where each u32 holds 32 cells.
-    // pub tape_long: Vec<u32>,
-    // /// tl_pos represents the start of the 128 tape in the long tape (covering four u32 cell blocks)
-    // tl_pos: usize,
-    /// High bound in tape_long, this is the leftmost bit which is a 1.
+    /// High bound in u128-tape, this is the leftmost bit which is a 1.
     high_bound: u32,
-    /// Low bound in tape_long, this is the rightmost bit which is a 1.
+    /// Low bound in u128-tape, this is the rightmost bit which is a 1.
     low_bound: i32,
-    // /// Tape size limit in number of u32 blocks
-    // tape_size_limit_u32_blocks: u32,
-}
-
-impl Tape128 {
-    // /// Counts Ones for self referencing speed-up
-    // #[inline(always)]
-    // fn count_left(&self, symbol: usize) -> u32 {
-    //     // count 1s starting from middle; get upper part
-    //     let t = (self.tape_shifted >> 64) as u64;
-    //     if symbol == 1 {
-    //         t.trailing_ones() + 1
-    //     } else {
-    //         t.trailing_zeros() + 1
-    //     }
-    // }
-
-    // /// Counts Ones for self referencing speed-up
-    // #[inline(always)]
-    // fn count_right(&self, symbol: usize) -> u32 {
-    //     // count 1s starting from middle; get lower part
-    //     let t = self.tape_shifted as u64;
-    //     if symbol == 1 {
-    //         t.leading_ones()
-    //     } else {
-    //         t.leading_zeros()
-    //     }
-    // }
-
-    // pub fn tape_long_positions(&self) -> TapeLongPositions {
-    //     TapeLongPositions {
-    //         tl_pos: self.tl_pos,
-    //         tl_high_bound: self.high_bound,
-    //         tl_low_bound: self.low_bound,
-    //     }
-    // }
-
-    // pub fn high_bound(&self) -> u32 {
-    //     self.high_bound
-    // }
-
-    // pub fn low_bound(&self) -> u32 {
-    //     self.low_bound as u32
-    // }
 }
 
 impl Tape for Tape128 {
@@ -138,15 +84,19 @@ impl Tape for Tape128 {
         };
     }
 
+    fn tape_long_positions(&self) -> Option<crate::tape_utils::TapeLongPositions> {
+        None
+    }
+
+    fn tape_shifted_clean(&self) -> u128 {
+        self.tape_shifted
+    }
+
     /// Returns the approximate tape size, which is actually not known exactly. \
     /// The high/low bound may indicate the actual used tape or may have shifted to the first 1 in that direction.
     #[inline(always)]
-    fn tape_size(&self) -> u32 {
+    fn tape_size_cells(&self) -> u32 {
         self.high_bound - self.low_bound as u32 + 1
-    }
-
-    fn tape_shifted(&self) -> u128 {
-        self.tape_shifted
     }
 
     /// Updates tape_shifted and tape_long.
@@ -156,15 +106,6 @@ impl Tape for Tape128 {
     #[inline(always)]
     fn update_tape_single_step(&mut self, transition: TransitionSymbol2) -> bool {
         self.set_current_symbol(transition);
-        // if transition.is_dir_right() {
-        //     self.tape_shifted <<= 1;
-        //     self.pos_middle += 1;
-        //     self.shift_tape_long_head_dir_right()
-        // } else {
-        //     self.tape_shifted >>= 1;
-        //     self.pos_middle -= 1;
-        //     self.shift_tape_long_head_dir_left()
-        // }
 
         // shift tape
         self.tape_shifted = if transition.is_dir_right() {

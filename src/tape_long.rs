@@ -91,9 +91,10 @@
 #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
 use crate::tape_utils::{U128Ext, VecU32Ext, TAPE_DISPLAY_RANGE_128};
 use crate::{
-    config::{StepTypeSmall, MAX_TAPE_GROWTH_BLOCKS, TAPE_SIZE_INIT_CELL_BLOCKS},
+    config::{Config, StepTypeSmall, MAX_TAPE_GROWTH_BLOCKS, TAPE_SIZE_INIT_CELL_BLOCKS},
+    tape::Tape,
     tape_utils::{
-        TapeLongPositions, CLEAR_HIGH127_96BITS_U128, CLEAR_HIGH95_64BITS_U128,
+        TapeLongPositions, U128Ext, CLEAR_HIGH127_96BITS_U128, CLEAR_HIGH95_64BITS_U128,
         CLEAR_LOW31_00BITS_U128, CLEAR_LOW63_32BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128,
         MIDDLE_BIT_U128, POS_HALF_U128, TAPE_SIZE_FOURTH_UPPER_128, TAPE_SIZE_HALF_128,
         TL_POS_START_128,
@@ -132,32 +133,7 @@ pub struct TapeLong {
 }
 
 impl TapeLong {
-    pub fn new(tape_size_limit_u32_blocks: u32) -> Self {
-        Self {
-            tape_shifted: 0,
-            pos_middle: MIDDLE_BIT_U128,
-            tape_long: vec![0; TAPE_SIZE_INIT_CELL_BLOCKS],
-            tl_pos: TL_POS_START_128,
-            tl_low_bound: TL_POS_START_128,
-            tl_high_bound: TL_POS_START_128 + 3,
-            tape_size_limit_u32_blocks,
-        }
-    }
-
-    // resets the decider for a different machine
-    #[inline(always)]
-    pub fn clear(&mut self) {
-        self.tape_shifted = 0;
-        self.pos_middle = MIDDLE_BIT_U128;
-
-        self.tape_long.clear();
-        self.tape_long.resize(TAPE_SIZE_INIT_CELL_BLOCKS, 0);
-        self.tl_pos = TL_POS_START_128;
-        self.tl_low_bound = TL_POS_START_128;
-        self.tl_high_bound = TL_POS_START_128 + 3;
-    }
-
-    /// Counts Ones for self referencing speed-up
+    /// Counts ones/zeros for self referencing speed-up
     #[inline(always)]
     pub fn count_left(&self, symbol: usize) -> u32 {
         // count 1s starting from middle; get lower part
@@ -169,7 +145,7 @@ impl TapeLong {
         }
     }
 
-    /// Counts Ones for self referencing speed-up
+    /// Counts ones/zeros for self referencing speed-up
     #[inline(always)]
     pub fn count_right(&self, symbol: usize) -> u32 {
         // count 1s starting from middle; get lower part
@@ -181,31 +157,8 @@ impl TapeLong {
         }
     }
 
-    // Returns the ones which are set in the tape
-    pub fn count_ones(&self) -> StepTypeSmall {
-        let ts = self.get_clean_tape_shifted_for_tape_long();
-
-        // TODO tape shifted needs to be shifted in the middle and tape long loaded
-        let mut ones = ts.count_ones();
-        if self.is_tape_extended() {
-            for n in self.tape_long[self.tl_low_bound..self.tl_pos].iter() {
-                ones += n.count_ones();
-            }
-            for n in self.tape_long[self.tl_pos + 4..self.tl_high_bound + 1].iter() {
-                ones += n.count_ones();
-            }
-        }
-        ones as StepTypeSmall
-    }
-
-    #[inline(always)]
-    pub fn get_current_symbol(&self) -> usize {
-        // resolves to one if bit is set
-        ((self.tape_shifted & POS_HALF_U128) != 0) as usize
-    }
-
     /// Returns tape_shifted with the correct bits set (taken from tape_long).
-    pub fn get_clean_tape_shifted(&self) -> u128 {
+    fn get_clean_tape_shifted(&self) -> u128 {
         #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
         println!("{}", self.long_tape_to_string());
         let mut ts = self.tape_shifted;
@@ -400,21 +353,6 @@ impl TapeLong {
         self.tl_high_bound - self.tl_low_bound > 3
     }
 
-    #[inline(always)]
-    pub fn pos_middle(&self) -> u32 {
-        self.pos_middle
-    }
-
-    /// Update tape: write symbol at head position into cell
-    #[inline(always)]
-    pub fn set_current_symbol(&mut self, transition: TransitionSymbol2) {
-        if transition.is_symbol_one() {
-            self.tape_shifted |= POS_HALF_U128
-        } else {
-            self.tape_shifted &= !POS_HALF_U128
-        };
-    }
-
     /// Shifts the pos in the long tape one to left and checks Vec dimensions. \
     /// Here the vector needs to be expanded at the beginning and the data must be shifted.
     /// # Returns
@@ -422,7 +360,7 @@ impl TapeLong {
     /// This could be a Result Err, but for performance this is just a bool.
     #[must_use]
     #[inline(always)]
-    pub fn shift_pos_to_left_checked(&mut self) -> bool {
+    fn shift_pos_to_left_checked(&mut self) -> bool {
         // check if tape is long enough
         if self.tl_pos == self.tl_low_bound {
             if self.tl_pos == 0 {
@@ -468,7 +406,7 @@ impl TapeLong {
     /// False if tape could not be expanded. The caller must react on this an end the decider. \
     /// This could be a Result Err, but for performance this is just a bool.
     #[inline(always)]
-    pub fn shift_pos_to_right_checked(&mut self) -> bool {
+    fn shift_pos_to_right_checked(&mut self) -> bool {
         // check if tape is long enough
         if self.tl_pos + 4 > self.tl_high_bound {
             self.tl_high_bound += 1;
@@ -617,33 +555,9 @@ impl TapeLong {
         true
     }
 
-    #[inline(always)]
-    pub fn tape_length_blocks(&self) -> usize {
-        self.tl_high_bound - self.tl_low_bound + 1
-    }
-
-    pub fn tape_long_positions(&self) -> TapeLongPositions {
-        TapeLongPositions {
-            tl_pos: self.tl_pos,
-            tl_high_bound: self.tl_high_bound,
-            tl_low_bound: self.tl_low_bound,
-        }
-    }
-
-    #[inline(always)]
-    pub fn tape_shifted(&self) -> u128 {
-        self.tape_shifted
-    }
-
-    /// Returns the approximate tape size, which grows by 32 steps
-    #[inline(always)]
-    pub fn tape_size(&self) -> u32 {
-        ((self.tl_high_bound - self.tl_low_bound + 1) * 32) as u32
-    }
-
-    pub fn tape_size_limit_u32_blocks(&self) -> u32 {
-        self.tape_size_limit_u32_blocks
-    }
+    //     pub fn tape_size_limit_u32_blocks(&self) -> u32 {
+    //         self.tape_size_limit_u32_blocks
+    //     }
 
     pub fn tl_high_bound(&self) -> usize {
         self.tl_high_bound
@@ -725,13 +639,108 @@ impl TapeLong {
 
         cell_blocks.join("\n")
     }
+}
+
+impl Tape for TapeLong {
+    fn new(config: &Config) -> Self {
+        Self {
+            tape_size_limit_u32_blocks: config.tape_size_limit_u32_blocks(),
+            ..Default::default()
+        }
+    }
+
+    // resets the decider for a different machine
+    #[inline(always)]
+    fn clear(&mut self) {
+        self.tape_shifted = 0;
+        self.pos_middle = MIDDLE_BIT_U128;
+
+        self.tape_long.clear();
+        self.tape_long.resize(TAPE_SIZE_INIT_CELL_BLOCKS, 0);
+        self.tl_pos = TL_POS_START_128;
+        self.tl_low_bound = TL_POS_START_128;
+        self.tl_high_bound = TL_POS_START_128 + 3;
+    }
+
+    /// Returns the ones which are set in the tape
+    fn count_ones(&self) -> StepTypeSmall {
+        let ts = self.get_clean_tape_shifted_for_tape_long();
+
+        // TODO tape shifted needs to be shifted in the middle and tape long loaded
+        let mut ones = ts.count_ones();
+        if self.is_tape_extended() {
+            for n in self.tape_long[self.tl_low_bound..self.tl_pos].iter() {
+                ones += n.count_ones();
+            }
+            for n in self.tape_long[self.tl_pos + 4..self.tl_high_bound + 1].iter() {
+                ones += n.count_ones();
+            }
+        }
+        ones as StepTypeSmall
+    }
+
+    #[inline(always)]
+    fn get_current_symbol(&self) -> u32 {
+        // resolves to one if bit is set
+        ((self.tape_shifted & POS_HALF_U128) != 0) as u32
+    }
+
+    fn is_left_empty(&self) -> bool {
+        todo!()
+    }
+
+    fn is_right_empty(&self) -> bool {
+        todo!()
+    }
+
+    fn left_64_bit(&self) -> u64 {
+        todo!()
+    }
+
+    fn right_64_bit(&self) -> u64 {
+        todo!()
+    }
+
+    #[inline(always)]
+    fn pos_middle(&self) -> u32 {
+        self.pos_middle
+    }
+
+    /// Update tape: write symbol at head position into cell
+    #[inline(always)]
+    fn set_current_symbol(&mut self, transition: TransitionSymbol2) {
+        if transition.is_symbol_one() {
+            self.tape_shifted |= POS_HALF_U128
+        } else {
+            self.tape_shifted &= !POS_HALF_U128
+        };
+    }
+
+    fn tape_long_positions(&self) -> Option<TapeLongPositions> {
+        Some(TapeLongPositions {
+            tl_pos: self.tl_pos,
+            tl_high_bound: self.tl_high_bound,
+            tl_low_bound: self.tl_low_bound,
+        })
+    }
+
+    #[inline(always)]
+    fn tape_shifted_clean(&self) -> u128 {
+        self.get_clean_tape_shifted()
+    }
+
+    /// Returns the approximate tape size, which grows by 32 steps
+    #[inline(always)]
+    fn tape_size_cells(&self) -> u32 {
+        ((self.tl_high_bound - self.tl_low_bound + 1) * 32) as u32
+    }
 
     /// Updates tape_shifted and tape_long.
     /// # Returns
     /// False if the tape could not be expanded (tape_size_limit).
     #[must_use]
     #[inline(always)]
-    pub fn update_tape_single_step(&mut self, transition: TransitionSymbol2) -> bool {
+    fn update_tape_single_step(&mut self, transition: TransitionSymbol2) -> bool {
         self.set_current_symbol(transition);
         if transition.is_dir_right() {
             self.tape_shifted <<= 1;
@@ -742,5 +751,32 @@ impl TapeLong {
             self.pos_middle -= 1;
             self.shift_tape_long_head_dir_left()
         }
+    }
+}
+
+impl Default for TapeLong {
+    fn default() -> Self {
+        Self {
+            tape_shifted: 0,
+            pos_middle: MIDDLE_BIT_U128,
+            tape_long: vec![0; TAPE_SIZE_INIT_CELL_BLOCKS],
+            tl_pos: TL_POS_START_128,
+            tl_low_bound: TL_POS_START_128,
+            tl_high_bound: TL_POS_START_128 + 3,
+            tape_size_limit_u32_blocks: u32::MAX,
+        }
+    }
+}
+
+impl std::fmt::Display for TapeLong {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} P{:3}, B {}..{}",
+            self.tape_shifted.to_binary_split_string(),
+            self.pos_middle,
+            self.tl_high_bound,
+            self.tl_low_bound
+        )
     }
 }

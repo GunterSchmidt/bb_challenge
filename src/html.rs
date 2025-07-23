@@ -503,7 +503,7 @@ pub fn write_step_html_128(
         transition,
         tape_shifted,
         is_u128_tape: true,
-        pos_middle,
+        pos_middle_shifted: pos_middle,
         tape_long_positions: None,
     };
     data.write_step_html(buf_writer);
@@ -551,7 +551,7 @@ pub fn write_machines_to_html(
                 &machine, &config,
             );
             // write bouncer (because single step)
-            crate::decider_bouncer_v2::DeciderBouncerV2::decide_single_machine(&machine, &config);
+            crate::decider_bouncer_128::DeciderBouncer128::decide_single_machine(&machine, &config);
             // write cycler (because single step)
             crate::decider_cycler::DeciderCycler::decide_single_machine(&machine, &config);
             let dur = Instant::now() - last_progress_info;
@@ -564,7 +564,10 @@ pub fn write_machines_to_html(
     }
 }
 
-/// All data required to write a step to the html file and write functionality.
+/// All data required to write a step to the html file and write functionality. \
+/// This serves two purposes:
+/// - Always show the tape with the head in the middle, regardless which underlying tape storage.
+/// - Show identical data as far as possible.
 #[derive(Debug, Clone, Copy)]
 pub struct StepHtml {
     /// Current step no, starting at 1.
@@ -577,8 +580,8 @@ pub struct StepHtml {
     pub tape_shifted: u128,
     /// if false the lower 64 bit will be used. This can also be used to only print the middle part if the tape is shifted before by 32 bit.
     pub is_u128_tape: bool,
-    /// current pos_middle
-    pub pos_middle: u32,
+    /// current pos_middle of tape shifted, it is not the real delta to pos_start
+    pub pos_middle_shifted: u32,
     /// current tape_long if available or necessary
     pub tape_long_positions: Option<TapeLongPositions>,
 }
@@ -619,7 +622,7 @@ impl StepHtml {
             Self::format_right_aligned_int_html(self.step_no, 5),
             TransitionSymbol2::field_id_to_string(self.tr_field_id),
             self.transition,
-            self.pos_middle,
+            self.pos_middle_shifted,
             tl_pos
         )
     }

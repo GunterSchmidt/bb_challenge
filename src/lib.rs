@@ -11,7 +11,6 @@ pub mod data_provider;
 pub mod decider;
 pub mod decider_bouncer_128;
 pub mod decider_bouncer_v1;
-pub mod decider_bouncer_v2;
 pub mod decider_cycler;
 pub mod decider_data_128;
 pub mod decider_data_long_128;

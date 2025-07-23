@@ -1,3 +1,5 @@
+//! This is an old version with totally different logic. Does not work in some cases (false positives), but contains logic which may be reactivated.
+
 #![allow(clippy::uninlined_format_args)]
 #[cfg(debug_assertions)]
 use std::io::Write;
