@@ -68,12 +68,12 @@ td {
 pub struct HtmlWriter {
     // pub decider_id: &'static DeciderId,
     /// HTML step limit limits output to file. Set to 0 if write_html_file is false.
-    pub write_html_line_limit: u32,
-    pub write_html_line_count: u32,
-    pub write_html_step_start: StepTypeBig,
-    pub write_html_tape_shifted_64_bit: bool,
-    pub path: Option<String>,
-    pub file_name: Option<String>,
+    write_html_line_limit: u32,
+    write_html_line_count: u32,
+    write_html_step_start: StepTypeBig,
+    write_html_tape_shifted_64_bit: bool,
+    path: Option<String>,
+    file_name: Option<String>,
     // pub file: Option<File>,
     buf_writer: Option<BufWriter<File>>,
 }
@@ -115,8 +115,16 @@ impl HtmlWriter {
         self.write_html_line_limit != 0 && self.path.is_some()
     }
 
+    pub fn file_name(&self) -> Option<&String> {
+        self.file_name.as_ref()
+    }
+
     pub fn path(&self) -> Option<&String> {
         self.path.as_ref()
+    }
+
+    pub fn reset_write_html_line_count(&mut self) {
+        self.write_html_line_count = 0;
     }
 
     pub fn set_path(&mut self, path: &str) {
@@ -143,16 +151,13 @@ impl HtmlWriter {
         }
     }
 
-    /// Writes to html header and the start of the body to the file.
+    /// Writes to html header and the start of the body to the file. \
+    /// Sets file_name in self.
     /// # Arguments
-    /// - path of the html file
-    /// - file_name_prefix
+    /// - decider_id: For file name and description
     /// - machine to write, uses tm_standard_name for file name
     ///
     /// Example: ("data", "hold", m) creates /data/hold_1RB0RC_1RA0RA_0RB1RC.html
-    ///
-    /// # Returns
-    /// (File, FileName)
     pub fn create_html_file_start(
         &mut self,
         decider_id: &DeciderId,
@@ -204,6 +209,9 @@ impl HtmlWriter {
 
                     let text = s.join("</br>");
                     writeln!(file, "<p>{text}</p>",)?;
+                    self.write_html_p("Note: This machine has self-referencing transitions (e.g. Field A1: 1RA) \
+                which leads to repeatedly calling itself in case of tape head reads 1. This is used to speed up the \
+                decider by jumping over these repeated steps.");
                 }
 
                 // start with an opening <p> tag, as the lines end with </br>, but this actually leads to nested paragraphs.
@@ -211,6 +219,8 @@ impl HtmlWriter {
 
                 self.buf_writer = Some(BufWriter::new(file));
                 self.file_name = Some(file_name);
+                self.write_html_line_count = 0;
+
                 Ok(())
             }
             None => Err(io::Error::new(
@@ -235,7 +245,7 @@ impl HtmlWriter {
                 );
             } else if self.write_html_line_count < step_no {
                 let p =
-                    ((self.write_html_line_count as f64 / step_no as f64) * 1000.0).round() / 100.0;
+                    ((self.write_html_line_count as f64 / step_no as f64) * 1000.0).round() / 10.0;
                 self.write_html_p(
                     format!(
                         "Steps executed (single step or step jump): {} of {} = {p} %.",
@@ -261,6 +271,10 @@ impl HtmlWriter {
                 crate::html::write_file_end(buf_writer).expect("Html file could not be written")
             }
         }
+    }
+
+    pub fn write_html_tape_shifted_64_bit(&self) -> bool {
+        self.write_html_tape_shifted_64_bit
     }
 }
 

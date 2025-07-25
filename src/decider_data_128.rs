@@ -43,10 +43,6 @@ pub struct DeciderData128 {
     /// HTML step limit limits output to file. Set to 0 if write_html_file is false.
     #[cfg(feature = "bb_enable_html_reports")]
     pub html_writer: HtmlWriter,
-    #[cfg(feature = "bb_enable_html_reports")]
-    path: Option<String>,
-    #[cfg(feature = "bb_enable_html_reports")]
-    pub file_name: Option<String>,
 }
 
 impl DeciderData128 {
@@ -68,11 +64,6 @@ impl DeciderData128 {
             step_limit: config.step_limit_hold(),
             #[cfg(feature = "bb_enable_html_reports")]
             html_writer: HtmlWriter::new(config),
-            // tape_size_limit_u32_blocks: config.tape_size_limit_u32_blocks(),
-            #[cfg(feature = "bb_enable_html_reports")]
-            path: None,
-            #[cfg(feature = "bb_enable_html_reports")]
-            file_name: None,
         }
     }
 
@@ -85,11 +76,12 @@ impl DeciderData128 {
         self.tr = TRANSITION_SYM2_START;
         self.tr_field = 2;
         self.status = MachineStatus::NoDecision;
+        // self.html_writer.reset_write_html_line_count();
         // keep step_limit and other config data
     }
 
     #[inline(always)]
-    pub fn get_current_symbol(&self) -> u32 {
+    pub fn get_current_symbol(&self) -> usize {
         self.tape.get_current_symbol()
     }
 
@@ -144,8 +136,8 @@ impl DeciderData128 {
 
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn rename_html_file_to_status(&self) {
-        if let Some(file_name) = self.file_name.as_ref() {
-            let path = self.path.as_ref().unwrap();
+        if let Some(file_name) = self.html_writer.file_name() {
+            let path: &String = self.html_writer.path().unwrap();
             // self.file = None;
             crate::html::rename_file_to_status(path, file_name, &self.status);
         }
@@ -235,247 +227,42 @@ impl DeciderData128 {
         shift_ok
     }
 
-    //     /// Updates tape_shifted and tape_long.
-    //     /// # Returns
-    //     /// False if the tape could not be expanded (tape_size_limit). Then self.status is set to that error.
-    //     // TODO some of this logic should be moved to TapeLong
-    //     #[must_use]
-    //     #[inline(always)]
-    //     pub fn update_tape_self_ref_speed_up(&mut self) -> bool {
-    //         let shift_ok = if self.tr.is_dir_right() {
-    //             // normal shift RIGHT -> tape moves left
-    //
-    //             // Check if self referencing, which speeds up the shift greatly.
-    //             // Self referencing means also that the symbol does not change, ergo no need to update the fields
-    //             if self.tr.array_id() == self.tr_field {
-    //                 // get jump within tape_shifted, which is only the lower part and thus a maximum of 63 bits
-    //                 let mut jump = self.tape.count_right(self.tr_field & 1);
-    //                 // if self.num_steps > 50_000 {
-    //                 //     // #[cfg(all(debug_assertions, feature = "bb_debug"))]
-    //                 //     println!("  jump R {jump}, {}", self.step_to_string());
-    //                 // }
-    //                 // The content is either always 0 or always 1, which makes looping over multiple u32 fields easy
-    //                 // Interestingly, the version with the long_jump logic runs faster.
-    //                 let mut long_jump = false;
-    //                 if jump == 32 && self.tape.pos_middle() + jump == HIGH32_SWITCH_U128 as u32 {
-    //                     // check further for larger jump
-    //                     // compare depending on symbol
-    //                     let v32 = if self.tr_field & 1 == 0 { 0 } else { u32::MAX };
-    //                     // head goes right, tape shifts left
-    //                     // tl_pos + 2 is now a known required value v32, because that is what count_right just tested
-    //                     let mut p = self.tape.tl_pos() + 3;
-    //                     let mut j = 1;
-    //                     while p < self.tape.tl_high_bound() && self.tape.tape_long[p] == v32 {
-    //                         p += 1;
-    //                         j += 1;
-    //                     }
-    //                     // j is one more as the first one is already checked with count_right
-    //                     if j >= 2 {
-    //                         // if tape_shifted_left_0 != v32 {
-    //                         //     println!("Not v32 {v32} but {tape_shifted_left_0}");
-    //                         // }
-    //                         // println!(
-    //                         //     "Step {}: Long jump = {j} u32 = {} bits",
-    //                         //     self.num_steps,
-    //                         //     j * 32
-    //                         // );
-    //                         // shift out high bit after moving 32 bit
-    //                         let tape_shifted_left_1 = (self.tape.tape_shifted >> 64) as u32;
-    //                         let p_tmp = self.tape.tl_pos() + 1;
-    //                         self.tape.tape_long[p_tmp] = tape_shifted_left_1;
-    //                         self.tape.set_tl_pos(p - 3);
-    //                         // println!("before {}", self.tape_shifted.to_binary_split_string());
-    //                         self.tape.tape_shifted = if self.tr_field & 1 == 0 {
-    //                             0
-    //                         } else {
-    //                             CLEAR_LOW63_00BITS_U128
-    //                         };
-    //                         // println!("filled {}", self.tape_shifted.to_binary_split_string());
-    //                         self.tape.pos_middle = HIGH32_SWITCH_U128;
-    //                         self.step_no += j * 32 - 1;
-    //                         // shift in low bits (low part is already cleared)
-    //                         self.tape.tape_shifted |=
-    //                             (self.tape.tape_long[self.tape.tl_pos() + 3] as u128) << 32;
-    //                         // println!("fill 2 {}", self.tape_shifted.to_binary_split_string());
-    //                         long_jump = true;
-    //                     }
-    //                     //                         else {
-    //                     //                             self.pos_middle += jump;
-    //                     //
-    //                     //                             // shift tape
-    //                     //                             // self.set_current_symbol();
-    //                     //                             self.tape_shifted <<= jump;
-    //                     //                             self.num_steps += jump as StepTypeBig - 1;
-    //                     //                         }
-    //                 }
-    //                 if !long_jump {
-    //                     if self.tape.pos_middle + jump > HIGH32_SWITCH_U128 {
-    //                         jump = HIGH32_SWITCH_U128 - self.tape.pos_middle;
-    //                         #[cfg(all(debug_assertions, feature = "bb_debug"))]
-    //                         println!("  jump right adjusted {jump}");
-    //                     }
-    //                     self.tape.pos_middle += jump;
-    //
-    //                     // shift tape
-    //                     // self.set_current_symbol();
-    //                     self.tape.tape_shifted <<= jump;
-    //                     self.step_no += jump as StepTypeBig - 1;
-    //                 }
-    //                 // #[cfg(feature = "bb_enable_html_reports")]
-    //                 // if self.write_html_step_limit > 0 {
-    //                 //     let tl_pos_min_1 = if self.tl_pos == 0 { 0 } else { self.tl_pos - 1 };
-    //                 //     let s = format!(
-    //                 //         "num_steps: {}, t pos {}, tl: {}, [{},{},{},{}], {}",
-    //                 //         self.num_steps,
-    //                 //         self.tl_pos,
-    //                 //         self.tape_long[tl_pos_min_1],
-    //                 //         self.tape_long[self.tl_pos],
-    //                 //         self.tape_long[self.tl_pos + 1],
-    //                 //         self.tape_long[self.tl_pos + 2],
-    //                 //         self.tape_long[self.tl_pos + 3],
-    //                 //         self.tape_long[self.tl_pos + 4],
-    //                 //     );
-    //                 //     self.write_html_p(&s);
-    //                 // }
-    //             } else {
-    //                 self.tape.pos_middle += 1;
-    //
-    //                 // shift tape
-    //                 self.tape.set_current_symbol(self.tr);
-    //                 self.tape.tape_shifted <<= 1;
-    //             }
-    //
-    //             self.tape.shift_tape_long_head_dir_right()
-    //         } else {
-    //             // normal shift LEFT -> tape moves right
-    //
-    //             // Check if self referencing, which speeds up the shift greatly.
-    //             if self.tr.array_id() == self.tr_field {
-    //                 let mut jump = self.tape.count_left(self.tr_field & 1) as usize;
-    //                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
-    //                 println!("  jump left {jump}");
-    //                 // The content is either always 0 or always 1, which makes looping over multiple u32 fields easy
-    //                 // Interestingly, the version with the long_jump logic runs faster.
-    //                 let mut long_jump = false;
-    //                 if jump == 33 && LOW32_SWITCH_U128 - 1 + jump == self.tape.pos_middle {
-    //                     // check further for larger jump
-    //                     // compare depending on symbol
-    //                     let v32 = if self.tr_field & 1 == 0 { 0 } else { u32::MAX };
-    //                     // head goes left, tape shifts right
-    //                     // tl_pos + 1 is known required value v32, because that is what count_left just tested
-    //                     let mut p = self.tape.tl_pos();
-    //                     let mut j = 1;
-    //                     while p >= self.tape.tl_low_bound() && self.tape.tape_long[p] == v32 {
-    //                         p -= 1;
-    //                         j += 1;
-    //                     }
-    //                     // j is one more as the first one is already checked with count_right
-    //                     if j >= 2 {
-    //                         // if tape_shifted_left_0 != v32 {
-    //                         //     println!("Not v32 {v32} but {tape_shifted_left_0}");
-    //                         // }
-    //                         // #[cfg(all(debug_assertions, feature = "bb_debug"))]
-    //                         // println!(
-    //                         //     "Step {}: Long jump = {j} u32 = {} bits",
-    //                         //     self.num_steps,
-    //                         //     j * 32
-    //                         // );
-    //                         // shift out low bit after moving 32 bit
-    //                         let tape_shifted_left_2 = (self.tape.tape_shifted >> 32) as u32;
-    //                         let p_tmp = self.tape.tl_pos() + 2;
-    //                         self.tape.tape_long[p_tmp] = tape_shifted_left_2;
-    //                         self.tape.set_tl_pos(p);
-    //                         // println!("before {}", self.tape_shifted.to_binary_split_string());
-    //                         self.tape.tape_shifted = if self.tr_field & 1 == 0 {
-    //                             0
-    //                         } else {
-    //                             u64::MAX as u128
-    //                         };
-    //                         // println!("filled {}", self.tape_shifted.to_binary_split_string());
-    //                         self.tape.pos_middle = LOW32_SWITCH_U128;
-    //                         self.step_no += j * 32 - 1;
-    //                         // shift in high bits (high part is already cleared)
-    //                         self.tape.tape_shifted |=
-    //                             (self.tape.tape_long[self.tape.tl_pos()] as u128) << TAPE_SIZE_HALF_128;
-    //                         // println!("fill 2 {}", self.tape_shifted.to_binary_split_string());
-    //                         long_jump = true;
-    //                     }
-    //                     //                         else {
-    //                     //                             self.pos_middle += jump;
-    //                     //
-    //                     //                             // shift tape
-    //                     //                             // self.set_current_symbol();
-    //                     //                             self.tape_shifted <<= jump;
-    //                     //                             self.num_steps += jump as StepTypeBig - 1;
-    //                     //                         }
-    //                 }
-    //                 if !long_jump {
-    //                     if self.tape.pos_middle < LOW32_SWITCH_U128 + jump {
-    //                         jump = self.tape.pos_middle - LOW32_SWITCH_U128;
-    //                         #[cfg(all(debug_assertions, feature = "bb_debug"))]
-    //                         println!("  jump left adjusted {jump}");
-    //                     }
-    //                     self.tape.pos_middle -= jump;
-    //
-    //                     // self.set_current_symbol();
-    //                     // shift tape
-    //                     self.tape.tape_shifted >>= jump;
-    //                     self.step_no += jump as StepTypeBig - 1;
-    //                 }
-    //                 // #[cfg(feature = "bb_enable_html_reports")]
-    //                 // if self.write_html_step_limit > 0 && self.num_steps < self.write_html_step_limit
-    //                 // {
-    //                 //     let tl_pos_min_1 = if self.tl_pos == 0 { 0 } else { self.tl_pos - 1 };
-    //                 //     let s = format!(
-    //                 //         "num_steps: {}, t pos {}, tl: {}, [{},{},{},{}], {}",
-    //                 //         self.num_steps,
-    //                 //         self.tl_pos,
-    //                 //         self.tape_long[tl_pos_min_1],
-    //                 //         self.tape_long[self.tl_pos],
-    //                 //         self.tape_long[self.tl_pos + 1],
-    //                 //         self.tape_long[self.tl_pos + 2],
-    //                 //         self.tape_long[self.tl_pos + 3],
-    //                 //         self.tape_long[self.tl_pos + 4],
-    //                 //     );
-    //                 //     self.write_html_p(&s);
-    //                 // }
-    //             } else {
-    //                 self.tape.pos_middle -= 1;
-    //
-    //                 self.tape.set_current_symbol(self.tr);
-    //                 // shift tape
-    //                 self.tape.tape_shifted >>= 1;
-    //             }
-    //             self.tape.shift_tape_long_head_dir_left()
-    //         };
-    //         #[cfg(all(debug_assertions, feature = "bb_debug"))]
-    //         {
-    //             if self.step_no % 100 == 0 {
-    //                 println!();
-    //             }
-    //             println!("{}", self.step_to_string());
-    //         }
-    //         #[cfg(feature = "bb_enable_html_reports")]
-    //         self.write_step_html();
-    //         if !shift_ok {
-    //             if self.tape.tl_pos() >= self.tape.tape_long.len() {
-    //                 println!(
-    //                     "\n *** Error shift: TL len {}, tl_pos {}, tl_high_bound {}, machine {}",
-    //                     self.tape.tape_long.len(),
-    //                     self.tape.tl_pos(),
-    //                     self.tape.tl_high_bound(),
-    //                     self.transition_table
-    //                 );
-    //                 return false;
-    //             }
-    //             self.status = MachineStatus::Undecided(
-    //                 UndecidedReason::TapeSizeLimit,
-    //                 self.step_no,
-    //                 TAPE_SZE_128,
-    //             );
-    //         }
-    //         shift_ok
-    //     }
+    /// Updates tape_shifted and tape_long.
+    /// # Returns
+    /// False if the tape could not be expanded (tape_size_limit). Then self.status is set to that error.
+    // TODO some of this logic should be moved to TapeLong
+    #[must_use]
+    #[inline(always)]
+    pub fn update_tape_self_ref_speed_up(&mut self) -> bool {
+        // if self.step_no > 1273 {
+        //     println!();
+        // }
+        let jump = self
+            .tape
+            .update_tape_self_ref_speed_up(self.tr, self.tr_field);
+        // return value
+        if jump == 0 {
+            self.status = MachineStatus::Undecided(
+                UndecidedReason::TapeSizeLimit,
+                self.step_no,
+                self.tape.tape_size_cells(),
+            );
+            false
+        } else {
+            self.step_no += jump - 1;
+
+            #[cfg(all(debug_assertions, feature = "bb_debug"))]
+            {
+                if self.step_no % 100 == 0 {
+                    println!();
+                }
+                println!("{}", self.step_to_string());
+            }
+            #[cfg(feature = "bb_enable_html_reports")]
+            self.write_step_html();
+            true
+        }
+    }
 
     // Creates
     #[cfg(feature = "bb_enable_html_reports")]
@@ -484,17 +271,7 @@ impl DeciderData128 {
             self.html_writer
                 .create_html_file_start(decider_id, machine)
                 .expect("Html file could not be written");
-            self.write_html_p(
-                "Note: Here only the 128 Bit Tape is shown, the underlying long tape holds more data.",
-            );
-            if self
-                .transition_table
-                .has_self_referencing_transition_store_result()
-            {
-                self.write_html_p("Note: This machine has self-referencing transitions (e.g. Field A1: 1RA) \
-                which leads to repeatedly calling itself in case of tape head reads 1. This is used to speed up the \
-                decider by jumping over these repeated steps. Max jump is currently 32 steps.");
-            }
+            self.write_html_p("Note: Here the full 128 Bit Tape is shown, there is no long tape.");
         }
     }
 
@@ -529,19 +306,12 @@ impl DeciderData128 {
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
-    pub fn path(&self) -> Option<&String> {
-        self.path.as_ref()
-    }
-
-    #[cfg(feature = "bb_enable_html_reports")]
     pub fn set_path(&mut self, path: &str) {
-        self.path = Some(path.to_string());
         self.html_writer.set_path(path);
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn set_path_option(&mut self, path_option: Option<String>) {
-        self.path = path_option.clone();
         self.html_writer.set_path_option(path_option);
     }
 }
@@ -556,7 +326,7 @@ impl Display for DeciderData128 {
 #[cfg(feature = "bb_enable_html_reports")]
 impl From<&crate::decider_data_128::DeciderData128> for crate::html::StepHtml {
     fn from(data: &crate::decider_data_128::DeciderData128) -> Self {
-        let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit;
+        let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit();
         let tape_shifted = if is_u128_tape {
             data.tape.tape_shifted_clean()
         } else {

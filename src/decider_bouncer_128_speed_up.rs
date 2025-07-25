@@ -1,101 +1,7 @@
-//! This is a simple decider bouncer.\
-//! It detects all bouncers which iterate over the tape start point left and right. \
-//! Then it is checked if the left and right side each have the same bits which are added, see examples below. \
-//! TODO This bouncer works on the long tape but does not use it. This is actually worse than not using the long tape
-//! as now it is not known if the full sides were used.
-//! This also means step_limit_bouncer can be set high as mostly the tape borders are reached.
-//! This is still highly effective and eliminates >90% of the machines the cycler does not catch. \
-//! BB4 with cycler limit 1500 leaves 63,130 of the 6,975,757,441 machines undecided.
-//! Using this bouncer with limit 20_000 reduces this to 1,664 machines (only 2,7% left). \
-//! Since only very few machines are left, the cycler can now be run again with a limit of 100_000 steps; for
-//! BB4 actually the biggest cycle detected requires 95450 steps. \
-//! **This leaves only 908 machines undecided.** \
-//! All this is done on my Notebook in about 15 seconds.
-//!
-//! For BB5, first 100,000,000,000: \
-//! Cycler (limit 1_500): undecided = 204,762 (runtime 32 seconds) \
-//! Bouncer (limit 20_000): undecided = 9,708 (runtime 34 seconds) \
-//! Cycler (limit 110_000): undecided = 4,954 (runtime 125 seconds) \
-//! Hold (limit 50_000_000): undecided = 4,954 (runtime 3,5 minutes) \
-//!
-//! Running BB5 complete, with first cycler and first bouncer only takes about 50 Minutes
-//! for 16,679,880,978,201 machines with a pre-decider reducing this to 59,649,822,720
-//! which need to be evaluated.
-//! 7,827,594 machines are left undecided.
-//!
-//! # Examples
-//! When left is 0, then right must be expanding with the same bits as before, \
-//! e.g. 11337065 1RB0LB_1LA0LC_---1RD_0RA0RA: \
-//! Here step 18 and 46 are identical (both first with left 0), only 46 is expanded by 01 which is ok, as 01 is before that. \
-//! Probably need to count the inner cycle which results from this, which is B0-A1 and thus has 2 elements. \
-//! Step    18 B0 1LA: 000000000000000000000000_00000000\***110101**00_000000000000000000000000 \
-//! Step    19 A1 0LB: 000000000000000000000000_00000000\*00101010_000000000000000000000000 \
-//! ... \
-//! Step    44 B0 1LA: 000000000000000000000000_00000010\*11010101_000000000000000000000000 \
-//! Step    45 A1 0LB: 000000000000000000000000_00000001\*00101010_100000000000000000000000 \
-//! Step    46 B0 1LA: 000000000000000000000000_00000000\***11010101**_010000000000000000000000 \
-//! \
-//! Same goes for right side 0: Step 11 & 35 \
-//! Step    10 B1 0LC: 000000000000000000000000_00000010\*10000000_000000000000000000000000 \
-//! Step    11 C1 1RD: 000000000000000000000000_00000**101**\*00000000_000000000000000000000000 \
-//! Step    12 D0 0RA: 000000000000000000000000_00001010\*00000000_000000000000000000000000 \
-//! Step    13 A0 1RB: 000000000000000000000000_00010101\*00000000_000000000000000000000000 \
-//! repeat B0-A1 while going left \
-//! Step    14 B0 1LA: 000000000000000000000000_00001010\*11000000_000000000000000000000000 \
-//! Step    15 A1 0LB: 000000000000000000000000_00000101\*00100000_000000000000000000000000 \
-//! Step    16 B0 1LA: 000000000000000000000000_00000010\*11010000_000000000000000000000000 \
-//! Step    17 A1 0LB: 000000000000000000000000_00000001\*00101000_000000000000000000000000 \
-//! Step    18 B0 1LA: 000000000000000000000000_00000000\*11010100_000000000000000000000000 \
-//! Step    19 A1 0LB: 000000000000000000000000_00000000\*00101010_000000000000000000000000 \
-//! Step    20 B0 1LA: 000000000000000000000000_00000000\*01010101_000000000000000000000000 \
-//! Step    21 A0 1RB: 000000000000000000000000_00000001\*10101010_000000000000000000000000 \
-//! Step    22 B1 0LC: 000000000000000000000000_00000000\*10010101_000000000000000000000000 \
-//! Step    23 C1 1RD: 000000000000000000000000_00000001\*00101010_000000000000000000000000 \
-//! repeat D0-A0-B1-C1 while going right, thus extending by 1010 \
-//! Step    24 D0 0RA: 000000000000000000000000_00000010\*01010100_000000000000000000000000 \
-//! Step    25 A0 1RB: 000000000000000000000000_00000101\*10101000_000000000000000000000000 \
-//! Step    26 B1 0LC: 000000000000000000000000_00000010\*10010100_000000000000000000000000 \
-//! Step    27 C1 1RD: 000000000000000000000000_00000101\*00101000_000000000000000000000000 \
-//! Step    28 D0 0RA: 000000000000000000000000_00001010\*01010000_000000000000000000000000 \
-//! Step    29 A0 1RB: 000000000000000000000000_00010101\*10100000_000000000000000000000000 \
-//! Step    30 B1 0LC: 000000000000000000000000_00001010\*10010000_000000000000000000000000 \
-//! Step    31 C1 1RD: 000000000000000000000000_00010101\*00100000_000000000000000000000000 \
-//! Step    32 D0 0RA: 000000000000000000000000_00101010\*01000000_000000000000000000000000 \
-//! Step    33 A0 1RB: 000000000000000000000000_01010101\*10000000_000000000000000000000000 \
-//! Step    34 B1 0LC: 000000000000000000000000_00101010\*10000000_000000000000000000000000 \
-//! Step    35 C1 1RD: 000000000000000000000000_0**1010101**\*00000000_000000000000000000000000 \
-//! This needs approval by 3rd, step 71, as 4 is longer then the existing 3: \
-//! Step    64 D0 0RA: 000000000000000000000000_10101010\*01010000_000000000000000000000000 \
-//! Step    65 A0 1RB: 000000000000000000000001_01010101\*10100000_000000000000000000000000 \
-//! Step    66 B1 0LC: 000000000000000000000000_10101010\*10010000_000000000000000000000000 \
-//! Step    67 C1 1RD: 000000000000000000000001_01010101\*00100000_000000000000000000000000 \
-//! Step    68 D0 0RA: 000000000000000000000010_10101010\*01000000_000000000000000000000000 \
-//! Step    69 A0 1RB: 000000000000000000000101_01010101\*10000000_000000000000000000000000 \
-//! Step    70 B1 0LC: 000000000000000000000010_10101010\*10000000_000000000000000000000000 \
-//! Step    71 C1 1RD: 000000000000000000000**101_01010101**\*00000000_000000000000000000000000 \
-//! \
-//! Machine 18226348 0RB---_1LC1RB_0LD0LC_0RA0RA behaves differently: \
-//! left is just growing by 1, so same here, but right inserts a 0 always. This is a different kind of extension. \
-//! Step     6 B1 1RB: 000000000000000000000000_0000000**1**\*00000000_000000000000000000000000 \
-//! Step     7 B0 1LC: 000000000000000000000000_00000000\***11**000000_000000000000000000000000 \
-//! ... \
-//! Step    17 B1 1RB: 000000000000000000000000_000000**11**\*00000000_000000000000000000000000 \
-//! Step    18 B0 1LC: 000000000000000000000000_00000001\*11000000_000000000000000000000000 \
-//! Step    19 C1 0LC: 000000000000000000000000_00000000\***101**00000_000000000000000000000000 \
-//! ... \
-//! Step    40 B1 1RB: 000000000000000000000000_00000**111**\*00000000_000000000000000000000000 \
-//! Step    41 B0 1LC: 000000000000000000000000_00000011\*11000000_000000000000000000000000 \
-//! Step    42 C1 0LC: 000000000000000000000000_00000001\*10100000_000000000000000000000000 \
-//! Step    43 C1 0LC: 000000000000000000000000_00000000\***1001**0000_000000000000000000000000 \
-//! ... \
-//! Step    87 B1 1RB: 000000000000000000000000_0000**1111**\*00000000_000000000000000000000000 \
-//! Step    88 B0 1LC: 000000000000000000000000_00000111\*11000000_000000000000000000000000 \
-//! Step    89 C1 0LC: 000000000000000000000000_00000011\*10100000_000000000000000000000000 \
-//! Step    90 C1 0LC: 000000000000000000000000_00000001\*10010000_000000000000000000000000 \
-//! Step    91 C1 0LC: 000000000000000000000000_00000000\***10001**000_000000000000000000000000 \
-//! \
-//! Machine Id: 247831398 1RB---_1LC0RD_0LC0LE_0RB0RA_0RA0RA \
-//! That is a good test case \
+//! This is a simple decider bouncer with speed-up logic.\
+//! However, since most is already done by predecider and cycler, not many are left for the bouncer.
+//! Of those, about 90% are caught in a few steps, so the speed-up is not measurable.
+//! More importantly, this logic does not catch all bouncers and some are not caught due to tape size limitations.
 
 use std::fmt::Display;
 
@@ -130,6 +36,7 @@ pub struct DeciderBouncer128 {
     // / (basically e.g. all steps for e.g. field 'B0' steps: 1 if A0 points to B, as step 1 then has state B and head symbol 0.)
     // TODO performance: extra differentiation for 0/1 at head position? The idea is, that the field cannot be identical if head read is different
     // maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)],
+    is_self_ref: bool,
 }
 
 impl DeciderBouncer128 {
@@ -140,6 +47,7 @@ impl DeciderBouncer128 {
             data: DeciderData128::new(config),
             steps: Vec::with_capacity(cap),
             // maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
+            is_self_ref: false,
         };
         decider.data.step_limit = config.step_limit_bouncer();
 
@@ -151,15 +59,6 @@ impl DeciderBouncer128 {
         }
 
         decider
-    }
-
-    #[inline]
-    fn clear(&mut self) {
-        self.data.clear();
-        self.steps.clear();
-        // for map in self.maps_1d.iter_mut() {
-        //     map.clear();
-        // }
     }
 }
 
@@ -173,16 +72,18 @@ impl Decider for DeciderBouncer128 {
     }
 
     fn decide_machine(&mut self, machine: &Machine) -> MachineStatus {
-        #[cfg(feature = "bb_enable_html_reports")]
-        self.data.write_html_file_start(Self::decider_id(), machine);
-
         // initialize decider
-        self.clear();
+        self.data.clear();
+        self.steps.clear();
 
         self.data.transition_table = *machine.transition_table();
+        self.is_self_ref = self.data.transition_table.has_self_referencing_transition();
         let mut last_left_empty_step_no = 0;
         let mut last_right_empty_step_no = 0;
         let mut is_bouncing_right = false;
+
+        #[cfg(feature = "bb_enable_html_reports")]
+        self.data.write_html_file_start(Self::decider_id(), machine);
 
         // loop over transitions to write tape
         loop {
@@ -193,7 +94,11 @@ impl Decider for DeciderBouncer128 {
                 break;
             }
 
-            if !self.data.update_tape_single_step() {
+            if self.is_self_ref {
+                if !self.data.update_tape_self_ref_speed_up() {
+                    break;
+                }
+            } else if !self.data.update_tape_single_step() {
                 break;
             }
 

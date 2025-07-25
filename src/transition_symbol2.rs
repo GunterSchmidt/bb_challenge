@@ -60,7 +60,7 @@ pub(crate) const FILTER_STATE: TransitionType = 0b0001_1110;
 const FILTER_ARRAY_ID: TransitionType = 0b0001_1111;
 const FILTER_SELF_REF: TransitionType = 0b0000_0001_0000_0000;
 const FILTER_TABLE_SELF_REF: TransitionType = 0b1100_0000;
-// const SELF_REF_NOT_CHECKED: TransitionType = 0b0000_0000;
+const SELF_REF_NOT_CHECKED: TransitionType = 0b0000_0000;
 const SELF_REF_SET_TRUE: TransitionType = 0b1000_0000;
 const SELF_REF_SET_FALSE: TransitionType = 0b0100_0000;
 const FILTER_TABLE_N_STATES: TransitionType = 0b0000_1111;
@@ -683,12 +683,19 @@ impl TransitionTableSymbol2 {
     /// Returns true if at least one self-referencing transition exists (D1 1LD). \
     /// Slightly slower then [has_self_referencing_transition_store_result] if called repeatedly.
     pub fn has_self_referencing_transition(&self) -> bool {
-        for (id, t) in self.transitions_used_eval().iter().enumerate() {
-            if t.array_id() == id + 2 {
-                return true;
+        match self.transitions[0].transition & FILTER_TABLE_SELF_REF {
+            SELF_REF_SET_TRUE => true,
+            SELF_REF_SET_FALSE => false,
+            SELF_REF_NOT_CHECKED => {
+                for (id, t) in self.transitions_used_eval().iter().enumerate() {
+                    if t.array_id() == id + 2 {
+                        return true;
+                    }
+                }
+                false
             }
+            _ => panic!("Logic error: Self Ref value not allowed"),
         }
-        false
     }
 
     /// Checks and returns if this table has at least one self referencing transition. \
@@ -697,8 +704,7 @@ impl TransitionTableSymbol2 {
         match self.transitions[0].transition & FILTER_TABLE_SELF_REF {
             SELF_REF_SET_TRUE => true,
             SELF_REF_SET_FALSE => false,
-            // SELF_REF_NOT_CHECKED
-            _ => {
+            SELF_REF_NOT_CHECKED => {
                 for (id, t) in self.transitions_used_eval().iter().enumerate() {
                     if t.array_id() == id + 2 {
                         self.transitions[0].transition |= SELF_REF_SET_TRUE;
@@ -708,6 +714,7 @@ impl TransitionTableSymbol2 {
                 self.transitions[0].transition |= SELF_REF_SET_FALSE;
                 false
             }
+            _ => panic!("Logic error: Self Ref value not allowed"),
         }
     }
 

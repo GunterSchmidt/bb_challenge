@@ -6,8 +6,7 @@ use crate::{
     tape::Tape,
     tape_long::TapeLong,
     tape_utils::{
-        CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128, POS_HALF_U128,
-        TAPE_SIZE_HALF_128,
+        CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128, TAPE_SIZE_HALF_128,
     },
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_SYM2_START},
 };
@@ -42,10 +41,6 @@ pub struct DeciderDataLong128 {
     /// HTML step limit limits output to file. Set to 0 if write_html_file is false.
     #[cfg(feature = "bb_enable_html_reports")]
     pub html_writer: HtmlWriter,
-    #[cfg(feature = "bb_enable_html_reports")]
-    path: Option<String>,
-    #[cfg(feature = "bb_enable_html_reports")]
-    pub file_name: Option<String>,
 }
 
 impl DeciderDataLong128 {
@@ -68,10 +63,6 @@ impl DeciderDataLong128 {
             #[cfg(feature = "bb_enable_html_reports")]
             html_writer: HtmlWriter::new(config),
             // tape_size_limit_u32_blocks: config.tape_size_limit_u32_blocks(),
-            #[cfg(feature = "bb_enable_html_reports")]
-            path: None,
-            #[cfg(feature = "bb_enable_html_reports")]
-            file_name: None,
         }
     }
 
@@ -84,13 +75,14 @@ impl DeciderDataLong128 {
         self.tr = TRANSITION_SYM2_START;
         self.tr_field = 2;
         self.status = MachineStatus::NoDecision;
+        // self.html_writer.reset_write_html_line_count();
         // keep step_limit and other config data
     }
 
     #[inline(always)]
     pub fn get_current_symbol(&self) -> usize {
         // resolves to one if bit is set
-        ((self.tape.tape_shifted & POS_HALF_U128) != 0) as usize
+        self.tape.get_current_symbol()
     }
 
     // Returns the next transition and updates the step counter, but does not update the tape yet
@@ -149,8 +141,8 @@ impl DeciderDataLong128 {
 
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn rename_html_file_to_status(&self) {
-        if let Some(file_name) = self.file_name.as_ref() {
-            let path = self.path.as_ref().unwrap();
+        if let Some(file_name) = self.html_writer.file_name() {
+            let path = self.html_writer.path().unwrap();
             // self.file = None;
             crate::html::rename_file_to_status(path, file_name, &self.status);
         }
@@ -487,14 +479,6 @@ impl DeciderDataLong128 {
             self.write_html_p(
                 "Note: Here only the 128 Bit Tape is shown, the underlying long tape holds more data.",
             );
-            if self
-                .transition_table
-                .has_self_referencing_transition_store_result()
-            {
-                self.write_html_p("Note: This machine has self-referencing transitions (e.g. Field A1: 1RA) \
-                which leads to repeatedly calling itself in case of tape head reads 1. This is used to speed up the \
-                decider by jumping over these repeated steps.");
-            }
         }
     }
 
@@ -533,19 +517,7 @@ impl DeciderDataLong128 {
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
-    pub fn path(&self) -> Option<&String> {
-        self.path.as_ref()
-    }
-
-    #[cfg(feature = "bb_enable_html_reports")]
-    pub fn set_path(&mut self, path: &str) {
-        self.path = Some(path.to_string());
-        self.html_writer.set_path(path);
-    }
-
-    #[cfg(feature = "bb_enable_html_reports")]
     pub fn set_path_option(&mut self, path_option: Option<String>) {
-        self.path = path_option.clone();
         self.html_writer.set_path_option(path_option);
     }
 }
@@ -560,7 +532,7 @@ impl Display for DeciderDataLong128 {
 #[cfg(feature = "bb_enable_html_reports")]
 impl From<&crate::decider_data_long_128::DeciderDataLong128> for crate::html::StepHtml {
     fn from(data: &crate::decider_data_long_128::DeciderDataLong128) -> Self {
-        let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit;
+        let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit();
         let tape_shifted = if is_u128_tape {
             data.tape.tape_shifted_clean()
         } else {

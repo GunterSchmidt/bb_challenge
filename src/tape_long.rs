@@ -91,7 +91,9 @@
 #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
 use crate::tape_utils::{U128Ext, VecU32Ext, TAPE_DISPLAY_RANGE_128};
 use crate::{
-    config::{Config, StepTypeSmall, MAX_TAPE_GROWTH_BLOCKS, TAPE_SIZE_INIT_CELL_BLOCKS},
+    config::{
+        Config, StepTypeBig, StepTypeSmall, MAX_TAPE_GROWTH_BLOCKS, TAPE_SIZE_INIT_CELL_BLOCKS,
+    },
     tape::Tape,
     tape_utils::{
         TapeLongPositions, U128Ext, CLEAR_HIGH127_96BITS_U128, CLEAR_HIGH95_64BITS_U128,
@@ -166,6 +168,7 @@ impl TapeLong {
         println!("shifted org:  {}", ts.to_binary_split_string());
         // shift tape back to fill correctly
         // update dirty section
+        #[allow(clippy::comparison_chain)]
         if self.pos_middle < MIDDLE_BIT_U128 {
             // Here bits 63-32 are clean, all other are potentially dirty.
             let shift = MIDDLE_BIT_U128 - self.pos_middle;
@@ -271,6 +274,7 @@ impl TapeLong {
         println!("shifted org:  {}", ts.to_binary_split_string());
         // shift tape back to fill correctly
         // update dirty section
+        #[allow(clippy::comparison_chain)]
         if self.pos_middle < MIDDLE_BIT_U128 {
             // Here bits 63-32 are clean, all other are potentially dirty.
             let shift = MIDDLE_BIT_U128 - self.pos_middle;
@@ -680,9 +684,9 @@ impl Tape for TapeLong {
     }
 
     #[inline(always)]
-    fn get_current_symbol(&self) -> u32 {
+    fn get_current_symbol(&self) -> usize {
         // resolves to one if bit is set
-        ((self.tape_shifted & POS_HALF_U128) != 0) as u32
+        ((self.tape_shifted & POS_HALF_U128) != 0) as usize
     }
 
     fn is_left_empty(&self) -> bool {
@@ -751,6 +755,15 @@ impl Tape for TapeLong {
             self.pos_middle -= 1;
             self.shift_tape_long_head_dir_left()
         }
+    }
+
+    #[allow(unused)]
+    fn update_tape_self_ref_speed_up(
+        &mut self,
+        transition: TransitionSymbol2,
+        tr_field: usize,
+    ) -> StepTypeBig {
+        todo!()
     }
 }
 
