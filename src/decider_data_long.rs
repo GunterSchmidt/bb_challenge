@@ -4,7 +4,7 @@ use crate::{
     config::{Config, StepTypeBig},
     status::{MachineStatus, UndecidedReason},
     tape::Tape,
-    tape_long::TapeLong,
+    tape_long_shifted::TapeLongShifted,
     tape_utils::{
         CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128, TAPE_SIZE_HALF_128,
     },
@@ -15,7 +15,7 @@ use crate::{decider::DeciderId, html::HtmlWriter, machine::Machine};
 
 /// This contains the functionality for a hold decider and can be used to create more elaborate deciders. \
 #[derive(Debug)]
-pub struct DeciderDataLong128 {
+pub struct DeciderDataLong {
     // decider_id: &'static DeciderId,
     /// Number of steps or current step no, where first step is 1
     pub step_no: StepTypeBig,
@@ -26,7 +26,7 @@ pub struct DeciderDataLong128 {
 
     /// The tape_long is a ```Vec<u64>``` which allows to copy half of u128 tape_shifted to
     /// be copied into the long tape when a bound is reached.
-    pub tape: TapeLong,
+    pub tape: TapeLongShifted,
 
     // machine id, just for debugging
     // machine_id: IdBig,
@@ -43,12 +43,12 @@ pub struct DeciderDataLong128 {
     pub html_writer: HtmlWriter,
 }
 
-impl DeciderDataLong128 {
+impl DeciderDataLong {
     // Sets the defaults and start transition A0.
     pub fn new(config: &Config) -> Self {
         Self {
             // decider_id,
-            tape: TapeLong::new(config),
+            tape: TapeLongShifted::new(config),
 
             step_no: 0,
             transition_table: TransitionTableSymbol2::default(),
@@ -89,7 +89,7 @@ impl DeciderDataLong128 {
     #[inline(always)]
     pub fn next_transition(&mut self) {
         self.step_no += 1;
-        self.tr_field = self.tr.state_x2() + self.tape.get_current_symbol() as usize;
+        self.tr_field = self.tr.state_x2() + self.tape.get_current_symbol();
         self.tr = self.transition_table.transition(self.tr_field);
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
         println!("{}", self.step_to_string());
@@ -522,7 +522,7 @@ impl DeciderDataLong128 {
     }
 }
 
-impl Display for DeciderDataLong128 {
+impl Display for DeciderDataLong {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO other fields
         write!(f, "{}", self.step_to_string(),)
@@ -530,8 +530,8 @@ impl Display for DeciderDataLong128 {
 }
 
 #[cfg(feature = "bb_enable_html_reports")]
-impl From<&crate::decider_data_long_128::DeciderDataLong128> for crate::html::StepHtml {
-    fn from(data: &crate::decider_data_long_128::DeciderDataLong128) -> Self {
+impl From<&crate::decider_data_long::DeciderDataLong> for crate::html::StepHtml {
+    fn from(data: &crate::decider_data_long::DeciderDataLong) -> Self {
         let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit();
         let tape_shifted = if is_u128_tape {
             data.tape.tape_shifted_clean()
@@ -544,7 +544,7 @@ impl From<&crate::decider_data_long_128::DeciderDataLong128> for crate::html::St
             transition: data.tr,
             tape_shifted,
             is_u128_tape,
-            pos_middle_shifted: data.tape.pos_middle(),
+            pos_middle: data.tape.pos_middle_print(),
             tape_long_positions: data.tape.tape_long_positions(),
         }
     }

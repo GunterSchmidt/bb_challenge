@@ -89,11 +89,9 @@
 //! Step  1779 C1 0LE: 00000000000000000000000000000000_011111111101010101010101_01010101→00101010_101010101010101010101010_10101000000000000000000000000000 P: 62 TL P31 30..35 \
 
 #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
-use crate::tape_utils::{U128Ext, VecU32Ext, TAPE_DISPLAY_RANGE_128};
+use crate::tape_utils::{VecU32Ext, TAPE_DISPLAY_RANGE_128};
 use crate::{
-    config::{
-        Config, StepTypeBig, StepTypeSmall, MAX_TAPE_GROWTH_BLOCKS, TAPE_SIZE_INIT_CELL_BLOCKS,
-    },
+    config::{Config, MAX_TAPE_GROWTH_BLOCKS, TAPE_SIZE_INIT_CELL_BLOCKS},
     tape::Tape,
     tape_utils::{
         TapeLongPositions, U128Ext, CLEAR_HIGH127_96BITS_U128, CLEAR_HIGH95_64BITS_U128,
@@ -113,7 +111,7 @@ use crate::{
 /// Here the head is moving within the tape, the tape does not shift at all.
 // TODO limit access, pub removal
 #[derive(Debug)]
-pub struct TapeLong {
+pub struct TapeLongShifted {
     /// Partial fast Turing tape which shifts in every step, so that the head is always at the MIDDLE_BIT.
     /// The tape is 128 bit wide, but since data is shifted to the long tape, it may be 'dirty', meaning it
     /// does not contain the correct cell values. The cell values will be shifted in only if required. \
@@ -134,7 +132,7 @@ pub struct TapeLong {
     tape_size_limit_u32_blocks: u32,
 }
 
-impl TapeLong {
+impl TapeLongShifted {
     /// Counts ones/zeros for self referencing speed-up
     #[inline(always)]
     pub fn count_left(&self, symbol: usize) -> u32 {
@@ -159,6 +157,7 @@ impl TapeLong {
         }
     }
 
+    #[cfg(feature = "bb_enable_html_reports")]
     /// Returns tape_shifted with the correct bits set (taken from tape_long).
     fn get_clean_tape_shifted(&self) -> u128 {
         #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
@@ -645,7 +644,7 @@ impl TapeLong {
     }
 }
 
-impl Tape for TapeLong {
+impl Tape for TapeLongShifted {
     fn new(config: &Config) -> Self {
         Self {
             tape_size_limit_u32_blocks: config.tape_size_limit_u32_blocks(),
@@ -667,7 +666,7 @@ impl Tape for TapeLong {
     }
 
     /// Returns the ones which are set in the tape
-    fn count_ones(&self) -> StepTypeSmall {
+    fn count_ones(&self) -> u32 {
         let ts = self.get_clean_tape_shifted_for_tape_long();
 
         // TODO tape shifted needs to be shifted in the middle and tape long loaded
@@ -680,7 +679,7 @@ impl Tape for TapeLong {
                 ones += n.count_ones();
             }
         }
-        ones as StepTypeSmall
+        ones
     }
 
     #[inline(always)]
@@ -705,9 +704,9 @@ impl Tape for TapeLong {
         todo!()
     }
 
-    #[inline(always)]
-    fn pos_middle(&self) -> u32 {
-        self.pos_middle
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn pos_middle_print(&self) -> i64 {
+        self.pos_middle as i64
     }
 
     /// Update tape: write symbol at head position into cell
@@ -720,6 +719,10 @@ impl Tape for TapeLong {
         };
     }
 
+    // fn supports_speed_up(&self) -> bool {
+    //     false
+    // }
+
     fn tape_long_positions(&self) -> Option<TapeLongPositions> {
         Some(TapeLongPositions {
             tl_pos: self.tl_pos,
@@ -728,7 +731,7 @@ impl Tape for TapeLong {
         })
     }
 
-    #[inline(always)]
+    #[cfg(feature = "bb_enable_html_reports")]
     fn tape_shifted_clean(&self) -> u128 {
         self.get_clean_tape_shifted()
     }
@@ -756,18 +759,9 @@ impl Tape for TapeLong {
             self.shift_tape_long_head_dir_left()
         }
     }
-
-    #[allow(unused)]
-    fn update_tape_self_ref_speed_up(
-        &mut self,
-        transition: TransitionSymbol2,
-        tr_field: usize,
-    ) -> StepTypeBig {
-        todo!()
-    }
 }
 
-impl Default for TapeLong {
+impl Default for TapeLongShifted {
     fn default() -> Self {
         Self {
             tape_shifted: 0,
@@ -781,7 +775,7 @@ impl Default for TapeLong {
     }
 }
 
-impl std::fmt::Display for TapeLong {
+impl std::fmt::Display for TapeLongShifted {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

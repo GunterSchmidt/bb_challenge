@@ -114,7 +114,7 @@ use std::fmt::Display;
 use crate::{
     config::Config,
     decider::{self, Decider, DECIDER_HOLD_ID},
-    decider_data_long_128::DeciderDataLong128,
+    decider_data_long::DeciderDataLong,
     decider_result::BatchData,
     machine::Machine,
     status::MachineStatus,
@@ -139,17 +139,17 @@ use crate::{
 // BB5_MAX:
 // - A1 1LC -> C1 0LE -> E1 0LA: check 63 1, 64 1 and 65 1 and left repeat 1 (1111*1) 00000000000000001111111111111111_111111111111111111111111_11111111→10010010
 // This is the same as decider_hold_u128_long_v2 only with split and moved functionality to DeciderData128. May have an insignificant performance loss.
-pub struct DeciderHoldU128Long {
-    data: DeciderDataLong128,
+pub struct DeciderHoldLong {
+    data: DeciderDataLong,
     // machine id, just for debugging
     // machine_id: IdBig,
 }
 
-impl DeciderHoldU128Long {
+impl DeciderHoldLong {
     pub fn new(config: &Config) -> Self {
         #[allow(unused_mut)]
         let mut decider = Self {
-            data: DeciderDataLong128::new(config),
+            data: DeciderDataLong::new(config),
             // machine_id: 0,
         };
 
@@ -204,7 +204,7 @@ impl DeciderHoldU128Long {
     // }
 }
 
-impl Decider for DeciderHoldU128Long {
+impl Decider for DeciderHoldLong {
     fn decider_id() -> &'static decider::DeciderId {
         &DECIDER_HOLD_ID
     }
@@ -252,7 +252,7 @@ impl Decider for DeciderHoldU128Long {
     // }
 }
 
-impl Display for DeciderHoldU128Long {
+impl Display for DeciderHoldLong {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // let s = String::new();
         // println!("State: Undecided: Too many steps to left.");
@@ -273,14 +273,14 @@ impl Display for DeciderHoldU128Long {
 //     assert_eq!(check_result, MachineStatus::DecidedHolds(107));
 // }
 
-pub fn test_decider_hold_u128(tm_text_format: &str) {
+pub fn test_decider_hold(tm_text_format: &str) {
     let machine = Machine::from_standard_tm_text_format(0, tm_text_format).unwrap();
     // let config = Config::new_default(5);
     let config = Config::builder(machine.n_states())
         .write_html_file(true)
         .step_limit_hold(50_000_000)
         .build();
-    let check_result = DeciderHoldU128Long::decide_single_machine(&machine, &config);
+    let check_result = DeciderHoldLong::decide_single_machine(&machine, &config);
     println!("{}", check_result);
     // assert_eq!(check_result, MachineStatus::DecidedHolds(47176870));
 }
@@ -294,7 +294,7 @@ pub fn test_decider_hold_u128_applies_bb5_max() {
     //     .build();
     // BB5 Max
     let machine = Machine::build_machine("BB5_MAX").unwrap();
-    let check_result = DeciderHoldU128Long::decide_single_machine(&machine, &config);
+    let check_result = DeciderHoldLong::decide_single_machine(&machine, &config);
     println!("{}", check_result);
     assert_eq!(check_result, MachineStatus::DecidedHolds(47176870));
 }
@@ -311,7 +311,7 @@ mod tests {
 
         // BB4 Max
         let machine = Machine::build_machine("BB4_MAX").unwrap();
-        let mut decider = DeciderHoldU128Long::new(&config);
+        let mut decider = DeciderHoldLong::new(&config);
         let check_result = decider.decide_machine(&machine);
         // println!("{}", check_result);
         assert_eq!(check_result, MachineStatus::DecidedHolds(107));
@@ -331,7 +331,7 @@ mod tests {
             .build();
         // BB5 Max
         let machine = Machine::build_machine("BB5_MAX").unwrap();
-        let check_result = DeciderHoldU128Long::decide_single_machine(&machine, &config);
+        let check_result = DeciderHoldLong::decide_single_machine(&machine, &config);
         // println!("{}", check_result);
         assert_eq!(check_result, MachineStatus::DecidedHolds(47_176_870));
     }

@@ -5,7 +5,7 @@ use crate::{
     bb_file_reader::BBFileReader,
     config::Config,
     decider::Decider,
-    decider_hold_u128_long_v3::DeciderHoldU128Long,
+    decider_hold_long_v3::DeciderHoldLong,
     machine_info::MachineInfo,
     pre_decider::run_pre_decider_simple,
     status::MachineStatus,
@@ -88,7 +88,7 @@ impl Machine {
         //     MachineStatus::Undecided(_, _, _) => {}
         //     _ => return status,
         // }
-        DeciderHoldU128Long::decide_single_machine(self, &config)
+        DeciderHoldLong::decide_single_machine(self, &config)
     }
 
     pub fn file_name(&self) -> String {

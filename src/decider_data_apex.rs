@@ -4,11 +4,11 @@ use std::fmt::Display;
 use crate::{
     config::{Config, StepTypeBig},
     status::{MachineStatus, UndecidedReason},
-    tape::{Tape, TapeSpeedUp},
-    tape_128::Tape128,
+    tape::Tape,
+    tape_long_fixed_apex::TapeLongFixedApex,
+    tape_long_shifted::TapeLongShifted,
     tape_utils::{
-        TapeLongPositions, CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128,
-        POS_HALF_U128, TAPE_SIZE_BIT_U128, TAPE_SIZE_HALF_128,
+        CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128, TAPE_SIZE_HALF_128,
     },
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_SYM2_START},
 };
@@ -17,7 +17,7 @@ use crate::{decider::DeciderId, html::HtmlWriter, machine::Machine};
 
 /// This contains the functionality for a hold decider and can be used to create more elaborate deciders. \
 #[derive(Debug)]
-pub struct DeciderData128 {
+pub struct DeciderDataApex {
     // decider_id: &'static DeciderId,
     /// Number of steps or current step no, where first step is 1
     pub step_no: StepTypeBig,
@@ -28,7 +28,7 @@ pub struct DeciderData128 {
 
     /// The tape_long is a ```Vec<u64>``` which allows to copy half of u128 tape_shifted to
     /// be copied into the long tape when a bound is reached.
-    pub tape: Tape128,
+    pub tape: TapeLongFixedApex,
 
     // machine id, just for debugging
     // machine_id: IdBig,
@@ -45,12 +45,12 @@ pub struct DeciderData128 {
     pub html_writer: HtmlWriter,
 }
 
-impl DeciderData128 {
+impl DeciderDataApex {
     // Sets the defaults and start transition A0.
     pub fn new(config: &Config) -> Self {
         Self {
             // decider_id,
-            tape: Tape128::new(config),
+            tape: TapeLongFixedApex::new(config),
 
             step_no: 0,
             transition_table: TransitionTableSymbol2::default(),
@@ -64,6 +64,7 @@ impl DeciderData128 {
             step_limit: config.step_limit_hold(),
             #[cfg(feature = "bb_enable_html_reports")]
             html_writer: HtmlWriter::new(config),
+            // tape_size_limit_u32_blocks: config.tape_size_limit_u32_blocks(),
         }
     }
 
@@ -82,6 +83,7 @@ impl DeciderData128 {
 
     #[inline(always)]
     pub fn get_current_symbol(&self) -> usize {
+        // resolves to one if bit is set
         self.tape.get_current_symbol()
     }
 
@@ -121,6 +123,12 @@ impl DeciderData128 {
         false
     }
 
+    /// Tape shifted is clean (contains the correct cell values) as long the bounds have not been breached.
+    pub fn is_tape_shifted_clean(&self) -> bool {
+        todo!()
+        // self.tape.tl_high_bound() - self.tape.tl_low_bound() == 3
+    }
+
     /// Returns true if html is enabled and the step_no is < 1000 or > config.write_html_step_start .
     /// step_no must be smaller or equal \
     /// line count must be smaller, so one more can fit
@@ -137,7 +145,7 @@ impl DeciderData128 {
     #[cfg(feature = "bb_enable_html_reports")]
     pub fn rename_html_file_to_status(&self) {
         if let Some(file_name) = self.html_writer.file_name() {
-            let path: &String = self.html_writer.path().unwrap();
+            let path = self.html_writer.path().unwrap();
             // self.file = None;
             crate::html::rename_file_to_status(path, file_name, &self.status);
         }
@@ -191,14 +199,10 @@ impl DeciderData128 {
     //     }
     // }
 
-    // pub fn tape_long_positions(&self) -> TapeLongPositions {
-    //     self.tape.tape_long_positions()
-    // }
-
-    // pub fn tape_shifted(&self) -> u128 {
-    //     self.tape.tape_shifted()
-    // }
-
+    pub fn tape_shifted(&self) -> u128 {
+        todo!()
+        // self.tape.tape_shifted
+    }
     /// Updates tape_shifted and tape_long.
     /// Also prints and writes step to html if feature is set.
     /// # Returns
@@ -211,7 +215,7 @@ impl DeciderData128 {
             self.status = MachineStatus::Undecided(
                 UndecidedReason::TapeSizeLimit,
                 self.step_no,
-                TAPE_SIZE_BIT_U128,
+                self.tape.tape_size_cells(),
             );
         }
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
@@ -234,34 +238,34 @@ impl DeciderData128 {
     #[must_use]
     #[inline(always)]
     pub fn update_tape_self_ref_speed_up(&mut self) -> bool {
-        // if self.step_no > 1273 {
-        //     println!();
+        todo!();
+        // #[cfg(all(debug_assertions, feature = "bb_debug"))]
+        // {
+        //     if self.step_no % 100 == 0 {
+        //         println!();
+        //     }
+        //     println!("{}", self.step_to_string());
         // }
-        let jump = self
-            .tape
-            .update_tape_self_ref_speed_up(self.tr, self.tr_field);
-        // return value
-        if jump == 0 {
-            self.status = MachineStatus::Undecided(
-                UndecidedReason::TapeSizeLimit,
-                self.step_no,
-                self.tape.tape_size_cells(),
-            );
-            false
-        } else {
-            self.step_no += jump - 1;
-
-            #[cfg(all(debug_assertions, feature = "bb_debug"))]
-            {
-                if self.step_no % 100 == 0 {
-                    println!();
-                }
-                println!("{}", self.step_to_string());
-            }
-            #[cfg(feature = "bb_enable_html_reports")]
-            self.write_step_html();
-            true
-        }
+        // #[cfg(feature = "bb_enable_html_reports")]
+        // self.write_step_html();
+        // if !shift_ok {
+        //     if self.tape.tl_pos() >= self.tape.tape_long.len() {
+        //         println!(
+        //             "\n *** Error shift: TL len {}, tl_pos {}, tl_high_bound {}, machine {}",
+        //             self.tape.tape_long.len(),
+        //             self.tape.tl_pos(),
+        //             self.tape.tl_high_bound(),
+        //             self.transition_table
+        //         );
+        //         return false;
+        //     }
+        //     self.status = MachineStatus::Undecided(
+        //         UndecidedReason::TapeSizeLimit,
+        //         self.step_no,
+        //         self.tape.tape_size_cells(),
+        //     );
+        // }
+        // shift_ok
     }
 
     // Creates
@@ -271,7 +275,9 @@ impl DeciderData128 {
             self.html_writer
                 .create_html_file_start(decider_id, machine)
                 .expect("Html file could not be written");
-            self.write_html_p("Note: Here the full 128 Bit Tape is shown, there is no long tape.");
+            self.write_html_p(
+                "Note: Here only the 128 Bit Tape is shown, the underlying long tape holds more data.",
+            );
         }
     }
 
@@ -302,12 +308,16 @@ impl DeciderData128 {
             TransitionSymbol2::field_id_to_string(self.tr_field),
             self.tr,
             self.tape,
+            //  "Step {:3} {}: P{}-{} {} Next {}{}",
+            // self.step_no,
+            // self.tr,
+            // self.tape.tl_pos(),
+            // self.tape.pos_middle,
+            // crate::tape_utils::U128Ext::to_binary_split_string(&self.tape.tape_shifted),
+            // // self.get_tape_size(),
+            // self.tr.state_to_char(),
+            // self.tape.get_current_symbol(),
         )
-    }
-
-    #[cfg(feature = "bb_enable_html_reports")]
-    pub fn set_path(&mut self, path: &str) {
-        self.html_writer.set_path(path);
     }
 
     #[cfg(feature = "bb_enable_html_reports")]
@@ -316,7 +326,7 @@ impl DeciderData128 {
     }
 }
 
-impl Display for DeciderData128 {
+impl Display for DeciderDataApex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO other fields
         write!(f, "{}", self.step_to_string(),)
@@ -324,8 +334,8 @@ impl Display for DeciderData128 {
 }
 
 #[cfg(feature = "bb_enable_html_reports")]
-impl From<&crate::decider_data_128::DeciderData128> for crate::html::StepHtml {
-    fn from(data: &crate::decider_data_128::DeciderData128) -> Self {
+impl From<&DeciderDataApex> for crate::html::StepHtml {
+    fn from(data: &DeciderDataApex) -> Self {
         let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit();
         let tape_shifted = if is_u128_tape {
             data.tape.tape_shifted_clean()
@@ -339,7 +349,7 @@ impl From<&crate::decider_data_128::DeciderData128> for crate::html::StepHtml {
             tape_shifted,
             is_u128_tape,
             pos_middle: data.tape.pos_middle_print(),
-            tape_long_positions: None,
+            tape_long_positions: data.tape.tape_long_positions(),
         }
     }
 }

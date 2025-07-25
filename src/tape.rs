@@ -27,16 +27,21 @@ pub trait Tape: std::fmt::Display {
     fn left_64_bit(&self) -> u64;
     fn right_64_bit(&self) -> u64;
 
+    #[cfg(feature = "bb_enable_html_reports")]
     /// Current pos_middle. This is an optional value only to be used for html or debug output.
-    fn pos_middle(&self) -> u32;
+    fn pos_middle_print(&self) -> i64;
 
     /// Update tape: write symbol at head position into cell
     fn set_current_symbol(&mut self, transition: TransitionSymbol2);
+
+    // /// If this tape supports speed up (self-ref) functionality
+    // fn supports_speed_up(&self) -> bool;
 
     /// For HTML output, tape long positions if available.
     fn tape_long_positions(&self) -> Option<TapeLongPositions>;
 
     /// Tape as 128-Bit with head as bit 63. Displays the actual current bits, not the working tape_shifted.
+    #[cfg(feature = "bb_enable_html_reports")]
     fn tape_shifted_clean(&self) -> u128;
 
     /// Returns the approximate tape size, which is actually not known exactly. \
@@ -50,7 +55,9 @@ pub trait Tape: std::fmt::Display {
     /// In case of an error self.status is set to that error.
     #[must_use]
     fn update_tape_single_step(&mut self, transition: TransitionSymbol2) -> bool;
+}
 
+pub trait TapeSpeedUp: Tape {
     /// Sets the symbol of the transition and moves the tape according to direction of the transition.
     /// This also checks speed-up options (self-ref) and may move the tape many steps at once.
     /// Also prints and writes step to html if feature "bb_enable_html_reports" is set.

@@ -509,7 +509,7 @@ pub fn write_step_html_128(
     tr_field_id: usize,
     transition: TransitionSymbol2,
     tape_shifted: u128,
-    pos_middle: u32,
+    pos_middle: i64,
 ) {
     let data = StepHtml {
         step_no,
@@ -517,7 +517,7 @@ pub fn write_step_html_128(
         transition,
         tape_shifted,
         is_u128_tape: true,
-        pos_middle_shifted: pos_middle,
+        pos_middle,
         tape_long_positions: None,
     };
     data.write_step_html(buf_writer);
@@ -528,6 +528,8 @@ pub fn write_step_html_128(
 /// Panics on file write error. At this point it is unlikely to occur.
 pub fn write_html(buf_writer: &mut BufWriter<File>, text: &str) {
     writeln!(buf_writer, "{text}",).expect("Html write error");
+    #[cfg(feature = "bb_html_flush")]
+    buf_writer.flush().expect("Could not flush");
 }
 
 /// Writes a paragraphed text into an open Html file.
@@ -535,6 +537,8 @@ pub fn write_html(buf_writer: &mut BufWriter<File>, text: &str) {
 /// Panics on file write error. At this point it is unlikely to occur.
 pub fn write_html_p(buf_writer: &mut BufWriter<File>, text: &str) {
     writeln!(buf_writer, "<p>{text}</p>",).expect("Html write error");
+    #[cfg(feature = "bb_html_flush")]
+    buf_writer.flush().expect("Could not flush");
 }
 
 pub fn write_machines_to_html(
@@ -561,9 +565,7 @@ pub fn write_machines_to_html(
         for (i, m_info) in machine_infos.iter().take(limit_num_files).enumerate() {
             let machine = Machine::from(m_info);
             // write hold (because self ref)
-            crate::decider_hold_u128_long_v3::DeciderHoldU128Long::decide_single_machine(
-                &machine, &config,
-            );
+            crate::decider_hold_long_v3::DeciderHoldLong::decide_single_machine(&machine, &config);
             // write bouncer (because single step)
             crate::decider_bouncer_128::DeciderBouncer128::decide_single_machine(&machine, &config);
             // write cycler (because single step)
@@ -595,7 +597,7 @@ pub struct StepHtml {
     /// if false the lower 64 bit will be used. This can also be used to only print the middle part if the tape is shifted before by 32 bit.
     pub is_u128_tape: bool,
     /// current pos_middle of tape shifted, it is not the real delta to pos_start
-    pub pos_middle_shifted: u32,
+    pub pos_middle: i64,
     /// current tape_long if available or necessary
     pub tape_long_positions: Option<TapeLongPositions>,
 }
@@ -623,8 +625,8 @@ impl StepHtml {
         };
         let tl_pos = if let Some(tp) = &self.tape_long_positions {
             format!(
-                " TL P{} {}..{}",
-                Self::format_right_aligned_int_html(tp.tl_pos as u32, 3),
+                " TL P {} {}..{}",
+                Self::format_right_aligned_int_html(tp.tl_pos as isize, 3),
                 tp.tl_low_bound,
                 tp.tl_high_bound
             )
@@ -633,16 +635,16 @@ impl StepHtml {
         };
         format!(
             "<p class=\"p_step\">Step {} {} {}: {binary} P: {}{}</p>",
-            Self::format_right_aligned_int_html(self.step_no, 5),
+            Self::format_right_aligned_int_html(self.step_no as isize, 5),
             TransitionSymbol2::field_id_to_string(self.tr_field_id),
             self.transition,
-            self.pos_middle_shifted,
+            Self::format_right_aligned_int_html(self.pos_middle as isize, 3),
             tl_pos
         )
     }
 
     /// Formats an Integer right aligned
-    pub fn format_right_aligned_int_html(number: StepTypeBig, size: usize) -> String {
+    pub fn format_right_aligned_int_html(number: isize, size: usize) -> String {
         let s = format!("{number:>size$}");
         s.replace(" ", "&nbsp;")
     }

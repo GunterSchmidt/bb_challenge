@@ -229,10 +229,9 @@ fn benchmark_tape_type(c: &mut Criterion) {
 fn bench_decider_hold_u128_long_v3(machine: &Machine, n_states: usize, steps_result: StepTypeBig) {
     let config = Config::new_default(n_states);
     // let mut d = bb_challenge::decider_u128_long::DeciderU128Long::new(&machine, STEP_LIMIT_DEFAULT);
-    let check_result =
-        bb_challenge::decider_hold_u128_long_v3::DeciderHoldU128Long::decide_single_machine(
-            &machine, &config,
-        );
+    let check_result = bb_challenge::decider_hold_long_v3::DeciderHoldLong::decide_single_machine(
+        &machine, &config,
+    );
     // println!("{}", check_result);
     assert_eq!(check_result, MachineStatus::DecidedHolds(steps_result));
 }

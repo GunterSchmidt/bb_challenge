@@ -57,7 +57,7 @@ impl DeciderStandard {
             ),
             DeciderStandard::Hold => DeciderCaller::new(
                 &DECIDER_HOLD_ID,
-                crate::decider_hold_u128_long_v3::DeciderHoldU128Long::decider_run_batch,
+                crate::decider_hold_long_v3::DeciderHoldLong::decider_run_batch,
             ),
         }
     }
@@ -81,7 +81,7 @@ impl DeciderStandard {
             ),
             DeciderStandard::Hold => DeciderConfig::new(
                 &DECIDER_HOLD_ID,
-                crate::decider_hold_u128_long_v3::DeciderHoldU128Long::decider_run_batch,
+                crate::decider_hold_long_v3::DeciderHoldLong::decider_run_batch,
                 config,
             ),
         }

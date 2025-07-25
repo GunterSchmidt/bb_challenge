@@ -179,12 +179,26 @@ pub trait VecU32Ext {
 
 impl VecU32Ext for Vec<u32> {
     fn to_hex_string_range(&self, range: Range<usize>) -> String {
-        let mut s = String::new();
-        for cell_pack in self[range.start..range.end - 1].iter() {
-            s.push_str(format!("{cell_pack:08X}, ").as_str());
+        let mut s = Vec::new();
+        for cell_pack in self[range.start..range.end].iter() {
+            s.push(format!("{cell_pack:08X}"));
         }
-        s.push_str(format!("{:08X}", &self[range.end - 1]).as_str());
 
-        s
+        s.join(" ")
+    }
+}
+
+pub trait VecU64Ext {
+    fn to_hex_string_range(&self, range: Range<usize>) -> String;
+}
+
+impl VecU64Ext for Vec<u64> {
+    fn to_hex_string_range(&self, range: Range<usize>) -> String {
+        let mut s = Vec::new();
+        for cell_pack in self[range.start..range.end].iter() {
+            s.push(format!("{cell_pack:016X}"));
+        }
+
+        s.join(" ")
     }
 }

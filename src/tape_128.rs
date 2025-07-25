@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use crate::{
     config::{Config, StepTypeBig},
-    tape::Tape,
+    tape::{Tape, TapeSpeedUp},
     tape_utils::{U128Ext, MIDDLE_BIT_U128, POS_HALF_U128, TAPE_SIZE_BIT_U128},
     transition_symbol2::TransitionSymbol2,
 };
@@ -96,8 +96,9 @@ impl Tape for Tape128 {
         self.tape_shifted as u64
     }
 
-    fn pos_middle(&self) -> u32 {
-        self.pos_middle
+    #[cfg(feature = "bb_enable_html_reports")]
+    fn pos_middle_print(&self) -> i64 {
+        self.pos_middle as i64
     }
 
     /// Update tape: write symbol at head position into cell
@@ -110,10 +111,15 @@ impl Tape for Tape128 {
         };
     }
 
+    // fn supports_speed_up(&self) -> bool {
+    //     true
+    // }
+
     fn tape_long_positions(&self) -> Option<crate::tape_utils::TapeLongPositions> {
         None
     }
 
+    #[cfg(feature = "bb_enable_html_reports")]
     fn tape_shifted_clean(&self) -> u128 {
         self.tape_shifted
     }
@@ -217,7 +223,9 @@ impl Tape for Tape128 {
 
         true
     }
+}
 
+impl TapeSpeedUp for Tape128 {
     #[must_use]
     #[inline(always)]
     fn update_tape_self_ref_speed_up(
@@ -297,7 +305,7 @@ impl Tape for Tape128 {
                         .max(MIDDLE_BIT_U128)
                         .max(self.pos_middle);
                 }
-                self.low_bound = self.low_bound - jump;
+                self.low_bound -= jump;
 
                 // self.set_current_symbol(); not required
                 // shift tape
