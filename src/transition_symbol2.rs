@@ -20,35 +20,35 @@ pub type TransitionSym2Array1D = [TransitionSymbol2; (MAX_STATES + 1) * 2];
 pub const TRANSITION_TABLE_SYM2_DEFAULT: TransitionSym2Array1D = [TransitionSymbol2 {
     transition: TRANSITION_UNUSED,
     #[cfg(debug_assertions)]
-    text: ['_', '_', '_'],
+    text: [b'_', b'_', b'_'],
 }; (MAX_STATES + 1) * 2];
 pub const TRANSITION_SYM2_UNUSED: TransitionSymbol2 = TransitionSymbol2 {
     transition: TRANSITION_UNUSED,
     #[cfg(debug_assertions)]
-    text: ['_', '_', '_'],
+    text: [b'_', b'_', b'_'],
 };
 // This is the undefined hold ('---'), where no last symbol is written.
 pub const TRANSITION_SYM2_HOLD: TransitionSymbol2 = TransitionSymbol2 {
     transition: TRANSITION_HOLD,
     #[cfg(debug_assertions)]
-    text: ['-', '-', '-'],
+    text: [b'-', b'-', b'-'],
 };
 /// Initialize transition with A0 as start
 pub const TRANSITION_SYM2_START: TransitionSymbol2 = TransitionSymbol2 {
     transition: TRANSITION_0RA,
     #[cfg(debug_assertions)]
-    text: ['0', 'R', 'A'],
+    text: [b'0', b'R', b'A'],
 };
 pub const TRANSITIONS_FOR_A0: [TransitionSymbol2; 2] = [
     TransitionSymbol2 {
         transition: 196,
         #[cfg(debug_assertions)]
-        text: ['0', 'R', 'B'],
+        text: [b'0', b'R', b'B'],
     },
     TransitionSymbol2 {
         transition: 197,
         #[cfg(debug_assertions)]
-        text: ['1', 'R', 'B'],
+        text: [b'1', b'R', b'B'],
     },
 ];
 
@@ -89,9 +89,9 @@ pub struct TransitionSymbol2 {
     /// - next state: bits 1-4: The value is naturally doubled for faster array id calculation \
     ///   value state or 0 for hold
     pub transition: TransitionType,
-    /// transition as text for debugging
+    /// Transition as chars for debugging only (Debugger); for output of these values just use Display.
     #[cfg(debug_assertions)]
-    pub text: [char; 3],
+    text: [u8; 3],
     // /// symbol 0,1 or 2 for undefined. 9 represents unused and is used to determine the number of states.
     // pub write_symbol: CellType,
     // /// direction +1, left -1 or 0 for undefined
@@ -180,10 +180,10 @@ impl TransitionSymbol2 {
         {
             let mut t = Self {
                 transition: transition_bits,
-                text: ['_'; 3],
+                text: [b'_'; 3],
             };
             let tx = t.to_string().into_bytes();
-            t.text = [tx[0] as char, tx[1] as char, tx[2] as char];
+            t.text = [tx[0], tx[1], tx[2]];
             Ok(t)
         }
 
@@ -275,6 +275,15 @@ impl TransitionSymbol2 {
         (self.transition & FILTER_DIR) >> 6
     }
 
+    /// Returns the direction as char (L,R,-).
+    pub fn direction_to_char(&self) -> char {
+        match self.transition & FILTER_DIR {
+            TO_LEFT => 'L',
+            TO_RIGHT => 'R',
+            _ => '-',
+        }
+    }
+
     pub fn state(&self) -> TransitionType {
         (self.transition & FILTER_STATE) >> 1
     }
@@ -284,7 +293,7 @@ impl TransitionSymbol2 {
         (self.transition & FILTER_STATE) as usize
     }
 
-    // TODO all state conversions centralized
+    /// Returns the state as char (A,B,C,...)
     pub fn state_to_char(&self) -> char {
         if self.transition & FILTER_STATE == 0 {
             'Z'
@@ -407,17 +416,19 @@ impl From<&TransitionGeneric> for TransitionSymbol2 {
             let mut tx = Self {
                 transition: t_new,
                 // fill with dummy value
-                text: ['_', '_', '_'],
+                text: [b'_', b'_', b'_'],
             };
             // format with formatter
             let text = format!("{tx}");
-            tx.text = text.chars().collect::<Vec<_>>().try_into().unwrap();
+            // tx.text = text.chars().collect::<Vec<_>>().try_into().unwrap();
+            tx.text = text.as_bytes().try_into().unwrap();
 
             tx
         }
     }
 }
 
+/// Displays the transition in standard format, e.g. 1RB
 impl Display for TransitionSymbol2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.transition {

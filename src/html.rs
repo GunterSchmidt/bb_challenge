@@ -23,7 +23,7 @@ use crate::decider::{Decider, DeciderId};
 use crate::machine::Machine;
 use crate::machine_info::MachineInfo;
 use crate::status::MachineStatus;
-use crate::tape_utils::TapeLongPositions;
+use crate::tape::tape_utils::TapeLongPositions;
 use crate::transition_symbol2::TransitionSymbol2;
 
 const CSS_FOLDER: &str = "styles";
@@ -528,7 +528,7 @@ pub fn write_step_html_128(
 /// Panics on file write error. At this point it is unlikely to occur.
 pub fn write_html(buf_writer: &mut BufWriter<File>, text: &str) {
     writeln!(buf_writer, "{text}",).expect("Html write error");
-    #[cfg(feature = "bb_html_flush")]
+    #[cfg(feature = "bb_debug")]
     buf_writer.flush().expect("Could not flush");
 }
 
@@ -537,7 +537,7 @@ pub fn write_html(buf_writer: &mut BufWriter<File>, text: &str) {
 /// Panics on file write error. At this point it is unlikely to occur.
 pub fn write_html_p(buf_writer: &mut BufWriter<File>, text: &str) {
     writeln!(buf_writer, "<p>{text}</p>",).expect("Html write error");
-    #[cfg(feature = "bb_html_flush")]
+    #[cfg(feature = "bb_debug")]
     buf_writer.flush().expect("Could not flush");
 }
 
@@ -565,11 +565,15 @@ pub fn write_machines_to_html(
         for (i, m_info) in machine_infos.iter().take(limit_num_files).enumerate() {
             let machine = Machine::from(m_info);
             // write hold (because self ref)
-            crate::decider_hold_long_v3::DeciderHoldLong::decide_single_machine(&machine, &config);
+            crate::decider::decider_hold_long_v3::DeciderHoldLong::decide_single_machine(
+                &machine, &config,
+            );
             // write bouncer (because single step)
-            crate::decider_bouncer_128::DeciderBouncer128::decide_single_machine(&machine, &config);
+            crate::decider::decider_bouncer_128::DeciderBouncer128::decide_single_machine(
+                &machine, &config,
+            );
             // write cycler (because single step)
-            crate::decider_cycler::DeciderCycler::decide_single_machine(&machine, &config);
+            crate::decider::decider_cycler::DeciderCycler::decide_single_machine(&machine, &config);
             let dur = Instant::now() - last_progress_info;
             if dur.as_millis() > 5000 {
                 println!("progress: {} / {}", i + 1, machine_infos.len());
@@ -613,12 +617,12 @@ impl StepHtml {
     /// Formats the line
     pub fn step_to_html_fmt(&self) -> String {
         let binary = if self.is_u128_tape {
-            crate::tape_utils::U128Ext::to_binary_split_html_string(
+            crate::tape::tape_utils::U128Ext::to_binary_split_html_string(
                 &self.tape_shifted,
                 &self.transition,
             )
         } else {
-            crate::tape_utils::U64Ext::to_binary_split_html_string(
+            crate::tape::tape_utils::U64Ext::to_binary_split_html_string(
                 &(self.tape_shifted as u64),
                 &self.transition,
             )

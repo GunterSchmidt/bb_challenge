@@ -3,8 +3,8 @@ use std::{fmt::Display, time::Duration};
 
 use crate::{
     config::{user_locale, Config, IdBig, StepTypeBig, StepTypeSmall},
+    data_provider::generator,
     decider::DeciderId,
-    generator,
     machine::Machine,
     machine_info::MachineInfo,
     pre_decider::PreDeciderRun,
@@ -19,6 +19,7 @@ const NUM_MAX_MACHINES_TO_DISPLAY_IN_RESULT: usize = 10;
 const NUM_UNDECIDED_MACHINES_TO_DISPLAY_IN_RESULT: usize = 10;
 
 pub type ResultDeciderStats = std::result::Result<DeciderResultStats, String>;
+pub type ResultUnitEndReason = Result<(), EndReason>;
 
 // TODO result print undecided
 

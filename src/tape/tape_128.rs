@@ -4,8 +4,13 @@ use std::fmt::Display;
 
 use crate::{
     config::{Config, StepTypeBig},
-    tape::{Tape, TapeSpeedUp},
-    tape_utils::{U128Ext, MIDDLE_BIT_U128, POS_HALF_U128, TAPE_SIZE_BIT_U128},
+    tape::{
+        tape_utils::{
+            TapeLongPositions, U128Ext, FILTER_HIGH_BITS_INCLUDING_HEAD_U128, FILTER_LOW_BITS_U128,
+            MIDDLE_BIT_U128, POS_HALF_U128, TAPE_SIZE_BIT_U128,
+        },
+        Tape, TapeSpeedUp,
+    },
     transition_symbol2::TransitionSymbol2,
 };
 
@@ -81,11 +86,11 @@ impl Tape for Tape128 {
     fn is_left_empty(&self) -> bool {
         // let x = self.tape_shifted & crate::tape_utils::FILTER_HIGH_BITS_INCLUDING_HEAD_U128;
         // println!("{}", x.to_binary_split_string());
-        self.tape_shifted & crate::tape_utils::FILTER_HIGH_BITS_INCLUDING_HEAD_U128 == 0
+        self.tape_shifted & FILTER_HIGH_BITS_INCLUDING_HEAD_U128 == 0
     }
 
     fn is_right_empty(&self) -> bool {
-        self.tape_shifted & crate::tape_utils::FILTER_LOW_BITS_U128 == 0
+        self.tape_shifted & FILTER_LOW_BITS_U128 == 0
     }
 
     fn left_64_bit(&self) -> u64 {
@@ -115,7 +120,7 @@ impl Tape for Tape128 {
     //     true
     // }
 
-    fn tape_long_positions(&self) -> Option<crate::tape_utils::TapeLongPositions> {
+    fn tape_long_positions(&self) -> Option<TapeLongPositions> {
         None
     }
 

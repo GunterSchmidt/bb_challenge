@@ -1,7 +1,10 @@
-use crate::{config::Config, decider::Decider, decider_cycler::DeciderCycler, machine::Machine};
+use crate::{
+    config::Config, decider::decider_cycler::DeciderCycler, decider::Decider, machine::Machine,
+};
 
 /// This example runs the cycler on the bb_challenge file machine id 30605 and creates a HTML file showing all steps. \
-/// It requires feature "bb_enable_html_reports" to be enabled.
+/// It requires the feature "bb_enable_html_reports" to be enabled.
+// TODO possibly move into tape_long_shifted as #test.
 pub fn bb_challenge_id_30605_cycler_to_html() {
     let config_single = Config::builder(4)
         .write_html_file(true)

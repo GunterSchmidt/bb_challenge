@@ -4,10 +4,10 @@
 #![allow(unused)]
 use crate::{
     config::{MAX_TAPE_GROWTH_BLOCKS, TAPE_SIZE_INIT_CELL_BLOCKS},
-    tape::Tape,
-    tape_utils::{
+    tape::tape_utils::{
         TapeLongPositions, U128Ext, U64Ext, MIDDLE_BIT_U128, POS_HALF_U128, TL_POS_START_128,
     },
+    tape::Tape,
     transition_symbol2::TransitionSymbol2,
 };
 
@@ -17,9 +17,8 @@ pub struct TapeLongFixedApex {
     tape_short: u128,
     /// Head in tape_short
     head: u128,
-    #[cfg(feature = "bb_enable_html_reports")]
     /// Indication where the start cell has moved. Used to identify the apex.
-    pos_head_short: i64,
+    pos_head: i64,
     // pos_head_min: i64,
     // pos_head_max: i64,
     /// Vec of u32 blocks, where each u32 holds 32 cells.
@@ -35,6 +34,23 @@ pub struct TapeLongFixedApex {
 }
 
 impl TapeLongFixedApex {
+    pub fn pos_head(&self) -> i64 {
+        self.pos_head
+    }
+
+    pub fn tape_short(&self) -> u128 {
+        self.tape_short
+    }
+
+    /// Returns the tape split in two u64 (high bits, low bits)
+    pub fn tape_short_split(&self) -> (u64, u64) {
+        ((self.tape_short >> 64) as u64, self.tape_short as u64)
+    }
+
+    pub fn is_tape_long_extended(&self) -> bool {
+        self.tl_high_bound - self.tl_low_bound > 1
+    }
+
     /// Shifts the pos in the long tape one to left and checks Vec dimensions. \
     /// Here the vector needs to be expanded at the beginning and the data must be shifted.
     /// # Returns
@@ -124,7 +140,7 @@ impl TapeLongFixedApex {
 
     #[must_use]
     #[inline(always)]
-    pub fn shift_tape_long_head_dir_left(&mut self) -> bool {
+    fn shift_tape_long_head_dir_left(&mut self) -> bool {
         // shift LEFT
         self.head <<= 1;
 
@@ -146,14 +162,11 @@ impl TapeLongFixedApex {
             self.tape_short |= (self.tape_long[self.tl_pos] as u128) << 64;
 
             self.head = POS_HALF_U128 << 1;
-            #[cfg(feature = "bb_enable_html_reports")]
-            {
-                self.pos_head_short = -1;
-            }
+            self.pos_head = -1;
 
             #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
             {
-                use crate::tape_utils::{VecU64Ext, TAPE_DISPLAY_RANGE_128};
+                use crate::tape::tape_utils::{VecU64Ext, TAPE_DISPLAY_RANGE_128};
                 use std::ops::Range;
 
                 let range = self.tl_low_bound..self.tl_high_bound + 1;
@@ -165,10 +178,7 @@ impl TapeLongFixedApex {
                 print!("");
             }
         } else {
-            #[cfg(feature = "bb_enable_html_reports")]
-            {
-                self.pos_head_short -= 1;
-            }
+            self.pos_head -= 1;
             // if self.pos_head_min > self.pos_head_short {
             //     self.pos_head_min -= 1;
             // }
@@ -179,7 +189,7 @@ impl TapeLongFixedApex {
 
     #[must_use]
     #[inline(always)]
-    pub fn shift_tape_long_head_dir_right(&mut self) -> bool {
+    fn shift_tape_long_head_dir_right(&mut self) -> bool {
         // shift RIGHT
         self.head >>= 1;
 
@@ -197,14 +207,11 @@ impl TapeLongFixedApex {
             self.tape_short |= (self.tape_long[self.tl_pos + 1] >> 0) as u128;
 
             self.head = POS_HALF_U128;
-            #[cfg(feature = "bb_enable_html_reports")]
-            {
-                self.pos_head_short = 0;
-            }
+            self.pos_head = 0;
 
             #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
             {
-                use crate::tape_utils::{VecU64Ext, TAPE_DISPLAY_RANGE_128};
+                use crate::tape::tape_utils::{VecU64Ext, TAPE_DISPLAY_RANGE_128};
                 use std::ops::Range;
 
                 let range = self.tl_low_bound..self.tl_high_bound + 1;
@@ -216,10 +223,7 @@ impl TapeLongFixedApex {
                 print!("");
             }
         } else {
-            #[cfg(feature = "bb_enable_html_reports")]
-            {
-                self.pos_head_short += 1;
-            }
+            self.pos_head += 1;
             // if self.pos_head_max < self.pos_head_short {
             //     self.pos_head_max += 1;
             // }
@@ -240,10 +244,7 @@ impl Tape for TapeLongFixedApex {
     fn clear(&mut self) {
         self.tape_short = 0;
         self.head = POS_HALF_U128;
-        #[cfg(feature = "bb_enable_html_reports")]
-        {
-            self.pos_head_short = 0;
-        }
+        self.pos_head = 0;
 
         self.tape_long.clear();
         self.tape_long.resize(TAPE_SIZE_INIT_CELL_BLOCKS, 0);
@@ -273,11 +274,12 @@ impl Tape for TapeLongFixedApex {
     }
 
     fn is_left_empty(&self) -> bool {
-        todo!()
+        // TODO
+        false
     }
 
     fn is_right_empty(&self) -> bool {
-        todo!()
+        false
     }
 
     fn left_64_bit(&self) -> u64 {
@@ -290,7 +292,7 @@ impl Tape for TapeLongFixedApex {
 
     #[cfg(feature = "bb_enable_html_reports")]
     fn pos_middle_print(&self) -> i64 {
-        self.pos_head_short
+        self.pos_head
     }
 
     fn set_current_symbol(&mut self, transition: TransitionSymbol2) {
@@ -316,7 +318,7 @@ impl Tape for TapeLongFixedApex {
     #[cfg(feature = "bb_enable_html_reports")]
     fn tape_shifted_clean(&self) -> u128 {
         // TODO tape_shifted from tape_long
-        let pos = self.pos_head_short;
+        let pos = self.pos_head;
         if pos > 0 {
             self.tape_short << pos
         } else {
@@ -355,8 +357,7 @@ impl Default for TapeLongFixedApex {
         Self {
             tape_short: 0,
             head: POS_HALF_U128,
-            #[cfg(feature = "bb_enable_html_reports")]
-            pos_head_short: 0,
+            pos_head: 0,
             // pos_head_min: 0,
             // pos_head_max: 0,
             tape_long: vec![0; TAPE_SIZE_INIT_CELL_BLOCKS],
@@ -376,7 +377,7 @@ impl std::fmt::Display for TapeLongFixedApex {
                 f,
                 "{} P{:3}, B {}..{}",
                 self.tape_short.to_binary_split_string(),
-                self.pos_head_short,
+                self.pos_head,
                 self.tl_low_bound,
                 self.tl_high_bound,
             )

@@ -113,12 +113,14 @@ use std::fmt::Display;
 
 use crate::{
     config::Config,
-    decider::{self, Decider, DECIDER_HOLD_ID},
-    decider_data_long::DeciderDataLong,
-    decider_result::BatchData,
+    decider::{
+        self,
+        decider_data_long::DeciderDataLong,
+        decider_result::{BatchData, ResultUnitEndReason},
+        Decider, DECIDER_HOLD_ID,
+    },
     machine::Machine,
     status::MachineStatus,
-    ResultUnitEndReason,
 };
 
 /// This decider runs on a 128-Bit number and moves data out to a long tape (Vec). \

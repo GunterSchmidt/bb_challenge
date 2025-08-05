@@ -2,10 +2,9 @@
 use std::{fmt::Display, io};
 
 use crate::{
-    bb_file_reader::BBFileReader,
     config::Config,
-    decider::Decider,
-    decider_hold_long_v3::DeciderHoldLong,
+    data_provider::bb_file_reader::BBFileReader,
+    decider::{decider_hold_long_v3::DeciderHoldLong, Decider},
     machine_info::MachineInfo,
     pre_decider::run_pre_decider_simple,
     status::MachineStatus,

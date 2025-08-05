@@ -1,9 +1,13 @@
 // TODO Doc ; Write a data provider which returns the machines in batches, e.g. generator, file reader
+pub mod bb_file_reader;
+pub mod generator;
+pub mod generator_full;
+pub mod generator_reduced;
 
 use std::fmt::Display;
 
 use crate::{
-    decider_result::{EndReason, PreDeciderCount},
+    decider::decider_result::{EndReason, PreDeciderCount},
     machine::Machine,
     machine_info::MachineInfo,
     pre_decider::PreDeciderRun,

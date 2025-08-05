@@ -3,11 +3,11 @@ use std::fmt::Display;
 use crate::{
     config::{Config, StepTypeBig},
     status::{MachineStatus, UndecidedReason},
-    tape::Tape,
-    tape_long_shifted::TapeLongShifted,
-    tape_utils::{
+    tape::tape_long_shifted::TapeLongShifted,
+    tape::tape_utils::{
         CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128, TAPE_SIZE_HALF_128,
     },
+    tape::Tape,
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_SYM2_START},
 };
 #[cfg(feature = "bb_enable_html_reports")]
@@ -509,7 +509,7 @@ impl DeciderDataLong {
             self.tr,
             self.tape.tl_pos(),
             self.tape.pos_middle,
-            crate::tape_utils::U128Ext::to_binary_split_string(&self.tape.tape_shifted),
+            crate::tape::tape_utils::U128Ext::to_binary_split_string(&self.tape.tape_shifted),
             // self.get_tape_size(),
             self.tr.state_to_char(),
             self.tape.get_current_symbol(),
@@ -530,8 +530,8 @@ impl Display for DeciderDataLong {
 }
 
 #[cfg(feature = "bb_enable_html_reports")]
-impl From<&crate::decider_data_long::DeciderDataLong> for crate::html::StepHtml {
-    fn from(data: &crate::decider_data_long::DeciderDataLong) -> Self {
+impl From<&DeciderDataLong> for crate::html::StepHtml {
+    fn from(data: &DeciderDataLong) -> Self {
         let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit();
         let tape_shifted = if is_u128_tape {
             data.tape.tape_shifted_clean()

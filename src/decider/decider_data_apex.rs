@@ -4,12 +4,10 @@ use std::fmt::Display;
 use crate::{
     config::{Config, StepTypeBig},
     status::{MachineStatus, UndecidedReason},
-    tape::Tape,
-    tape_long_fixed_apex::TapeLongFixedApex,
-    tape_long_shifted::TapeLongShifted,
-    tape_utils::{
+    tape::tape_utils::{
         CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128, TAPE_SIZE_HALF_128,
     },
+    tape::{tape_long_fixed_apex::TapeLongFixedApex, Tape},
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_SYM2_START},
 };
 #[cfg(feature = "bb_enable_html_reports")]

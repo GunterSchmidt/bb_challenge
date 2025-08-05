@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use num_format::ToFormattedString;
 
-use crate::{config::IdBig, decider_result::DeciderResultStats};
+use crate::{config::IdBig, decider::decider_result::DeciderResultStats};
 
 static REPORT_PROGRESS_STANDARD: ReportProgressStandard = ReportProgressStandard;
 

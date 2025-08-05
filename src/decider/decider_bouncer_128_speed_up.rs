@@ -9,14 +9,15 @@ use std::fmt::Display;
 use crate::tape_utils::U128Ext;
 use crate::{
     config::Config,
-    decider::{self, Decider},
-    decider_data_128::DeciderData128,
-    decider_result::BatchData,
+    decider::{
+        self,
+        decider_data_128::DeciderData128,
+        decider_result::{BatchData, ResultUnitEndReason},
+        Decider,
+    },
     machine::Machine,
     status::{EndlessReason, MachineStatus},
-    tape::Tape,
-    tape_utils::U64Ext,
-    ResultUnitEndReason,
+    tape::{tape_utils::U64Ext, Tape},
 };
 
 // #[cfg(debug_assertions)]
@@ -94,11 +95,16 @@ impl Decider for DeciderBouncer128 {
                 break;
             }
 
+            #[cfg(not(feature = "bb_no_self_ref"))]
             if self.is_self_ref {
                 if !self.data.update_tape_self_ref_speed_up() {
                     break;
                 }
             } else if !self.data.update_tape_single_step() {
+                break;
+            }
+            #[cfg(feature = "bb_no_self_ref")]
+            if !self.data.update_tape_single_step() {
                 break;
             }
 
@@ -327,6 +333,8 @@ impl Changed {
         // let change_moved = changed >> trailing_zeros;
         #[cfg(feature = "bb_debug")]
         {
+            use crate::tape::tape_utils::U64Ext;
+
             println!(" OLD {}", older_tape.to_binary_split_string());
             println!(" NEW {}", newer_tape.to_binary_split_string());
         }

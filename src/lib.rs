@@ -5,30 +5,11 @@
 // pub mod sub_decider;
 // pub mod sub_decider_loop_v4;
 pub mod arg_handler;
-pub mod bb_file_reader;
 pub mod config;
 pub mod data_provider;
 pub mod decider;
-pub mod decider_bouncer_128;
-pub mod decider_bouncer_128_speed_up;
-pub mod decider_bouncer_apex;
-pub mod decider_bouncer_v1;
-pub mod decider_cycler;
-pub mod decider_data_128;
-pub mod decider_data_apex;
-pub mod decider_data_long;
-pub mod decider_engine;
-pub mod decider_hold_long_apex;
-pub mod decider_hold_long_v3;
-pub mod decider_hold_u128_v3;
-pub mod decider_result;
-pub mod decider_result_worker;
-pub mod decider_u64;
 pub mod error;
 pub mod examples;
-pub mod generator;
-pub mod generator_full;
-pub mod generator_reduced;
 pub mod html;
 pub mod machine;
 pub mod machine_info;
@@ -38,16 +19,9 @@ pub mod single_thread_worker;
 pub mod status;
 pub mod step_record;
 pub mod tape;
-pub mod tape_128;
-pub mod tape_long_fixed;
-pub mod tape_long_fixed_apex;
-pub mod tape_long_shifted;
-pub mod tape_utils;
 pub mod transition_generic;
 pub mod transition_symbol2;
 pub mod utils;
-
-pub type ResultUnitEndReason = Result<(), decider_result::EndReason>;
 
 /// This is used to define the CPU usage during generator and decider run.
 // TODO possibly move CPU percent into this enum, remove from Config

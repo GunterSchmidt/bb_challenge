@@ -19,12 +19,14 @@ use std::io::Write;
 // use crate::utils::U64Ext;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES, N_STATES_DEFAULT},
-    decider::{self, Decider, DECIDER_BOUNCER_ID},
-    decider_result::BatchData,
+    decider::{
+        self,
+        decider_result::{BatchData, ResultUnitEndReason},
+        Decider, DECIDER_BOUNCER_ID,
+    },
     machine::Machine,
     status::{EndlessReason, ExpandingBouncerReason, MachineStatus, UndecidedReason},
-    transition_symbol2::{TransitionSymbol2, TRANSITION_0RA},
-    ResultUnitEndReason,
+    transition_symbol2::{TransitionSymbol2, TRANSITION_SYM2_START},
 };
 
 #[cfg(debug_assertions)]
@@ -115,11 +117,7 @@ impl DeciderBouncerV1 {
             map.clear();
         }
         // Initialize transition with A0 as start
-        let mut tr = TransitionSymbol2 {
-            transition: TRANSITION_0RA,
-            #[cfg(debug_assertions)]
-            text: ['0', 'R', 'A'],
-        };
+        let mut tr = TRANSITION_SYM2_START;
 
         // loop over transitions to write tape
         loop {
@@ -178,7 +176,7 @@ impl DeciderBouncerV1 {
                     (step.for_state() + 64)  as char,
                     step.for_symbol(),
                     tr,
-                    crate::tape_utils::U128Ext::to_binary_split_string_half(&tape_shifted),
+                    crate::tape::tape_utils::U128Ext::to_binary_split_string_half(&tape_shifted),
                     if step.is_a0() && high_bound == MIDDLE_BIT {'*'} else {' '},
                     if step.is_a0() && low_bound == MIDDLE_BIT {'*'} else {' '},
                     if step.is_a0() && pos_middle_bit == MIDDLE_BIT {'*'} else {' '},
@@ -460,7 +458,9 @@ impl DeciderBouncerV1 {
                         println!("high_bound   {}", high_bound);
                         println!(
                             "tape shifted {}",
-                            crate::tape_utils::U128Ext::to_binary_split_string_half(&tape_shifted)
+                            crate::tape::tape_utils::U128Ext::to_binary_split_string_half(
+                                &tape_shifted
+                            )
                         );
                         println!("State: Undecided: Too many steps to right.");
                     }
@@ -488,7 +488,9 @@ impl DeciderBouncerV1 {
                         println!("high_bound   {}", high_bound);
                         println!(
                             "tape shifted {}",
-                            crate::tape_utils::U128Ext::to_binary_split_string_half(&tape_shifted)
+                            crate::tape::tape_utils::U128Ext::to_binary_split_string_half(
+                                &tape_shifted
+                            )
                         );
                         println!("State: Undecided: Too many steps to left.");
                     }

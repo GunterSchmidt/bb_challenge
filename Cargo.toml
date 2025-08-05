@@ -30,7 +30,6 @@ criterion = { version = "0.5", features = ["html_reports"] }
 #     "bb_no_self_ref",
 #     "bb_debug_tape",
 #     "bb_debug",
-#     "bb_html_flush",
 # ]
 # default = ["bb_enable_html_reports", "bb_no_self_ref"]
 # default = ["bb_enable_html_reports", "bb_debug_tape"]
@@ -43,7 +42,7 @@ bb_debug_tape = []
 # additional stats for the result
 bb_counter_stats = []
 # immediate write to file instead of buffering, needed for debugging
-bb_html_flush = []
+# bb_html_flush = []
 # Allow optional output to html files but will have a 10%-30% performance hit even if write_html_file = false.
 bb_enable_html_reports = []
 bb_generator_longest_skip_chain = []

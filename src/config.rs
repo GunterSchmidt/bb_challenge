@@ -97,6 +97,9 @@ pub struct Config {
     file_id_range: Option<std::ops::Range<IdBig>>,
     /// batch size for operation
     batch_size: usize,
+    /// Sets if the first field A0 is rotated first (then A1, B0, B1, C0 etc.) or
+    /// the last field (BB5: E1, then E0, D1, D0, C1 etc.)
+    generator_first_rotate_field_front: bool,
     /// Specific to the GeneratorFull: desired batch_size
     generator_full_batch_size_request: usize,
     /// Specific to the GeneratorReduced: desired batch_size. One needs to test different sizes for max performance.
@@ -148,6 +151,7 @@ impl Config {
             // TODO depending on n_states
             tape_size_limit_u32_blocks: TAPE_SIZE_LIMIT_U32_BLOCKS_DEFAULT,
             machines_limit: Self::generate_limit_default(n_states),
+            generator_first_rotate_field_front: false,
             generator_full_batch_size_request: GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION,
             generator_reduced_batch_size_request: GENERATOR_REDUCED_BATCH_SIZE_RECOMMENDATION,
             file_id_range: None,
@@ -254,6 +258,10 @@ impl Config {
         } else {
             "unlimited".to_string()
         }
+    }
+
+    pub fn generator_first_rotate_field_front(&self) -> bool {
+        self.generator_first_rotate_field_front
     }
 
     pub fn generator_batch_size_request_full(&self) -> usize {
@@ -363,6 +371,7 @@ pub struct ConfigBuilder {
     n_states: usize,
     batch_size: Option<usize>,
     file_id_range: Option<std::ops::Range<IdBig>>,
+    generator_first_rotate_field_front: Option<bool>,
     generator_batch_size_request_full: Option<usize>,
     generator_batch_size_request_reduced: Option<usize>,
     step_limit_hold: Option<StepTypeBig>,
@@ -399,6 +408,7 @@ impl ConfigBuilder {
             tape_size_limit_u32_blocks: Some(config.tape_size_limit_u32_blocks),
             machines_limit: Some(config.machines_limit),
             file_id_range: config.file_id_range.clone(),
+            generator_first_rotate_field_front: Some(config.generator_first_rotate_field_front),
             generator_batch_size_request_full: Some(config.generator_full_batch_size_request),
             generator_batch_size_request_reduced: Some(config.generator_reduced_batch_size_request),
             limit_machines_decided: Some(config.limit_machines_decided),
@@ -520,6 +530,9 @@ impl ConfigBuilder {
             machines_limit: self
                 .machines_limit
                 .unwrap_or_else(|| Config::generate_limit_default(self.n_states)),
+            generator_first_rotate_field_front: self
+                .generator_first_rotate_field_front
+                .unwrap_or(false),
             generator_full_batch_size_request: self
                 .generator_batch_size_request_full
                 .unwrap_or(GENERATOR_FULL_BATCH_SIZE_RECOMMENDATION),

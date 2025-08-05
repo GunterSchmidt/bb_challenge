@@ -9,12 +9,13 @@ use std::{
 };
 
 use crate::{
-    data_provider::{DataProvider, DataProviderThreaded},
+    data_provider::{
+        bb_file_reader::BBFileDataProviderBuilder, generator::GeneratorStandard,
+        generator_full::GeneratorFull, generator_reduced::GeneratorReduced, DataProvider,
+        DataProviderThreaded,
+    },
+    decider::decider_result::{BatchData, DeciderResultStats, DurationDataProvider, EndReason},
     decider::{DeciderConfig, ThreadResultDataProvider, ThreadResultDecider},
-    decider_result::{BatchData, DeciderResultStats, DurationDataProvider, EndReason},
-    generator::GeneratorStandard,
-    generator_full::GeneratorFull,
-    generator_reduced::GeneratorReduced,
     pre_decider::PreDeciderRun,
     reporter::Reporter,
     utils::num_cpus_percentage,
@@ -142,7 +143,7 @@ pub fn run_deciders_bb_challenge_file(
     file_path: String,
 ) -> DeciderResultStats {
     let first_config = decider_config.first().unwrap().config();
-    let reader = crate::bb_file_reader::BBFileDataProviderBuilder::builder(&file_path)
+    let reader = BBFileDataProviderBuilder::builder(&file_path)
         .id_range(first_config.file_id_range())
         .batch_size(200)
         .build();
@@ -443,7 +444,10 @@ pub fn batch_run_decider_chain_threaded_data_provider_single_thread_reporting(
     mut reporter: Option<Reporter>,
 ) -> DeciderResultStats {
     let start = Instant::now();
-    let first_config = decider_configs.first().expect("No decider given").config();
+    let first_config = decider_configs
+        .first()
+        .expect("No decider given")
+        .config_clone();
     let max_threads = num_cpus_percentage(first_config.cpu_utilization_percent());
     // if single thread run single
     if max_threads == 1 {
@@ -453,7 +457,7 @@ pub fn batch_run_decider_chain_threaded_data_provider_single_thread_reporting(
             reporter,
         );
     }
-    let mut result_main = DeciderResultStats::new(first_config);
+    let mut result_main = DeciderResultStats::new(*first_config);
     for dc in decider_configs.iter() {
         result_main.enhance_machines_un_decided(dc.config());
     }
@@ -536,8 +540,8 @@ pub fn batch_run_decider_chain_threaded_data_provider_single_thread_reporting(
                 let run_predecider = data_provider.requires_pre_decider_check();
                 let num_batches = data_provider.num_batches();
                 let result_decided =
-                    DeciderResultStats::new_init_steps_max(first_config, result_main.steps_max());
-                let config = first_config.clone();
+                    DeciderResultStats::new_init_steps_max(*first_config, result_main.steps_max());
+                let config = *first_config;
                 // Output thread information
                 // println!(
                 //     "Decider batch {}/{} spawned, max steps; {}",
@@ -692,7 +696,10 @@ pub fn batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
     mut reporter: Option<Reporter>,
 ) -> DeciderResultStats {
     let start = Instant::now();
-    let first_config = decider_configs.first().expect("No decider given").config();
+    let first_config = decider_configs
+        .first()
+        .expect("No decider given")
+        .config_clone();
     let max_threads = num_cpus_percentage(first_config.cpu_utilization_percent());
     // if single thread run single
     if max_threads == 1 {
@@ -703,7 +710,7 @@ pub fn batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
         );
     }
 
-    let mut result_main = DeciderResultStats::new(first_config);
+    let mut result_main = DeciderResultStats::new(*first_config);
     for dc in decider_configs.iter().skip(1) {
         result_main.enhance_machines_un_decided(dc.config());
     }
@@ -840,11 +847,11 @@ pub fn batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
                     result_main.add_pre_decider_count(pre_decider_count);
                     result_main.add_total(pre_decider_count.num_total());
                 }
-                let config = first_config.clone();
+                let config = *first_config;
                 let run_predecider = data_provider.requires_pre_decider_check();
                 let num_batches = data_provider.num_batches();
                 let result_decided =
-                    DeciderResultStats::new_init_steps_max(first_config, result_main.steps_max());
+                    DeciderResultStats::new_init_steps_max(*first_config, result_main.steps_max());
                 // Output thread information
                 // println!(
                 //     "Decider batch {}/{} spawned, max steps; {}",

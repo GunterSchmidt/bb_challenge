@@ -1,17 +1,37 @@
+pub mod decider_bouncer_128;
+pub mod decider_bouncer_128_speed_up;
+pub mod decider_bouncer_apex;
+pub mod decider_bouncer_v1;
+pub mod decider_cycler;
+pub mod decider_data_128;
+pub mod decider_data_apex;
+pub mod decider_data_compact;
+pub mod decider_data_long;
+pub mod decider_engine;
+pub mod decider_hold_compact;
+pub mod decider_hold_long_v3;
+pub mod decider_result;
+pub mod decider_result_worker;
+
 // #[cfg(feature = "bb_enable_html_reports")]
-use std::{fmt::Display, time::Duration};
+use std::{fmt::Display, sync::Arc, time::Duration};
 
 use crate::{
     config::Config,
-    decider_bouncer_128::DeciderBouncer128,
-    decider_bouncer_v1::DeciderBouncerV1,
-    decider_result::{BatchData, DeciderResultStats, EndReason, PreDeciderCount},
-    decider_result_worker::FnResultWorker,
+    decider::{
+        decider_bouncer_128::DeciderBouncer128,
+        decider_bouncer_v1::DeciderBouncerV1,
+        decider_cycler::DeciderCycler,
+        decider_hold_long_v3::DeciderHoldLong,
+        decider_result::{
+            BatchData, DeciderResultStats, EndReason, PreDeciderCount, ResultUnitEndReason,
+        },
+        decider_result_worker::FnResultWorker,
+    },
     machine::Machine,
     machine_info::MachineInfo,
     pre_decider::{run_pre_decider_simple, run_pre_decider_strict, PreDeciderRun},
     status::MachineStatus,
-    ResultUnitEndReason,
 };
 
 // This result gives a clear indication if an error occurred. It returns the data which has been processed so far.
@@ -51,14 +71,12 @@ impl DeciderStandard {
             DeciderStandard::Bouncer128 => {
                 DeciderCaller::new(&DECIDER_BOUNCER_ID, DeciderBouncer128::decider_run_batch)
             }
-            DeciderStandard::Cycler => DeciderCaller::new(
-                &DECIDER_CYCLER_ID,
-                crate::decider_cycler::DeciderCycler::decider_run_batch,
-            ),
-            DeciderStandard::Hold => DeciderCaller::new(
-                &DECIDER_HOLD_ID,
-                crate::decider_hold_long_v3::DeciderHoldLong::decider_run_batch,
-            ),
+            DeciderStandard::Cycler => {
+                DeciderCaller::new(&DECIDER_CYCLER_ID, DeciderCycler::decider_run_batch)
+            }
+            DeciderStandard::Hold => {
+                DeciderCaller::new(&DECIDER_HOLD_ID, DeciderHoldLong::decider_run_batch)
+            }
         }
     }
 
@@ -74,16 +92,12 @@ impl DeciderStandard {
                 DeciderBouncer128::decider_run_batch,
                 config,
             ),
-            DeciderStandard::Cycler => DeciderConfig::new(
-                &DECIDER_CYCLER_ID,
-                crate::decider_cycler::DeciderCycler::decider_run_batch,
-                config,
-            ),
-            DeciderStandard::Hold => DeciderConfig::new(
-                &DECIDER_HOLD_ID,
-                crate::decider_hold_long_v3::DeciderHoldLong::decider_run_batch,
-                config,
-            ),
+            DeciderStandard::Cycler => {
+                DeciderConfig::new(&DECIDER_CYCLER_ID, DeciderCycler::decider_run_batch, config)
+            }
+            DeciderStandard::Hold => {
+                DeciderConfig::new(&DECIDER_HOLD_ID, DeciderHoldLong::decider_run_batch, config)
+            }
         }
     }
 }
@@ -131,12 +145,12 @@ impl<'a> DeciderCaller<'a> {
 }
 
 /// This struct is used to chain the deciders.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct DeciderConfig<'a> {
     decider_id: &'a DeciderId,
     f_decider_run_batch: FnDeciderRunBatchV2,
     pub fo_result_worker: Option<FnResultWorker>,
-    config: &'a Config,
+    config: Arc<&'a Config>,
 }
 
 impl<'a> DeciderConfig<'a> {
@@ -149,7 +163,7 @@ impl<'a> DeciderConfig<'a> {
             decider_id,
             f_decider_run_batch: f_decider,
             fo_result_worker: None,
-            config,
+            config: Arc::new(config),
         }
     }
 
@@ -158,7 +172,7 @@ impl<'a> DeciderConfig<'a> {
             decider_id: decider_caller.decider_id,
             f_decider_run_batch: decider_caller.f_decider,
             fo_result_worker: None,
-            config,
+            config: Arc::new(config),
         }
     }
 
@@ -172,7 +186,7 @@ impl<'a> DeciderConfig<'a> {
             decider_id,
             f_decider_run_batch: f_decider,
             fo_result_worker: Some(f_result_worker),
-            config,
+            config: Arc::new(config),
         }
     }
 
@@ -189,7 +203,11 @@ impl<'a> DeciderConfig<'a> {
     }
 
     pub fn config(&self) -> &'a Config {
-        self.config
+        *self.config
+    }
+
+    pub fn config_clone(&self) -> Arc<&'a Config> {
+        Arc::clone(&self.config)
     }
 
     pub fn decider_id(&self) -> &DeciderId {

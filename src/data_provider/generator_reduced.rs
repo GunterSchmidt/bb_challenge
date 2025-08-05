@@ -4,9 +4,11 @@
 use crate::machine_info::MachineInfo;
 use crate::{
     config::{Config, MAX_STATES},
-    data_provider::{DataProvider, DataProviderBatch, DataProviderThreaded, ResultDataProvider},
-    decider_result::{EndReason, PreDeciderCount},
-    generator::{self, create_all_transition_permutations, Generator},
+    data_provider::{
+        generator::{self, create_all_transition_permutations, Generator},
+        DataProvider, DataProviderBatch, DataProviderThreaded, ResultDataProvider,
+    },
+    decider::decider_result::{EndReason, PreDeciderCount},
     machine::Machine,
     pre_decider::{
         check_not_all_states_used, check_only_one_direction, check_only_zero_writes,
@@ -188,12 +190,6 @@ impl GeneratorReduced {
 }
 
 impl Generator for GeneratorReduced {
-    /// Create new generator for random batch no. \
-    /// Avoids some recalculations for e.g. batch_size, but is like new.
-    fn new_from_generator_deprecated(&self) -> Self {
-        self.new_from_data_provider()
-    }
-
     /// Returns the next batch of permutations and an info if this is the last batch.
     fn generate_permutation_batch_no(&mut self, batch_no: usize) -> (Vec<Machine>, bool) {
         self.calc_batch_init(batch_no);
@@ -544,19 +540,118 @@ impl DataProviderThreaded for GeneratorReduced {
     }
 }
 
+#[cfg(feature = "bb_generator_longest_skip_chain")]
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct Counter {
+    pub machine_id_first: u64,
+    pub machine_id_last: u64,
+    pub counter: usize,
+    pub max: usize,
+    pub max_last_info: usize,
+    pub add_max_to_total_if_higher_than: usize,
+    pub total: usize,
+    pub store_max: usize,
+    pub machines: Vec<MachineInfo>,
+    pub machines_max: Vec<MachineInfo>,
+}
+
+#[cfg(feature = "bb_generator_longest_skip_chain")]
+impl Counter {
+    pub fn add_counter(&mut self, machine: &Machine, reason: PreDeciderReason) {
+        if self.counter == 0 {
+            self.machine_id_first = machine.id();
+        }
+        self.counter += 1;
+        let status = crate::status::MachineStatus::EliminatedPreDecider(reason);
+        let mi = MachineInfo::new(machine.id(), *machine.transition_table(), status);
+        if self.machines.len() < self.store_max {
+            self.machines.push(mi);
+        } else {
+            // if full, store last machine in last position
+            self.machines[self.store_max - 1] = mi;
+        }
+    }
+
+    pub fn reset_counter(&mut self) {
+        self.counter = 0;
+        self.machines.clear();
+    }
+
+    pub fn update_max(&mut self, machine_id_last: u64) {
+        if self.counter >= self.add_max_to_total_if_higher_than {
+            self.total += self.counter;
+            self.machines_max = std::mem::take(&mut self.machines);
+        }
+        if self.counter > self.max {
+            self.max = self.counter;
+            // self.machine_id_first = machine_id_last - self.counter as u64 + 1;
+        }
+        self.machine_id_last = machine_id_last;
+    }
+
+    pub fn machines_max_to_string(&self, max_machines: usize) -> String {
+        // println!("Longest Chain: {}", self.longest_skip_chain);
+        let mut ms = Vec::new();
+        if max_machines == 0 {
+            for m in self.machines_max.iter() {
+                ms.push(m.to_string());
+            }
+        } else {
+            for m in self.machines_max.iter().take(max_machines) {
+                ms.push(m.to_string());
+            }
+        }
+        // last machine
+        if let Some(last) = self.machines_max.last() {
+            ms.push(last.to_string());
+        }
+        ms.join("\n")
+    }
+}
+
+#[cfg(feature = "bb_generator_longest_skip_chain")]
+impl Default for Counter {
+    fn default() -> Self {
+        Self {
+            machine_id_first: Default::default(),
+            machine_id_last: Default::default(),
+            counter: Default::default(),
+            max: Default::default(),
+            max_last_info: Default::default(),
+            add_max_to_total_if_higher_than: 500,
+            total: Default::default(),
+            store_max: 100,
+            machines: Default::default(),
+            machines_max: Default::default(),
+        }
+    }
+}
+
+#[cfg(feature = "bb_generator_longest_skip_chain")]
+impl std::fmt::Display for Counter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Start machine no. {}, last no. {}, max length: {}, reasonable total jump: {}",
+            self.machine_id_first, self.machine_id_last, self.max, self.total
+        )
+    }
+}
+
 /// long running tests,
 /// use cargo test --release generator_reduced
 #[cfg(test)]
 mod tests {
     use crate::{
         config::Config,
-        decider::DeciderStandard,
-        decider_engine::{
+        data_provider::generator_full::GeneratorFull,
+        decider::decider_engine::{
             batch_run_decider_chain_data_provider_single_thread,
             batch_run_decider_chain_threaded_data_provider_multi_thread,
         },
-        decider_result::result_max_steps_known,
-        generator_full::GeneratorFull,
+        decider::decider_result::result_max_steps_known,
+        decider::DeciderStandard,
     };
 
     use super::*;
@@ -690,104 +785,5 @@ mod tests {
             .machine_limit(200_000_000)
             // .cpu_utilization(100)
             .build()
-    }
-}
-
-#[cfg(feature = "bb_generator_longest_skip_chain")]
-#[allow(dead_code)]
-#[derive(Debug)]
-pub(crate) struct Counter {
-    pub machine_id_first: u64,
-    pub machine_id_last: u64,
-    pub counter: usize,
-    pub max: usize,
-    pub max_last_info: usize,
-    pub add_max_to_total_if_higher_than: usize,
-    pub total: usize,
-    pub store_max: usize,
-    pub machines: Vec<MachineInfo>,
-    pub machines_max: Vec<MachineInfo>,
-}
-
-#[cfg(feature = "bb_generator_longest_skip_chain")]
-impl Counter {
-    pub fn add_counter(&mut self, machine: &Machine, reason: PreDeciderReason) {
-        if self.counter == 0 {
-            self.machine_id_first = machine.id();
-        }
-        self.counter += 1;
-        let status = crate::status::MachineStatus::EliminatedPreDecider(reason);
-        let mi = MachineInfo::new(machine.id(), *machine.transition_table(), status);
-        if self.machines.len() < self.store_max {
-            self.machines.push(mi);
-        } else {
-            // if full, store last machine in last position
-            self.machines[self.store_max - 1] = mi;
-        }
-    }
-
-    pub fn reset_counter(&mut self) {
-        self.counter = 0;
-        self.machines.clear();
-    }
-
-    pub fn update_max(&mut self, machine_id_last: u64) {
-        if self.counter >= self.add_max_to_total_if_higher_than {
-            self.total += self.counter;
-            self.machines_max = std::mem::take(&mut self.machines);
-        }
-        if self.counter > self.max {
-            self.max = self.counter;
-            // self.machine_id_first = machine_id_last - self.counter as u64 + 1;
-        }
-        self.machine_id_last = machine_id_last;
-    }
-
-    pub fn machines_max_to_string(&self, max_machines: usize) -> String {
-        // println!("Longest Chain: {}", self.longest_skip_chain);
-        let mut ms = Vec::new();
-        if max_machines == 0 {
-            for m in self.machines_max.iter() {
-                ms.push(m.to_string());
-            }
-        } else {
-            for m in self.machines_max.iter().take(max_machines) {
-                ms.push(m.to_string());
-            }
-        }
-        // last machine
-        if let Some(last) = self.machines_max.last() {
-            ms.push(last.to_string());
-        }
-        ms.join("\n")
-    }
-}
-
-#[cfg(feature = "bb_generator_longest_skip_chain")]
-impl Default for Counter {
-    fn default() -> Self {
-        Self {
-            machine_id_first: Default::default(),
-            machine_id_last: Default::default(),
-            counter: Default::default(),
-            max: Default::default(),
-            max_last_info: Default::default(),
-            add_max_to_total_if_higher_than: 500,
-            total: Default::default(),
-            store_max: 100,
-            machines: Default::default(),
-            machines_max: Default::default(),
-        }
-    }
-}
-
-#[cfg(feature = "bb_generator_longest_skip_chain")]
-impl std::fmt::Display for Counter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Start machine no. {}, last no. {}, max length: {}, reasonable total jump: {}",
-            self.machine_id_first, self.machine_id_last, self.max, self.total
-        )
     }
 }

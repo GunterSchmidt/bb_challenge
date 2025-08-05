@@ -9,7 +9,7 @@ use crate::data_provider::{
     DataProvider, DataProviderBatch, DataProviderError, ResultDataProvider,
 };
 #[allow(unused)]
-use crate::decider_result::EndReason;
+use crate::decider::decider_result::EndReason;
 use crate::machine::Machine;
 use crate::pre_decider::PreDeciderRun;
 use crate::transition_symbol2::{

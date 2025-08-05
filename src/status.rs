@@ -79,6 +79,24 @@ pub enum MachineStatus {
     // UndecidedFastTapeBoundReached,
 }
 
+impl MachineStatus {
+    pub fn is_bouncer(&self) -> bool {
+        if let MachineStatus::DecidedEndless(EndlessReason::Bouncer(_)) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+     pub fn is_cycler(&self) -> bool {
+        if let MachineStatus::DecidedEndless(EndlessReason::Cycler(_,_)) = self {
+            true
+        } else {
+            false
+        }
+    }
+}
+
 impl Display for MachineStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let locale = user_locale();

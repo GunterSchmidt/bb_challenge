@@ -4,12 +4,12 @@ use std::fmt::Display;
 use crate::{
     config::{Config, StepTypeBig},
     status::{MachineStatus, UndecidedReason},
-    tape::{Tape, TapeSpeedUp},
-    tape_128::Tape128,
-    tape_utils::{
+    tape::tape_128::Tape128,
+    tape::tape_utils::{
         TapeLongPositions, CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128,
         POS_HALF_U128, TAPE_SIZE_BIT_U128, TAPE_SIZE_HALF_128,
     },
+    tape::{Tape, TapeSpeedUp},
     transition_symbol2::{TransitionSymbol2, TransitionTableSymbol2, TRANSITION_SYM2_START},
 };
 #[cfg(feature = "bb_enable_html_reports")]
@@ -324,8 +324,8 @@ impl Display for DeciderData128 {
 }
 
 #[cfg(feature = "bb_enable_html_reports")]
-impl From<&crate::decider_data_128::DeciderData128> for crate::html::StepHtml {
-    fn from(data: &crate::decider_data_128::DeciderData128) -> Self {
+impl From<&DeciderData128> for crate::html::StepHtml {
+    fn from(data: &DeciderData128) -> Self {
         let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit();
         let tape_shifted = if is_u128_tape {
             data.tape.tape_shifted_clean()

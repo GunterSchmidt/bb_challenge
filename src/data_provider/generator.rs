@@ -1,7 +1,7 @@
 use crate::{
     config::MAX_STATES,
     data_provider::DataProvider,
-    decider_result::PreDeciderCount,
+    decider::decider_result::PreDeciderCount,
     machine::Machine,
     transition_symbol2::{TransitionSymbol2, TRANSITION_SYM2_HOLD},
 };
@@ -14,11 +14,6 @@ pub enum GeneratorStandard {
 
 // TODO remove what is in DataProvider
 pub trait Generator: DataProvider {
-    /// Create new generator for random batch no. \
-    /// Avoids some recalculations for e.g. batch_size, but gives normal initialized struct.
-    // TODO remove when decider_deprecated is removed
-    fn new_from_generator_deprecated(&self) -> Self;
-
     /// Returns the specific batch of permutations and an info if this is the last batch.
     fn generate_permutation_batch_no(&mut self, batch_no: usize) -> (Vec<Machine>, bool);
 

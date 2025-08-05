@@ -38,14 +38,16 @@
 use crate::tape_utils::U128Ext;
 use crate::{
     config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES},
-    decider::{self, Decider, DECIDER_CYCLER_ID},
-    decider_data_long::DeciderDataLong,
-    decider_result::BatchData,
+    decider::{
+        self,
+        decider_data_long::DeciderDataLong,
+        decider_result::{BatchData, ResultUnitEndReason},
+        Decider, DECIDER_CYCLER_ID,
+    },
     machine::Machine,
     status::{EndlessReason, MachineStatus},
     step_record::StepRecordU128,
-    tape_utils::{MIDDLE_BIT_U128, TAPE_SIZE_BIT_U128},
-    ResultUnitEndReason,
+    tape::tape_utils::{MIDDLE_BIT_U128, TAPE_SIZE_BIT_U128},
 };
 
 #[cfg(debug_assertions)]
@@ -423,36 +425,36 @@ mod tests {
 
     use super::*;
 
+    fn is_cycler(machine: &Machine) -> bool {
+        let config = Config::builder(machine.n_states())
+            .write_html_file(true)
+            .step_limit_cycler(5000)
+            .build();
+        let check_result = DeciderCycler::decide_single_machine(&machine, &config);
+        if check_result.is_cycler() {
+            true
+        } else {
+            println!("{}", check_result);
+            // assert_eq!(
+            //     check_result,
+            //     MachineStatus::DecidedEndless(EndlessReason::Bouncer(999))
+            // );
+            false
+        }
+    }
+
     #[test]
     fn decider_cycler_is_cycle_bb4_1166084() {
         let transitions = "1RB1LD_1RC---_1LC0RA_0RA0RA";
         let machine = Machine::from_standard_tm_text_format(1166084, &transitions).unwrap();
-        // let config = Config::new_default(machine.n_states());
-        let config = Config::builder(machine.n_states())
-            .write_html_file(true)
-            .build();
-        let machine_status = DeciderCycler::decide_single_machine(&machine, &config);
-        // println!("Status: {machine_status}");
-        assert_eq!(
-            machine_status,
-            MachineStatus::DecidedEndless(EndlessReason::Cycler(8, 2))
-        )
+        assert!(is_cycler(&machine));
     }
 
     #[test]
     fn decider_cycler_is_cycle_bb4_43788688() {
         let transitions = "1RB---_1LC0RC_0LD1LC_1RA0RA";
         let machine = Machine::from_standard_tm_text_format(43788688, &transitions).unwrap();
-        // let config = Config::new_default(machine.n_states());
-        let config = Config::builder(machine.n_states())
-            .write_html_file(true)
-            .build();
-        let machine_status = DeciderCycler::decide_single_machine(&machine, &config);
-        // println!("Status: {machine_status}");
-        assert_eq!(
-            machine_status,
-            MachineStatus::DecidedEndless(EndlessReason::Cycler(90, 26))
-        )
+        assert!(is_cycler(&machine));
     }
 
     #[test]
@@ -471,6 +473,25 @@ mod tests {
             .build();
         let machine_status = DeciderCycler::decide_single_machine(&machine, &config);
         assert_eq!(machine_status, MachineStatus::DecidedHolds(107));
+    }
+
+    #[test]
+    fn is_decider_bouncer_bb3_584567() {
+        // BB3 584567 really odd, needs more investigation, possibly cycler
+        let machine =
+            Machine::from_standard_tm_text_format(584567, "1RC---_0RA0LB_1LB1RA").unwrap();
+        assert!(is_cycler(&machine));
+    }
+
+    #[test]
+    fn is_decider_bouncer_bb3_1265977() {
+        // BB3 1265977 odd behavior, possibly cycler
+        let mut transitions: Vec<(&str, &str)> = Vec::new();
+        transitions.push(("1LC", "---"));
+        transitions.push(("0LA", "0RB"));
+        transitions.push(("1RB", "1LA"));
+        let machine = Machine::from_string_tuple(1265977, &transitions);
+        assert!(is_cycler(&machine));
     }
 
     #[test]

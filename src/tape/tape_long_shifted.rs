@@ -88,17 +88,15 @@
 //! Step  1778 E0 1LC: 00000000000000000000000000000000_**111111111**010101010101010_10101010→11010101_010101010101010101010101_01010000000000000000000000000000 P: 63 TL P31 30..35 \
 //! Step  1779 C1 0LE: 00000000000000000000000000000000_011111111101010101010101_01010101→00101010_101010101010101010101010_10101000000000000000000000000000 P: 62 TL P31 30..35 \
 
-#[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
-use crate::tape_utils::{VecU32Ext, TAPE_DISPLAY_RANGE_128};
 use crate::{
     config::{Config, MAX_TAPE_GROWTH_BLOCKS, TAPE_SIZE_INIT_CELL_BLOCKS},
-    tape::Tape,
-    tape_utils::{
+    tape::tape_utils::{
         TapeLongPositions, U128Ext, CLEAR_HIGH127_96BITS_U128, CLEAR_HIGH95_64BITS_U128,
         CLEAR_LOW31_00BITS_U128, CLEAR_LOW63_32BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128,
         MIDDLE_BIT_U128, POS_HALF_U128, TAPE_SIZE_FOURTH_UPPER_128, TAPE_SIZE_HALF_128,
         TL_POS_START_128,
     },
+    tape::Tape,
     transition_symbol2::TransitionSymbol2,
 };
 
@@ -461,7 +459,10 @@ impl TapeLongShifted {
                 "  LEFT  SAVE HIGH P{}-{}: tape wanders right -> {:?}",
                 self.pos_middle,
                 self.tl_pos,
-                self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
+                crate::tape::tape_utils::VecU32Ext::to_hex_string_range(
+                    &self.tape_long,
+                    crate::tape::tape_utils::TAPE_DISPLAY_RANGE_128
+                )
             );
 
             self.pos_middle = MIDDLE_BIT_U128;
@@ -474,13 +475,16 @@ impl TapeLongShifted {
             {
                 println!(
                     "  ALoad {}",
-                    crate::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
+                    crate::tape::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
                 );
                 println!(
                     "  LEFT  LOAD HIGH P{}-{}: tape wanders right -> {:?}",
                     self.pos_middle,
                     self.tl_pos,
-                    self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
+                    crate::tape::tape_utils::VecU32Ext::to_hex_string_range(
+                        &self.tape_long,
+                        crate::tape::tape_utils::TAPE_DISPLAY_RANGE_128
+                    )
                 );
                 print!("");
             }
@@ -518,7 +522,10 @@ impl TapeLongShifted {
                 "  RIGHT SAVE HIGH P{}-{}: tape wanders left -> {:?}",
                 self.pos_middle,
                 self.tl_pos,
-                self.tape_long.to_hex_string_range(TAPE_DISPLAY_RANGE_128)
+                crate::tape::tape_utils::VecU32Ext::to_hex_string_range(
+                    &self.tape_long,
+                    crate::tape::tape_utils::TAPE_DISPLAY_RANGE_128
+                )
             );
 
             self.pos_middle = MIDDLE_BIT_U128;
@@ -538,11 +545,11 @@ impl TapeLongShifted {
 
             #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
             {
-                use crate::tape_utils::{VecU32Ext as _, TAPE_DISPLAY_RANGE_128};
+                use crate::tape::tape_utils::{VecU32Ext as _, TAPE_DISPLAY_RANGE_128};
 
                 println!(
                     "  ALoad {}",
-                    crate::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
+                    crate::tape::tape_utils::U128Ext::to_binary_split_string(&self.tape_shifted)
                 );
                 println!(
                     "  RIGHT LOAD LOW  P{}-{}: tape wanders left -> {:?}",

@@ -2,8 +2,8 @@
 //! '-m 1RB1LC_1RC1RB_1RD0LE_1LA1LD_1RZ0LA'. See below in the help_string().
 
 use crate::{
-    bb_file_reader::BBFileReader, config::FILE_PATH_BB5_CHALLENGE_DATA_FILE, machine::Machine,
-    transition_generic::TransitionTableGeneric,
+    config::FILE_PATH_BB5_CHALLENGE_DATA_FILE, data_provider::bb_file_reader::BBFileReader,
+    machine::Machine, transition_generic::TransitionTableGeneric,
 };
 
 #[non_exhaustive]

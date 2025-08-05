@@ -152,14 +152,11 @@ impl TapeLongFixed {
 
             #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
             {
-                use crate::tape_utils::{VecU64Ext, TAPE_DISPLAY_RANGE_128};
-                use std::ops::Range;
-
                 let range = self.tl_low_bound..self.tl_high_bound + 1;
                 println!(
                     "  Tape Long Shift Left  TL P{}: tape {:?}",
                     self.tl_pos,
-                    self.tape_long.to_hex_string_range(range)
+                    crate::tape_utils::VecU64Ext::to_hex_string_range(&self.tape_long, range)
                 );
                 print!("");
             }
@@ -203,14 +200,11 @@ impl TapeLongFixed {
 
             #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
             {
-                use crate::tape_utils::{VecU64Ext, TAPE_DISPLAY_RANGE_128};
-                use std::ops::Range;
-
                 let range = self.tl_low_bound..self.tl_high_bound + 1;
                 println!(
                     "  Tape Long Shift Right  TL P{}: tape {:?}",
                     self.tl_pos,
-                    self.tape_long.to_hex_string_range(range)
+                    crate::tape_utils::VecU64Ext::to_hex_string_range(&self.tape_long, range)
                 );
                 print!("");
             }

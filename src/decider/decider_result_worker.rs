@@ -6,10 +6,9 @@ use std::io::Write;
 
 use chrono::{DateTime, Local, Utc};
 
-use crate::decider_result::{BatchData, EndReason};
 use crate::{
     config::{Config, PATH_DATA},
-    decider_result::BatchResult,
+    decider::decider_result::{BatchData, BatchResult, EndReason},
 };
 
 pub type FnResultWorker = fn(&mut BatchData) -> ResultWorker;

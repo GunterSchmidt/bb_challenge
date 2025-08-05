@@ -5,12 +5,13 @@ use std::time::Duration;
 
 use bb_challenge::{
     config::{Config, StepTypeBig},
-    decider::{Decider, DeciderConfig, DeciderStandard},
-    decider_engine::{self},
-    decider_result::result_max_steps_known,
-    generator::Generator,
-    generator_full::GeneratorFull,
-    generator_reduced::GeneratorReduced,
+    data_provider::{
+        generator::Generator, generator_full::GeneratorFull, generator_reduced::GeneratorReduced,
+    },
+    decider::{
+        decider_engine, decider_result::result_max_steps_known, Decider, DeciderConfig,
+        DeciderStandard,
+    },
     machine::Machine,
     status::MachineStatus,
     CoreUsage,
@@ -229,9 +230,10 @@ fn benchmark_tape_type(c: &mut Criterion) {
 fn bench_decider_hold_u128_long_v3(machine: &Machine, n_states: usize, steps_result: StepTypeBig) {
     let config = Config::new_default(n_states);
     // let mut d = bb_challenge::decider_u128_long::DeciderU128Long::new(&machine, STEP_LIMIT_DEFAULT);
-    let check_result = bb_challenge::decider_hold_long_v3::DeciderHoldLong::decide_single_machine(
-        &machine, &config,
-    );
+    let check_result =
+        bb_challenge::decider::decider_hold_long_v3::DeciderHoldLong::decide_single_machine(
+            &machine, &config,
+        );
     // println!("{}", check_result);
     assert_eq!(check_result, MachineStatus::DecidedHolds(steps_result));
 }
@@ -299,7 +301,7 @@ fn bench_decider_data_provider_gen(
     cores: CoreUsage,
 ) {
     // let dc_cycler: DeciderConfig<'_> = DeciderStandard::Cycler.decider_config(config);
-    let dc_cycler = *dc_cycler;
+    let dc_cycler = dc_cycler.clone();
     let result = if gen_reduced {
         match cores {
             CoreUsage::SingleCore => {
