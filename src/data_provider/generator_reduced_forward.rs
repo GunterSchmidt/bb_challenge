@@ -36,7 +36,7 @@ const BATCH_SIZE_REQUEST_SINGLE_THREAD: usize = 1_000_000;
 /// Elimination Rule
 // TODO possibly faster if pre-decider could be identified which do not rely on A0 and A1, then the full block could be eliminated. \
 // But generator is not really the time issue.
-pub struct GeneratorReduced {
+pub struct GeneratorReducedForward {
     /// Next id for the generated machine, starting with 0.
     id_next: u64,
     // id_batch_start: u64,
@@ -70,7 +70,7 @@ pub struct GeneratorReduced {
     longest_skip_chain: Counter,
 }
 
-impl GeneratorReduced {
+impl GeneratorReducedForward {
     /// Creates a new generator \
     /// batch_size_request: max machines for each batch \
     /// limit: max total machines to generate, use 0 without limit
@@ -147,12 +147,6 @@ impl GeneratorReduced {
         // field_no is always 4
     }
 
-    // #[allow(non_snake_case)]
-    // fn calc_left_out_until_0RB(&self) -> u64 {
-    //     // Leaving out 0RA and 0RB
-    //     2u64.pow(2 * self.n_states as u32)
-    // }
-
     #[inline]
     pub fn check_pre_decider(&self) -> PreDeciderReason {
         let tr_used = self.transition_table.transitions_used(self.n_states);
@@ -166,14 +160,6 @@ impl GeneratorReduced {
         if check_only_zero_writes(tr_used) {
             return PreDeciderReason::WritesOnlyZero;
         }
-        // let old = check_not_all_states_used(&self.transition_table, self.n_states);
-        // let new = check_not_all_states_used_new(&self.transition_table, self.n_states);
-        // if old != new && old {
-        //     println!(
-        //         "Mismatch for {}, old: {old}, new: {new}",
-        //         self.transition_table.to_standard_tm_text_format()
-        //     );
-        // }
         if check_not_all_states_used(&self.transition_table, self.n_states) {
             return PreDeciderReason::NotAllStatesUsed;
         }
@@ -189,7 +175,7 @@ impl GeneratorReduced {
     }
 }
 
-impl Generator for GeneratorReduced {
+impl Generator for GeneratorReducedForward {
     /// Returns the next batch of permutations and an info if this is the last batch.
     fn generate_permutation_batch_no(&mut self, batch_no: usize) -> (Vec<Machine>, bool) {
         self.calc_batch_init(batch_no);
@@ -208,18 +194,11 @@ impl Generator for GeneratorReduced {
         let mut is_last_batch = false;
         let mut permutations = Vec::with_capacity(self.batch_size);
         let num_tr_permutations = self.tr_permutations.len();
-        // let ids_left_out = (self.tr_permutations.len() - self.tr_permutations_a0.len()) as u64;
         let ids_left_out = self.tr_permutations.len() as u64 - 2;
         let mut num_hold_a1;
         let range_3_to_n_states = 4..self.n_states * 2 + 2;
         let mut num_hold_other_lines =
             count_hold_transitions(&self.transition_table.transitions[range_3_to_n_states.clone()]);
-        // let ids_not_generated_per_round = ids_left_out * self.tr_permutations.len() as u64;
-        // TODO calc left out in one step
-        // self.pre_decider_count.num_not_generated = (ids_left_out).pow(2 * self.n_states as u32);
-        // let tr_permutations_a0 = TRANSITIONS_FOR_A0;
-        // let jump_0rb = self.calc_left_out_until_0RB();
-        // self.id_next = self.calc_left_out_until_0RB();
         'creation: loop {
             // permutations state A
             // loop all transitions for first state and its two symbols
@@ -231,38 +210,10 @@ impl Generator for GeneratorReduced {
                 for v0 in TRANSITIONS_FOR_A0.iter() {
                     self.transition_table.transitions[2] = *v0;
                     let mut permutation = Machine::new(id, self.transition_table);
-                    // if self.pre_decider() == PreDeciderReason::None {
-                    //     permutation.set_eval_has_self_referencing_transition();
-                    //     permutations.push(permutation);
-                    // }
-                    // check num holds
-                    // let tr_used = self.transition_table.transitions_used(self.n_states);
-                    // let test = pre_decider::check_only_one_direction(tr_used);
-                    // if !test {
-                    //     println!("First Left{}", permutation);
-                    //     // todo!()
-                    // }
                     // There is no hold in A0
                     if num_hold_a1 + num_hold_other_lines != 1 {
                         self.pre_decider_count_batch
                             .num_not_exactly_one_hold_condition += 1;
-                        // let tr_used = self.transition_table.transitions_used(self.n_states);
-                        // let old = count_hold_transitions(tr_used);
-                        // let new = num_hold_a1 + num_hold_other_lines;
-                        // if old != new {
-                        //     println!(
-                        //         "old {old}, new {new}, hold: {num_hold_other_lines}, id {id} {}",
-                        //         permutation.to_standard_tm_text_format()
-                        //     );
-                        //     let tr3_used =
-                        //         &self.transition_table.transitions[range_3_to_n_states.clone()];
-                        //     num_hold_other_lines = count_hold_transitions(tr3_used);
-                        //     println!(
-                        //         "old {old}, new {new}, hold: {num_hold_other_lines}, {}",
-                        //         permutation.to_standard_tm_text_format()
-                        //     );
-                        //     todo!();
-                        // }
                         #[cfg(feature = "bb_generator_longest_skip_chain")]
                         self.longest_skip_chain.add_counter(
                             &permutation,
@@ -353,7 +304,6 @@ impl Generator for GeneratorReduced {
             }
             // subtract jump to 0RB
             self.id_next = id - 2;
-            // self.pre_decider_count.num_not_generated += ids_not_generated_per_round;
 
             // update line two, permutations state B (still separate for performance)
             self.fields[4] += 1;
@@ -400,8 +350,6 @@ impl Generator for GeneratorReduced {
         self.pre_decider_count_batch.num_not_generated = (self.batch_size - permutations.len())
             as u64
             - self.pre_decider_count_batch.num_total();
-        // self.pre_decider_count_total
-        //     .add_pre_decider_count(&self.pre_decider_count_batch);
         (permutations, is_last_batch)
     }
 
@@ -416,9 +364,7 @@ impl Generator for GeneratorReduced {
 
     fn check_generator_batch_size_request_single_thread(&mut self) {
         if self.batch_size != BATCH_SIZE_REQUEST_SINGLE_THREAD {
-            // self.config.generator_batch_size_request_full = BATCH_SIZE_REQUEST_SINGLE_THREAD;
             let batch_size = Self::calc_batch_size(BATCH_SIZE_REQUEST_SINGLE_THREAD, self.n_states);
-            // self.num_batches = ((self.limit + batch_size as u64 - 1) / batch_size as u64) as usize;
             self.num_batches = self.limit.div_ceil(batch_size as u64) as usize;
             self.batch_size = batch_size;
         }
@@ -429,7 +375,7 @@ impl Generator for GeneratorReduced {
     }
 }
 
-impl DataProvider for GeneratorReduced {
+impl DataProvider for GeneratorReducedForward {
     fn name(&self) -> &str {
         "Generator Reduced"
     }
@@ -473,10 +419,6 @@ impl DataProvider for GeneratorReduced {
         self.num_batches
     }
 
-    // fn config(&self) -> &Config {
-    //     &self.config
-    // }
-
     fn num_machines_total(&self) -> u64 {
         self.limit
     }
@@ -497,7 +439,7 @@ impl DataProvider for GeneratorReduced {
     }
 }
 
-impl DataProviderThreaded for GeneratorReduced {
+impl DataProviderThreaded for GeneratorReducedForward {
     fn new_from_data_provider(&self) -> Self {
         let mut transition_table = TransitionTableSymbol2::new_default(self.n_states);
         // set all in set to the first variant
@@ -665,7 +607,7 @@ mod tests {
             .build();
         let mut mr = Machine::default();
         let mut batch_no = 0;
-        let mut generator_reduced = GeneratorReduced::new(&config);
+        let mut generator_reduced = GeneratorReducedForward::new(&config);
         loop {
             let (machines, is_finished) = generator_reduced.generate_permutation_batch_next();
             if let Some(m) = machines.first() {
@@ -678,7 +620,7 @@ mod tests {
         }
 
         // check direct batch access
-        let mut g = GeneratorReduced::new(&config);
+        let mut g = GeneratorReducedForward::new(&config);
         let (machines, _) = g.generate_permutation_batch_no(batch_no);
         let m2 = machines.first().unwrap().clone();
         // println!("m reduced {}: {}", mr.id(), mr.to_standard_tm_text_format());
@@ -712,7 +654,7 @@ mod tests {
     #[test]
     fn compare_generator_reduced_with_full_for_bb3() {
         let config = Config::builder(3).machine_limit(500_000).build();
-        let mut generator = GeneratorReduced::new(&config);
+        let mut generator = GeneratorReducedForward::new(&config);
         let (machines_reduced, _) = generator.generate_permutation_batch_next();
         let mut generator = GeneratorFull::new(&config);
         let (mut machines_full, _) = generator.generate_permutation_batch_next();
@@ -761,7 +703,7 @@ mod tests {
     fn run_test_decider_generator_reduced(n_states: usize) {
         let config = config_bench(n_states);
         let dc = DeciderStandard::Cycler.decider_config(&config);
-        let generator = GeneratorReduced::new(&config);
+        let generator = GeneratorReducedForward::new(&config);
         let result = batch_run_decider_chain_data_provider_single_thread(&vec![dc], generator);
         println!("{}", result);
         println!("{}", result.machines_max_steps_to_string(10));
@@ -771,7 +713,7 @@ mod tests {
     fn run_test_decider_generator_reduced_threaded(n_states: usize) {
         let config = config_bench(n_states);
         let dc = DeciderStandard::Cycler.decider_config(&config);
-        let generator = GeneratorReduced::new(&config);
+        let generator = GeneratorReducedForward::new(&config);
         let result =
             batch_run_decider_chain_threaded_data_provider_multi_thread(&vec![dc], generator);
         // println!("{}", result);

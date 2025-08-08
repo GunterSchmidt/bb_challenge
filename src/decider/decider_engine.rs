@@ -11,11 +11,13 @@ use std::{
 use crate::{
     data_provider::{
         bb_file_reader::BBFileDataProviderBuilder, generator::GeneratorStandard,
-        generator_full::GeneratorFull, generator_reduced::GeneratorReduced, DataProvider,
-        DataProviderThreaded,
+        generator_full::GeneratorFull, generator_reduced_forward::GeneratorReducedForward,
+        generator_reduced_reversed::GeneratorReducedReversed, DataProvider, DataProviderThreaded,
     },
-    decider::decider_result::{BatchData, DeciderResultStats, DurationDataProvider, EndReason},
-    decider::{DeciderConfig, ThreadResultDataProvider, ThreadResultDecider},
+    decider::{
+        decider_result::{BatchData, DeciderResultStats, DurationDataProvider, EndReason},
+        DeciderConfig, ThreadResultDataProvider, ThreadResultDecider,
+    },
     pre_decider::PreDeciderRun,
     reporter::Reporter,
     utils::num_cpus_percentage,
@@ -87,8 +89,28 @@ pub fn run_decider_chain_gen(
                 } // _ => panic!("use 0: single, 1: multi with single generator, 2: multi"),
             }
         }
-        GeneratorStandard::GeneratorReduced => {
-            let generator = GeneratorReduced::new(first_config);
+        GeneratorStandard::GeneratorReducedForward => {
+            let generator = GeneratorReducedForward::new(first_config);
+            match multi_core {
+                CoreUsage::SingleCore => {
+                    batch_run_decider_chain_data_provider_single_thread(decider_config, generator)
+                }
+                CoreUsage::SingleCoreGeneratorMultiCoreDecider => {
+                    batch_run_decider_chain_threaded_data_provider_single_thread(
+                        decider_config,
+                        generator,
+                    )
+                }
+                CoreUsage::MultiCore => {
+                    batch_run_decider_chain_threaded_data_provider_multi_thread(
+                        decider_config,
+                        generator,
+                    )
+                }
+            }
+        }
+        GeneratorStandard::GeneratorReducedReverse => {
+            let generator = GeneratorReducedReversed::new(first_config);
             match multi_core {
                 CoreUsage::SingleCore => {
                     batch_run_decider_chain_data_provider_single_thread(decider_config, generator)
@@ -760,6 +782,7 @@ pub fn batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
                 s.spawn(move || {
                     let start = Instant::now();
                     let data = data_provider_batch.batch_no(batch_no);
+                    // println!("batch_no: {batch_no} = {}", data.machines.len());
 
                     // Send finished signal to allow decider to run.
                     let result = Box::new(ThreadResultDataProvider {
@@ -857,7 +880,7 @@ pub fn batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
                 //     "Decider batch {}/{} spawned, max steps; {}",
                 //     gen_result.batch_no + 1,
                 //     data_provider.num_batches(),
-                //     batch_info.steps_max,
+                //     result_main.steps_max(),
                 // );
                 s.spawn(move || {
                     let start = Instant::now();
@@ -876,7 +899,7 @@ pub fn batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
                         run_predecider,
                     };
                     // println!(
-                    //     "Decider batch {}/{} finished send b {}",
+                    //     "Decider batch {}/{} send b {}",
                     //     batch_data.batch_no + 1,
                     //     num_batches,
                     //     batch_data.machines.len(),
@@ -897,10 +920,11 @@ pub fn batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
             // Check if deciders have finished
             while let Ok(thread_result_dec) = receive_finished_thread_decider.try_recv() {
                 // println!(
-                //     "Decider batch {}/{} finished, r {}",
+                //     "Decider batch {}/{} finished, r {}, size {}",
                 //     thread_result_dec.batch_no + 1,
                 //     data_provider.num_batches(),
-                //     r.num_processed_total()
+                //     result_main.num_processed_total(),
+                //     thread_result_dec.result.num_processed_total()
                 // );
                 result_main.add_result(&thread_result_dec.result);
                 duration_decider += thread_result_dec.duration;

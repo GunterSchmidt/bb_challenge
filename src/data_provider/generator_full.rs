@@ -45,6 +45,7 @@ const BATCH_SIZE_REQUEST_SINGLE_THREAD_MAX: usize = 500_000;
 pub struct GeneratorFull {
     /// Next id for the generated machine, starting with 0.
     id_next: u64,
+    /// batch_no, increased for every call, batch 0 will show batch 1
     batch_no: usize,
     /// The number of states used for this generator.
     // n_states: usize,
@@ -62,13 +63,13 @@ pub struct GeneratorFull {
     transition_table: TransitionTableSymbol2,
     /// Number of fields in the transition table (including the 2 empty fields for dummy state 0).
     n_fields: usize,
-    /// Stores the id of the current transition permutation for the transition field.
+    /// Stores the id of the current transition permutation for the corresponding transition field.
     fields: [usize; (MAX_STATES + 1) * 2],
     field_no: usize,
     n_states: usize,
     /// Sets if the first field A0 is rotated first (then A1, B0, B1, C0 etc.) or
     /// the last field (BB5: E1, then E0, D1, D0, C1 etc.)
-    is_first_rotate_field_front: bool,
+    is_first_rotate_field_forward: bool,
 }
 
 impl GeneratorFull {
@@ -92,64 +93,90 @@ impl GeneratorFull {
             Self::calc_batch_size(config.generator_batch_size_request_full(), n_states);
         // let num_batches = ((limit + batch_size as u64 - 1) / batch_size as u64) as usize;
         let num_batches = limit.div_ceil(batch_size as u64) as usize;
+        let n_fields = 2 * (n_states + 1);
 
         Self {
             id_next: 0,
             batch_no: 0,
-            // n_states,
             n_machines,
             batch_size,
             num_batches,
             limit,
             tr_permutations,
             transition_table,
-            n_fields: 2 * (n_states + 1),
+            n_fields,
             fields: [0; (MAX_STATES + 1) * 2],
-            field_no: 4,
-            n_states: config.n_states(),
-            is_first_rotate_field_front: config.generator_first_rotate_field_front(),
+            field_no: if config.generator_first_rotate_field_front() {
+                4
+            } else {
+                n_fields - 3
+            },
+            n_states,
+            is_first_rotate_field_forward: config.generator_first_rotate_field_front(),
         }
     }
 
     fn calc_batch_init(&mut self, batch_no: usize) {
-        if batch_no == 0 {
-            // self.id_next = 0;
-            // self.fields.fill(0);
-            return;
-        }
+        // if batch_no == 0 {
+        //     // self.id_next = 0;
+        //     // self.fields.fill(0);
+        //     return;
+        // }        self.batch_no += 1;
+        self.batch_no = batch_no;
         self.id_next = batch_no as u64 * self.batch_size as u64;
         // fields 0 and 1 are unused
         // fields 2 and 3 will be 0 as this is guaranteed by the batch size (status A always fully permuted)
         // calculating the remaining fields
-        // let mut remain = (batch_no as u64 - 1) * self.batch_size as u64;
         let permutations = (4 * self.n_states + 1) as u64;
         let mut remain = self.id_next / (permutations * permutations);
-        let mut i = 4;
+        // reset transitions, only the used ones will be filled in the following loop, possibly redundant
+        self.transition_table.transitions[2..self.n_states * 2 + 2].fill(self.tr_permutations[0]);
+        // if self.transition_table.transitions[7].transition != 194 {
+        //     println!("{}", self.batch_no);
+        //     todo!()
+        // }
+        if self.is_first_rotate_field_forward {
+            // field_no is always 4
+            let mut i = 4;
+            loop {
+                if remain > 0 {
+                    let m = remain % permutations;
+                    self.fields[i] = m as usize;
+                    self.transition_table.transitions[i] = self.tr_permutations[self.fields[i]];
+                    i += 1;
+                    remain = (remain - m) / permutations;
+                } else {
+                    break;
+                }
+            }
+        } else {
+            let mut i = self.n_fields - 3;
+            loop {
+                if remain > 0 {
+                    let m = remain % permutations;
+                    self.fields[i] = m as usize;
+                    self.transition_table.transitions[i] = self.tr_permutations[self.fields[i]];
+                    i -= 1;
+                    remain = (remain - m) / permutations;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Returns the next batch of permutations and an info if this is the last batch.
+    /// This is the core logic of the generator.
+    fn generate_permutation_batch_next_forward(&mut self) -> (Vec<Machine>, bool) {
+        if self.id_next >= self.n_machines {
+            return (Vec::new(), true);
+        }
+
+        // let mut is_last_batch = false;
+        let mut permutations = Vec::with_capacity(self.batch_size);
+        let num_tr_permutations = self.tr_permutations.len();
+        // 'creation: loop {
         loop {
-            if remain > 0 {
-                let m = remain % permutations;
-                self.fields[i] = m as usize;
-                self.transition_table.transitions[i] = self.tr_permutations[self.fields[i]];
-                i += 1;
-                remain = (remain - m) / permutations;
-            } else {
-                break;
-            }
-        }
-        // field_no is always 4
-    }
-
-    /// Returns the next batch of permutations and an info if this is the last batch.
-    /// This is the core logic of the generator.
-    fn generate_permutation_batch_next_front(&mut self) -> (Vec<Machine>, bool) {
-        if self.id_next >= self.n_machines {
-            return (Vec::new(), true);
-        }
-
-        let mut is_last_batch = false;
-        let mut permutations = Vec::with_capacity(self.batch_size);
-        let num_tr_permutations = self.tr_permutations.len();
-        'creation: loop {
             // permutations state A
             // loop all transitions for first state and its two symbols
             let mut id = self.id_next;
@@ -179,12 +206,14 @@ impl GeneratorFull {
                 self.transition_table.transitions[4] = self.tr_permutations[0];
                 'outer: loop {
                     self.field_no += 1;
-                    if self.field_no == self.n_fields {
-                        // all variants created
-                        is_last_batch = true;
-                        // println!("last id: {}", self.id_next);
-                        break 'creation;
-                    }
+                    // if self.field_no == self.n_fields {
+                    //     // apparently this does not happen. If it happens field_no is off for next batch
+                    //     todo!();
+                    //     // all variants created
+                    //     // is_last_batch = true;
+                    //     // println!("last id: {}", self.id_next);
+                    //     break 'creation;
+                    // }
                     self.fields[self.field_no] += 1;
                     if self.fields[self.field_no] < num_tr_permutations {
                         // set next field with next permutation
@@ -209,27 +238,37 @@ impl GeneratorFull {
             }
         }
 
-        (permutations, is_last_batch)
+        (permutations, false)
     }
 
     /// Returns the next batch of permutations and an info if this is the last batch.
     /// This is the core logic of the generator.
-    fn generate_permutation_batch_next_back(&mut self) -> (Vec<Machine>, bool) {
+    fn generate_permutation_batch_next_reverse(&mut self) -> (Vec<Machine>, bool) {
         if self.id_next >= self.n_machines {
             return (Vec::new(), true);
         }
 
-        let mut is_last_batch = false;
+        // let mut is_last_batch = false;
         let mut permutations = Vec::with_capacity(self.batch_size);
         let num_tr_permutations = self.tr_permutations.len();
-        'creation: loop {
+        let first = self.n_fields - 1;
+        let third = self.n_fields - 3;
+        //
+        //     // all variants created
+        //     println!("{}", self.batch_no);
+        //     todo!();
+        //     // is_last_batch = true;
+        //     // println!("last id: {}", self.id_next);
+        //     break 'creation;
+        // }'creation: loop {
+        loop {
             // permutations state A
-            // loop all transitions for first state and its two symbols
+            // loop all transitions for last state and its two symbols
             let mut id = self.id_next;
             for v1 in self.tr_permutations.iter() {
-                self.transition_table.transitions[3] = *v1;
+                self.transition_table.transitions[first - 1] = *v1;
                 for v0 in self.tr_permutations.iter() {
-                    self.transition_table.transitions[2] = *v0;
+                    self.transition_table.transitions[first] = *v0;
                     let permutation = Machine::new(id, self.transition_table);
                     permutations.push(permutation);
                     id += 1;
@@ -242,30 +281,32 @@ impl GeneratorFull {
             }
             self.id_next = id;
 
-            // update line two, permutations state B (still separate for performance)
-            self.fields[4] += 1;
-            if self.fields[4] < num_tr_permutations {
-                self.transition_table.transitions[4] = self.tr_permutations[self.fields[4]];
+            // update line two, permutations state D for BB5 (still separate for performance)
+            self.fields[third] += 1;
+            if self.fields[third] < num_tr_permutations {
+                self.transition_table.transitions[third] = self.tr_permutations[self.fields[third]];
             } else {
                 // set field back to first option
-                self.fields[4] = 0;
-                self.transition_table.transitions[4] = self.tr_permutations[0];
+                self.fields[third] = 0;
+                self.transition_table.transitions[third] = self.tr_permutations[0];
                 'outer: loop {
-                    self.field_no += 1;
-                    if self.field_no == self.n_fields {
-                        // all variants created
-                        is_last_batch = true;
-                        // println!("last id: {}", self.id_next);
-                        break 'creation;
-                    }
+                    self.field_no -= 1;
+                    // if self.field_no == 1 {
+                    //     // all variants created
+                    //     println!("{}", self.batch_no);
+                    //     todo!();
+                    //     // is_last_batch = true;
+                    //     // println!("last id: {}", self.id_next);
+                    //     break 'creation;
+                    // }
                     self.fields[self.field_no] += 1;
                     if self.fields[self.field_no] < num_tr_permutations {
                         // set next field with next permutation
                         self.transition_table.transitions[self.field_no] =
                             self.tr_permutations[self.fields[self.field_no]];
                         loop {
-                            self.field_no -= 1;
-                            if self.field_no == 4 {
+                            self.field_no += 1;
+                            if self.field_no == third {
                                 break 'outer;
                             } else {
                                 // set previous field back to first option
@@ -282,7 +323,7 @@ impl GeneratorFull {
             }
         }
 
-        (permutations, is_last_batch)
+        (permutations, false)
     }
 }
 
@@ -296,11 +337,13 @@ impl Generator for GeneratorFull {
     /// Returns the next batch of permutations and an info if this is the last batch.
     /// This is the core logic of the generator.
     fn generate_permutation_batch_next(&mut self) -> (Vec<Machine>, bool) {
-        if self.is_first_rotate_field_front {
-            self.generate_permutation_batch_next_front()
+        let r = if self.is_first_rotate_field_forward {
+            self.generate_permutation_batch_next_forward()
         } else {
-            self.generate_permutation_batch_next_back()
-        }
+            self.generate_permutation_batch_next_reverse()
+        };
+        self.batch_no += 1;
+        r
     }
 
     /// The given limit of machines to generate or (if smaller) the maximum number of machines for the number of states.
@@ -335,7 +378,7 @@ impl DataProvider for GeneratorFull {
 
     fn machine_batch_next(&mut self) -> ResultDataProvider {
         let (machines, is_last_batch) = self.generate_permutation_batch_next();
-        self.batch_no += 1;
+        // self.batch_no += 1;
         let end_reason = if is_last_batch {
             EndReason::IsLastBatch
         } else {
@@ -400,14 +443,17 @@ impl DataProviderThreaded for GeneratorFull {
             transition_table,
             n_fields: self.n_fields,
             fields: [0; (MAX_STATES + 1) * 2],
-            field_no: 4,
+            field_no: if self.is_first_rotate_field_forward {
+                4
+            } else {
+                self.n_fields - 3
+            },
             n_states: self.n_states,
-            is_first_rotate_field_front: self.is_first_rotate_field_front,
+            is_first_rotate_field_forward: self.is_first_rotate_field_forward,
         }
     }
 
     fn batch_no(&mut self, batch_no: usize) -> DataProviderBatch {
-        self.batch_no = batch_no;
         let (machines, is_last_batch) = self.generate_permutation_batch_no(batch_no);
         let end_reason = if is_last_batch {
             EndReason::IsLastBatch
@@ -422,6 +468,49 @@ impl DataProviderThreaded for GeneratorFull {
         }
     }
 }
+
+// pub fn validate_next_with_batch_no() {
+//     let n_states = 3;
+//     let config = Config::builder(n_states)
+//         .generator_full_batch_size_request(10000)
+//         // .generator_first_rotate_field_front(true)
+//         .build();
+//     let mut generator_next = GeneratorFull::new(&config);
+//     let mut generator_batch_no = GeneratorFull::new(&config);
+//     let (_m_no, _is_finished) = generator_batch_no.generate_permutation_batch_no(484);
+//
+//     println!("Machines: {}", generator_next.n_machines);
+//
+//     let mut batch_no = 0;
+//     let mut counter = 0;
+//     loop {
+//         let (m_next, is_finished) = generator_next.generate_permutation_batch_next();
+//         // delete known transition data to force update
+//         for i in 2..8 {
+//             generator_batch_no.transition_table.transitions[i].transition = 0;
+//         }
+//         let (m_no, _is_finished) = generator_batch_no.generate_permutation_batch_no(batch_no);
+//         println!("batch_no {}, size {}", batch_no + 1, m_next.len());
+//
+//         for (i, m) in m_next.iter().enumerate() {
+//             let mv = &m_no[i];
+//             counter += 1;
+//             assert_eq!(m, mv);
+//         }
+//
+//         if is_finished {
+//             assert_eq!(counter, generator_next.n_machines);
+//             break;
+//         }
+//
+//         batch_no += 1;
+//     }
+//     // let result = batch_run_decider_chain_data_provider_single_thread(&vec![dc], generator);
+//     // println!("{}", result);
+//     // println!("{}", result.machines_max_steps_to_string(10));
+//     // assert_eq!(result_max_steps_known(n_states), result.steps_max());
+//     println!();
+// }
 
 /// run this only in release mode from command line: \
 /// cargo test --release generator_full
@@ -438,45 +527,11 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn generator_full_direct_access_batch_no() {
-        let config = Config::builder(4)
-            .generator_full_batch_size_request(10_000)
-            .machine_limit(10_000_000)
-            .build();
-        let mut m1;
-        let mut batch_no = 0;
-        let mut g = GeneratorFull::new(&config);
-        loop {
-            let (vm, is_finished) = g.generate_permutation_batch_next();
-            m1 = vm.first().unwrap().clone();
-            if is_finished {
-                break;
-            }
-            batch_no += 1;
-        }
-
-        // check direct batch access
-        let mut g = GeneratorFull::new(&config);
-        let (vm, _) = g.generate_permutation_batch_no(batch_no);
-        let m2 = vm.first().unwrap().clone();
-        assert_eq!(m1, m2);
-        // println!("m1: {}", m1);
-
-        // check exact permutation
-        let id = 9993042;
-        let mut transitions: Vec<(&str, &str)> = Vec::new();
-        transitions.push(("0RA", "0RA"));
-        transitions.push(("0RA", "1LB"));
-        transitions.push(("0RA", "1RD"));
-        transitions.push(("0RA", "0RA"));
-        let m = Machine::from_string_tuple(id, &transitions);
-        assert_eq!(m1, m);
-    }
+    const USE_FRONT: bool = true;
 
     #[test]
     fn decider_generator_full_bb2() {
-        run_test_decider_generator_full(3);
+        run_test_decider_generator_full(2);
     }
 
     #[test]
@@ -498,11 +553,79 @@ mod tests {
         run_test_decider_generator_full_threaded(4);
     }
 
+    #[test]
+    fn generator_full_direct_access_batch_no() {
+        let config = Config::builder(4)
+            .generator_first_rotate_field_front(USE_FRONT)
+            .generator_full_batch_size_request(10_000)
+            .machine_limit(10_000_000)
+            .build();
+        let m1;
+        let mut batch_no = 0;
+        let mut g = GeneratorFull::new(&config);
+        loop {
+            let (vm, is_finished) = g.generate_permutation_batch_next();
+            if is_finished {
+                m1 = vm.first().unwrap().clone();
+                break;
+            }
+            batch_no += 1;
+        }
+
+        // check direct batch access
+        let mut g = GeneratorFull::new(&config);
+        let (vm, _) = g.generate_permutation_batch_no(batch_no);
+        let m2 = vm.first().unwrap().clone();
+        assert_eq!(m1, m2);
+        // println!("m1: {}", m1);
+
+        // check exact permutation
+        if USE_FRONT {
+            let id = 9993042;
+            let mut transitions: Vec<(&str, &str)> = Vec::new();
+            transitions.push(("0RA", "0RA"));
+            transitions.push(("0RA", "1LB"));
+            transitions.push(("0RA", "1RD"));
+            transitions.push(("0RA", "0RA"));
+            let m = Machine::from_string_tuple(id, &transitions);
+            assert_eq!(m1, m);
+        }
+    }
+
+    #[test]
+    fn generator_full_direct_access_batch_no_all() {
+        let config = Config::builder(3)
+            .generator_first_rotate_field_front(USE_FRONT)
+            .generator_full_batch_size_request(10_000)
+            // .machine_limit(10_000_000)
+            .machine_limit(0)
+            .build();
+        let mut m1;
+        let mut batch_no = 0;
+        let mut g1 = GeneratorFull::new(&config);
+        let mut g2 = GeneratorFull::new(&config);
+        loop {
+            let (vm1, is_finished) = g1.generate_permutation_batch_next();
+            m1 = vm1.first().unwrap();
+            // check direct batch access
+            let (vm2, _) = g2.generate_permutation_batch_no(batch_no);
+            let m2 = vm2.first().unwrap();
+            // print!("{batch_no}, ");
+            assert_eq!(m1, m2);
+            assert_eq!(vm1.len(), vm2.len());
+            if is_finished {
+                break;
+            }
+            batch_no += 1;
+        }
+
+        // println!("m1: {}", m1);
+    }
+
     fn run_test_decider_generator_full(n_states: usize) {
-        let config = config_bench(n_states);
+        let config = config_bench(n_states, USE_FRONT);
         let dc = DeciderStandard::Cycler.decider_config(&config);
         let generator = GeneratorFull::new(&config);
-        // TODO no clue why this does not work
         let result = batch_run_decider_chain_data_provider_single_thread(&vec![dc], generator);
         println!("{}", result);
         println!("{}", result.machines_max_steps_to_string(10));
@@ -510,7 +633,7 @@ mod tests {
     }
 
     fn run_test_decider_generator_full_threaded(n_states: usize) {
-        let config = config_bench(n_states);
+        let config = config_bench(n_states, USE_FRONT);
         let dc = DeciderStandard::Cycler.decider_config(&config);
         let generator = GeneratorFull::new(&config);
         let result =
@@ -519,11 +642,14 @@ mod tests {
         assert_eq!(result_max_steps_known(n_states), result.steps_max());
     }
 
-    fn config_bench(n_states: usize) -> Config {
+    fn config_bench(n_states: usize, front: bool) -> Config {
+        let limit = if front { 200_000_000 } else { 1_550_000_000 };
         Config::builder(n_states)
+            .generator_first_rotate_field_front(front)
             // .generator_batch_size_request_full(GENERATOR_BATCH_SIZE_REQUEST_FULL)
             // .generator_batch_size_request_reduced(GENERATOR_BATCH_SIZE_REQUEST_REDUCED)
-            .machine_limit(200_000_000)
+            .machine_limit(limit)
+            // .step_limit_cycler(110)
             // .cpu_utilization(100)
             .build()
     }

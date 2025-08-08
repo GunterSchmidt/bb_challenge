@@ -9,7 +9,8 @@ use crate::{
 #[non_exhaustive]
 pub enum GeneratorStandard {
     GeneratorFull,
-    GeneratorReduced,
+    GeneratorReducedForward,
+    GeneratorReducedReverse,
 }
 
 // TODO remove what is in DataProvider
@@ -89,7 +90,7 @@ pub fn create_all_transition_permutations(n_states: usize) -> Vec<TransitionSymb
 }
 
 // /// Elimination Rule 2: Left and Right: The directions L and R can be interchanged in all steps.
-// /// Elimination Rule x: State interchangable: Any state can be interchanged with any other state other than A.
+// /// Elimination Rule x: State interchangeable: Any state can be interchanged with any other state other than A.
 // /// Therefore the start transition must go to B.
 // /// Elimination Rule 3: No Hold in start field A0.
 // /// Elimination Rule 4: No reference to state A in A0.

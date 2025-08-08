@@ -438,6 +438,11 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn generator_first_rotate_field_front(mut self, value: bool) -> Self {
+        self.generator_first_rotate_field_front = Some(value);
+        self
+    }
+
     pub fn generator_full_batch_size_request(mut self, batch_size_request: usize) -> Self {
         self.generator_batch_size_request_full = Some(batch_size_request);
         self

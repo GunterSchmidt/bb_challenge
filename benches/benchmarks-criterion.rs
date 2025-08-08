@@ -6,7 +6,9 @@ use std::time::Duration;
 use bb_challenge::{
     config::{Config, StepTypeBig},
     data_provider::{
-        generator::Generator, generator_full::GeneratorFull, generator_reduced::GeneratorReduced,
+        generator::Generator, generator_full::GeneratorFull,
+        generator_reduced_forward::GeneratorReducedForward,
+        generator_reduced_reversed::GeneratorReducedReversed,
     },
     decider::{
         decider_engine, decider_result::result_max_steps_known, Decider, DeciderConfig,
@@ -25,10 +27,10 @@ const GENERATOR_LIMIT: u64 = 50_000_000;
 
 criterion_group!(
     benches,
-    benchmark_tape_type,
+    // benchmark_tape_type,
     benchmark_generator,
-    benchmark_decider_gen_bb3,
-    benchmark_decider_gen_bb4,
+    // benchmark_decider_gen_bb3,
+    // benchmark_decider_gen_bb4,
 );
 criterion_main!(benches);
 
@@ -40,7 +42,12 @@ fn benchmark_generator(c: &mut Criterion) {
     group.sample_size(10);
 
     group.bench_function("Generator full", |b| b.iter(|| bench_generate_full()));
-    group.bench_function("Generator reduced", |b| b.iter(|| bench_generate_reduced()));
+    group.bench_function("Generator reduced forward", |b| {
+        b.iter(|| bench_generate_reduced_forward())
+    });
+    group.bench_function("Generator reduced reversed", |b| {
+        b.iter(|| bench_generate_reduced_reversed())
+    });
 
     group.finish();
 }
@@ -284,8 +291,18 @@ fn bench_generate_full() {
     }
 }
 
-fn bench_generate_reduced() {
-    let mut generator = GeneratorReduced::new(&config_bench(5));
+fn bench_generate_reduced_forward() {
+    let mut generator = GeneratorReducedForward::new(&config_bench(5));
+    loop {
+        let (_permutations, is_last_batch) = generator.generate_permutation_batch_next();
+        if is_last_batch {
+            break;
+        }
+    }
+}
+
+fn bench_generate_reduced_reversed() {
+    let mut generator = GeneratorReducedReversed::new(&config_bench(5));
     loop {
         let (_permutations, is_last_batch) = generator.generate_permutation_batch_next();
         if is_last_batch {
@@ -307,21 +324,21 @@ fn bench_decider_data_provider_gen(
             CoreUsage::SingleCore => {
                 decider_engine::batch_run_decider_chain_data_provider_single_thread_reporting(
                     &vec![dc_cycler],
-                    GeneratorReduced::new(config),
+                    GeneratorReducedForward::new(config),
                     None,
                 )
             }
             CoreUsage::SingleCoreGeneratorMultiCoreDecider => {
                 decider_engine::batch_run_decider_chain_threaded_data_provider_single_thread_reporting(
                     &vec![dc_cycler],
-                    GeneratorReduced::new(config),
+                    GeneratorReducedForward::new(config),
                     None,
                 )
             }
             CoreUsage::MultiCore => {
                 decider_engine::batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
                     &vec![dc_cycler],
-                    GeneratorReduced::new(config),
+                    GeneratorReducedForward::new(config),
                     None,
                 )
             }

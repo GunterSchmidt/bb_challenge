@@ -33,6 +33,7 @@
 //!
 //! (Planned)
 
+#![allow(unreachable_code)]
 use std::fmt::Display;
 
 use crate::{

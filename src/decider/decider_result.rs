@@ -188,6 +188,7 @@ impl DeciderResultStats {
         }
     }
 
+    /// Set limit to highest of all configs
     pub fn enhance_machines_un_decided(&mut self, config: &Config) {
         if self.limit_machines_decided < config.limit_machines_decided() {
             self.limit_machines_decided = config.limit_machines_decided();

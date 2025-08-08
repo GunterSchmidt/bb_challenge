@@ -2,7 +2,8 @@
 pub mod bb_file_reader;
 pub mod generator;
 pub mod generator_full;
-pub mod generator_reduced;
+pub mod generator_reduced_forward;
+pub mod generator_reduced_reversed;
 
 use std::fmt::Display;
 
@@ -15,20 +16,6 @@ use crate::{
 
 // Returning DataProviderBatch in a box degrades performance.
 pub type ResultDataProvider = Result<DataProviderBatch, Box<DataProviderError>>;
-
-// pub enum GeneratorStandard {
-//     GeneratorFull,
-//     GeneratorReduced,
-// }
-//
-// impl GeneratorStandard {
-//     pub fn data_provider(&self, config: &Config) -> Box<dyn DataProvider> {
-//         match self {
-//             GeneratorStandard::GeneratorFull => Box::new(GeneratorFull::new(config)),
-//             GeneratorStandard::GeneratorReduced => Box::new(GeneratorReduced::new(config)),
-//         }
-//     }
-// }
 
 // TODO BatchInfo with batch_no, num_batches, machine_no_first, machines_total
 pub trait DataProvider {
