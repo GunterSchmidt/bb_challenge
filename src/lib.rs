@@ -22,7 +22,6 @@ pub mod config;
 // pub mod tape;
 // pub mod transition_binary;
 pub mod machine_generic;
-pub mod transition_generic;
 pub mod utils;
 
 // /// This is used to define the CPU usage during generator and decider run.

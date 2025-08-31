@@ -1,17 +1,68 @@
-use crate::{
-    config::{MAX_STATES_GENERIC, MAX_SYMBOLS_GENERIC},
-    transition_generic::{
-        CellType, StateType, TransitionGeneric, TransitionTableGenericArray, SYMBOL_UNDEFINED,
-        TRANSITION_TABLE_GENERIC_DEFAULT,
-    },
+//! This is a Turing Machine. It is called Generic as it is working with different numbers of symbols and states. \
+//! The limit is set to 10 symbols and 10 states, which should be sufficient for now. \
+//! Currently this only serves as intermediate format to read machine data and convert it then to MachineBinary,
+//! as the Busy Beaver Challenge only works with the symbols 0 and 1, which can be handled more efficiently.
+
+use std::fmt::Display;
+
+use crate::config::{MAX_STATES_GENERIC, MAX_SYMBOLS_GENERIC};
+
+pub type TransitionTableGenericArray =
+    [[TransitionGeneric; MAX_SYMBOLS_GENERIC]; MAX_STATES_GENERIC + 1];
+
+/// Default Unused for all transition fields. \
+/// As this is an array a marker is required to identify the end of the used data, if n_states is not provided.
+/// This uses less space than a separate field.
+pub const TRANSITION_TABLE_GENERIC_DEFAULT: TransitionTableGenericArray = [[TransitionGeneric {
+    symbol_write: SYMBOL_UNUSED,
+    direction: 0,
+    state_next: 0,
+}; MAX_SYMBOLS_GENERIC];
+    MAX_STATES_GENERIC + 1];
+
+pub const A: StateType = 1;
+pub const B: StateType = 2;
+pub const C: StateType = 3;
+pub const D: StateType = 4;
+pub const E: StateType = 5;
+pub const F: StateType = 6;
+pub const G: StateType = 7;
+pub const H: StateType = 8;
+pub const I: StateType = 9;
+pub const J: StateType = 10;
+
+/// tape cell storage size, can be any i/u available, e.g. u8, i32, with u16 seems fastest
+/// CellType and MoveType affect Transition size, be careful, u16 makes nice 4 byte struct
+pub type SymbolType = u16;
+pub type MoveType = i8;
+pub type StateType = u8;
+
+/// Undefined (the machine halts if it ever reaches an undefined transition), written as '---' for the transition.
+pub const SYMBOL_UNDEFINED: SymbolType = u8::MAX as SymbolType;
+/// Marker unused, as the data model uses an array with unused fields. Never exposed to user.
+pub const SYMBOL_UNUSED: SymbolType = u8::MAX as SymbolType - 1;
+pub const DIR_RIGHT: MoveType = 1;
+pub const DIR_LEFT: MoveType = -1;
+pub const DIR_UNDEFINED: MoveType = 0;
+pub const STATE_HALT_GENERIC: StateType = 0;
+pub const TRANSITION_HALT: TransitionGeneric = TransitionGeneric {
+    symbol_write: SYMBOL_UNDEFINED,
+    direction: 0,
+    state_next: 0,
+};
+pub const TRANSITION_UNUSED: TransitionGeneric = TransitionGeneric {
+    symbol_write: SYMBOL_UNUSED,
+    direction: 0,
+    state_next: 0,
 };
 
+/// Return Type for dimensions()
 pub struct MachineDimensions {
     pub n_symbols: usize,
     pub n_states: usize,
 }
 
-/// The transition table.
+/// The Turing Machine, which is the transition table.
 #[derive(Debug, Clone, Copy)]
 pub struct MachineGeneric {
     /// The transitions are stored in a two dimensional array with a dummy line, \
@@ -89,7 +140,7 @@ impl MachineGeneric {
     pub fn transition_for_state_symbol(
         &self,
         state: StateType,
-        symbol: CellType,
+        symbol: SymbolType,
     ) -> TransitionGeneric {
         self.transitions[state as usize][symbol as usize]
     }
@@ -130,26 +181,6 @@ impl MachineGeneric {
     }
 }
 
-// /// Creates a transition table from a string in format '1RB1LC_1RC1RB_1RD0LE_1LA1LD_1RZ0LA'.
-// impl TryFrom<&str> for TransitionTableGeneric {
-//     type Error = &'static str;
-//
-//     fn try_from(transitions_text: &str) -> Result<Self, Self::Error> {
-//         let mut transitions = TRANSITION_ARRAY_DEFAULT;
-//         let transition_pairs: Vec<&str> = transitions_text.split('_').collect();
-//         for (i, t) in transition_pairs.iter().enumerate() {
-//             // Check format
-//             if t.as_bytes().len() != 6 {
-//                 return Err("Expected a format like '1RB1LC_1RC1RB_1RD0LE_1LA1LD_1RZ0LA'");
-//             }
-//             transitions[i * 2] = TransitionGeneric::new(t.as_bytes()[0..3].try_into().unwrap());
-//             transitions[i * 2 + 1] = TransitionGeneric::new(t.as_bytes()[0..3].try_into().unwrap());
-//         }
-//
-//         Ok(Self { transitions })
-//     }
-// }
-
 /// Returns a transition table from Standard TM Text Format.
 impl TryFrom<&str> for MachineGeneric {
     type Error = &'static str;
@@ -160,7 +191,7 @@ impl TryFrom<&str> for MachineGeneric {
 }
 
 /// Displays the transitions in a multiline table.
-impl std::fmt::Display for MachineGeneric {
+impl Display for MachineGeneric {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let dim = self.dimensions();
         let mut s = String::with_capacity(dim.n_symbols * 4 + 2 * (dim.n_states + 1));
@@ -193,27 +224,116 @@ impl std::fmt::Display for MachineGeneric {
     }
 }
 
-// TODO Possible rewrite for u8 to print symbol, state as char (.to_char)
-// pub trait U64Ext {
-//     #[allow(dead_code)] // required for debugging
-//     fn to_binary_split_string(&self) -> String;
-// }
-//
-// impl U64Ext for u64 {
-//     fn to_binary_split_string(&self) -> String {
-//         format!(
-//             "{:024b}_{:08b} {:08b}_{:024b}",
-//             self >> 40,
-//             (self >> 32) as u8,
-//             (self >> 24) as u8,
-//             (*self as u32) & 0b0000_0000_1111_1111_1111_1111_1111_1111,
-//         )
-//     }
-// }
+/// This generic transition can handle Turing machines, which write symbols up to [MAX_SYMBOLS_GENERIC]. \
+/// It is designed to be a human understandable format and used during parsing. \
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TransitionGeneric {
+    /// symbol 0,1,2.. or 255 for undefined. 254 represents unused and is used to determine the number of states.
+    pub symbol_write: SymbolType,
+    /// direction +1, left -1 or 0 for undefined
+    pub direction: MoveType,
+    /// Next state of the machine, 0 represents halt signal, 1 = A, 2 = B, 3 = C ...
+    pub state_next: StateType,
+}
+
+impl TransitionGeneric {
+    /// New transition from different formats,
+    /// - human readable: 1RB, 1RZ or --- used in bb_challenge, which is String.as_bytes[0..3]. \
+    /// - bb_challenge file format (https://bbchallenge.org/method#format): 1,R,2
+    ///
+    /// \[symbol,direction,status\] with first char the symbol to write on the tape, can be 0, 1 or any other char as undefined. \
+    /// The distinction between 0,1 and undefined is relevant in the last transition. \
+    /// 0,1 will write and hold in the last transition, undefined will only hold. \
+    /// This results in a different 'number of ones' count. \
+    /// BBChallenge uses both notations. \
+    /// Second char is L or R for direction or any other for undefined. \
+    /// L,R or undefined is irrelevant in last transition, in any other step it must be defined. \
+    /// Third char is next state, it can be denoted as number 1-9, char 1-9, or char A-Y. 0 or Z represent halt. \
+    /// This is the main halt condition. Numbers are used for the downloadable seeds.
+    pub fn new(transition: [u8; 3]) -> Self {
+        assert!(transition.len() == 3);
+        // special hold in case of array
+        if transition[2] == 0 {
+            return TRANSITION_HALT;
+        }
+        let write_symbol = match transition[0] {
+            0..=9 => transition[0] as SymbolType,
+            b'0'..=b'9' => (transition[0] - b'0') as SymbolType,
+            _ => SYMBOL_UNDEFINED,
+        };
+        let direction = match transition[1] {
+            1 | b'L' => DIR_LEFT,
+            0 | b'R' => DIR_RIGHT,
+            _ => DIR_UNDEFINED,
+        };
+        let state_next = match transition[2] {
+            1..9 => transition[2],
+            b'1'..b'9' => transition[2] - b'0',
+            b'A'..b'Y' => transition[2] - b'A' + 1,
+            // b'-' | b'Z' => 0,
+            _ => STATE_HALT_GENERIC,
+        };
+        assert!(state_next <= MAX_STATES_GENERIC as u8);
+
+        Self {
+            symbol_write: write_symbol,
+            direction,
+            state_next,
+        }
+    }
+
+    pub fn is_unused(&self) -> bool {
+        self.symbol_write == SYMBOL_UNUSED
+    }
+}
+
+impl Default for TransitionGeneric {
+    fn default() -> Self {
+        TRANSITION_UNUSED
+    }
+}
+
+impl TryFrom<&str> for TransitionGeneric {
+    type Error = &'static str;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.len() != 3 {
+            return Err(
+                "Transition must consist of exactly three characters: Symbol Direction State",
+            );
+        }
+        Ok(TransitionGeneric::new(value.as_bytes().try_into().unwrap()))
+    }
+}
+
+/// Displays the transition in Standard TM Text Format.
+impl Display for TransitionGeneric {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_unused()
+            || (self.state_next == STATE_HALT_GENERIC && self.direction == DIR_UNDEFINED)
+        {
+            return write!(f, "---");
+        }
+        let write_symbol = match self.symbol_write {
+            0..=9 => (self.symbol_write as u8 + b'0') as char,
+            _ => '-',
+        };
+        let move_next = match self.direction {
+            -1 => 'L',
+            1 => 'R',
+            _ => '-',
+        };
+        let next_state = if self.state_next == 0 {
+            'Z'
+        } else {
+            (self.state_next + 64) as char
+        };
+        write!(f, "{write_symbol}{move_next}{next_state}")
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use crate::transition_generic::{TransitionGeneric, B, J};
 
     use super::*;
 
@@ -221,35 +341,38 @@ mod tests {
     fn machine_2x2_6_4() {
         // 2x2-6-4
         let text = "1RB1LB_1LA1RZ";
-        let table = MachineGeneric::try_from_standard_tm_text_format(text).unwrap();
+        let machine = MachineGeneric::try_from_standard_tm_text_format(text).unwrap();
         let check_value = TransitionGeneric::try_from("1RZ").unwrap();
-        let transition_b1 = table.transition_for_state_symbol(B, 1);
-        println!("{}", table);
+        let transition_b1 = machine.transition_for_state_symbol(B, 1);
+        println!("{text}\n{}", machine);
         assert_eq!(check_value, transition_b1);
+        let tm_format = machine.to_standard_tm_text_format();
+        assert_eq!(text, tm_format);
     }
 
     #[test]
     fn machine_2x6_e9866() {
         // 2x6-e9866
         let text = "1RB2LA1RZ5LB5LA4LB_1LA4RB3RB5LB1LB4RA";
-        let table = MachineGeneric::try_from_standard_tm_text_format(text).unwrap();
+        let machine = MachineGeneric::try_from_standard_tm_text_format(text).unwrap();
         let check_value = TransitionGeneric::try_from("5LB").unwrap();
-        let transition_b3 = table.transition_for_state_symbol(B, 3);
-        println!("{}", table);
+        let transition_b3 = machine.transition_for_state_symbol(B, 3);
+        println!("{text}\n{}", machine);
         assert_eq!(check_value, transition_b3);
+        let tm_format = machine.to_standard_tm_text_format();
+        assert_eq!(text, tm_format);
     }
 
     #[test]
     fn machine_4x3_e12068() {
         // 4x3-e12068
         let text = "1RB0LB1RD_2RC2LA0LA_1LB0LA0LA_1RA0RA1RZ";
-        let table = MachineGeneric::try_from_standard_tm_text_format(text).unwrap();
+        let machine = MachineGeneric::try_from_standard_tm_text_format(text).unwrap();
         let check_value = TransitionGeneric::try_from("2RC").unwrap();
-        let transition_b0 = table.transition_for_state_symbol(B, 0);
-        println!("{}", table);
-        let tm_format = table.to_standard_tm_text_format();
-        println!("{}", tm_format);
+        let transition_b0 = machine.transition_for_state_symbol(B, 0);
+        println!("{text}\n{}", machine);
         assert_eq!(check_value, transition_b0);
+        let tm_format = machine.to_standard_tm_text_format();
         assert_eq!(text, tm_format);
     }
 
@@ -257,17 +380,13 @@ mod tests {
     fn machine_10x2_green() {
         // 10x2-Green
         let text = "1LB1RZ_0LC1LC_0LD0LC_1LE1RA_0LF0LE_1LG1RD_0LH0LG_1LI1RF_0LJ0LI_1RJ1RH";
-        let table = MachineGeneric::try_from_standard_tm_text_format(text).unwrap();
+        let machine = MachineGeneric::try_from_standard_tm_text_format(text).unwrap();
         let check_value = TransitionGeneric::try_from("1RJ").unwrap();
-        let transition_j0 = table.transition_for_state_symbol(J, 0);
-        println!("{}", table);
-        let tm_format = table.to_standard_tm_text_format();
-        println!("{}", tm_format);
+        let transition_j0 = machine.transition_for_state_symbol(J, 0);
+        println!("{text}\n{}", machine);
         assert_eq!(check_value, transition_j0);
+        let tm_format = machine.to_standard_tm_text_format();
         assert_eq!(text, tm_format);
-
-        // let ts = TransitionTableSymbol2::try_from(table);
-        // println!("\nConvert to Transition Symbol2: {:?}", ts);
     }
 
     #[test]
@@ -278,16 +397,12 @@ mod tests {
         _8LB1RZ0LC1LC0LD9LC1LE1RA0LF0LE_4LG1RD0LH0LG6LI1RF0LJ0LI1RJ1RH\
         _8LB1RZ0LC1LC0LD9LC1LE1RA0LF0LE_4LG1RD0LH0LG6LI1RF0LJ0LI1RJ1RH\
         ";
-        let table = MachineGeneric::try_from_standard_tm_text_format(text).unwrap();
+        let machine = MachineGeneric::try_from_standard_tm_text_format(text).unwrap();
         let check_value = TransitionGeneric::try_from("1RJ").unwrap();
-        let transition_j8 = table.transition_for_state_symbol(J, 8);
-        println!("{}", table);
-        let tm_format = table.to_standard_tm_text_format();
-        println!("{}", tm_format);
+        let transition_j8 = machine.transition_for_state_symbol(J, 8);
+        println!("{text}\n{}", machine);
         assert_eq!(check_value, transition_j8);
+        let tm_format = machine.to_standard_tm_text_format();
         assert_eq!(text, tm_format);
-
-        // let ts = TransitionTableSymbol2::try_from(table);
-        // println!("\n as Transition Symbol2: {:?}", ts);
     }
 }

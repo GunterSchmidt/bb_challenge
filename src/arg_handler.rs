@@ -8,7 +8,7 @@ use crate::machine_generic::MachineGeneric;
 pub enum ArgValue {
     // TODO machine
     // Machine(Box<Machine>),
-    TransitionTableGeneric(Box<MachineGeneric>),
+    Machine(Box<MachineGeneric>),
     /// Returned when the arg value leads to an action which is performed directly.
     Done,
     None,
@@ -25,9 +25,9 @@ pub fn help_string() -> String {
     s
 }
 
-// TODO Clap crate
+// TO DO Clap crate
 pub fn standard_args(args: &[String]) -> ArgValue {
-    // TODO arg 1 is expected to be the path. This should be more flexible.
+    // TO DO arg 0 is expected to be the path. This should be more flexible.
     if args.len() <= 1 {
         return ArgValue::None;
     }
@@ -60,10 +60,10 @@ pub fn standard_args(args: &[String]) -> ArgValue {
             //     }
             // }
             "-m" | "--machine" => {
-                let tg = MachineGeneric::try_from_standard_tm_text_format(&args[2]);
-                match tg {
-                    Ok(table) => {
-                        return ArgValue::TransitionTableGeneric(Box::new(table));
+                let mg = MachineGeneric::try_from_standard_tm_text_format(&args[2]);
+                match mg {
+                    Ok(machine) => {
+                        return ArgValue::Machine(Box::new(machine));
                     }
                     Err(e) => return ArgValue::Error(e.to_string()),
                 }
@@ -103,7 +103,7 @@ pub fn standard_args(args: &[String]) -> ArgValue {
 
 #[cfg(test)]
 mod tests {
-    use crate::transition_generic::{TransitionGeneric, B};
+    use crate::machine_generic::{TransitionGeneric, B};
 
     use super::*;
 
@@ -114,7 +114,7 @@ mod tests {
         let args = vec!["path".to_string(), "-m".to_string(), text.to_string()];
         let r = standard_args(&args);
         let table = match r {
-            ArgValue::TransitionTableGeneric(t) => t,
+            ArgValue::Machine(t) => t,
             _ => todo!(),
         };
         let check_value = TransitionGeneric::try_from("1RZ").unwrap();
