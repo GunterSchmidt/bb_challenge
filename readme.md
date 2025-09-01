@@ -109,3 +109,7 @@ A machine has a number of properties in the case it halts:
 * Number of Ones: Number of ones written on the tape (Score in Rado terms)
 * Sigma: ?
 * tape length: Used tape cells. Defined by the extreme head positions in both directions.
+
+## Features
+
+* bb_debug: This will output detailed information on the steps in the Terminal.

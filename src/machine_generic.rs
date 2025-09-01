@@ -50,7 +50,7 @@ pub const TRANSITION_HALT: TransitionGeneric = TransitionGeneric {
     direction: 0,
     state_next: 0,
 };
-pub const TRANSITION_UNUSED: TransitionGeneric = TransitionGeneric {
+pub const TRANSITION_GENERIC_UNUSED: TransitionGeneric = TransitionGeneric {
     symbol_write: SYMBOL_UNUSED,
     direction: 0,
     state_next: 0,
@@ -289,7 +289,7 @@ impl TransitionGeneric {
 
 impl Default for TransitionGeneric {
     fn default() -> Self {
-        TRANSITION_UNUSED
+        TRANSITION_GENERIC_UNUSED
     }
 }
 
@@ -332,10 +332,74 @@ impl Display for TransitionGeneric {
     }
 }
 
+/// Some notable machines
+/// Builds certain default machines which may be used for testing.
+/// SA: <https://www.scottaaronson.com/papers/bb.pdf>#[derive(Debug)]
+pub enum NotableMachine {
+    BB2MaxAronson,
+    BB3MaxAronson,
+    BB3Max,
+    BB4Max,
+    BB5Max,
+    /// https://bbchallenge.org/story#bb5
+    BB5Steps105,
+    BB3Rado,
+    EndlessSimple,
+}
+
+impl NotableMachine {
+    pub fn machine(&self) -> MachineGeneric {
+        let transitions_text = match self {
+            NotableMachine::BB3Rado => "1LB1RC_1RA1LB_1RB1LZ",
+            NotableMachine::BB3Max => "1RB---_1LB0RC_1LC1LA",
+            NotableMachine::BB4Max => "1RB1LB_1LA0LC_---1LD_1RD0RA",
+            NotableMachine::BB5Max => "1RB1LC_1RC1RB_1RD0LE_1LA1LD_---0LA",
+            NotableMachine::BB2MaxAronson => "1RB1LB_1LA---",
+            NotableMachine::BB3MaxAronson => "1LB---_1RB0LC_1RC1RA",
+            // other older ones, check if useful
+            // //endless,no halt
+            // "BB4_28051367" => "1LB1RC_0LC0LD_0RD0LA_1RA0RA",
+            // //endless
+            // "BB3_SINUS" => "1RC0LB_1LA---_0LA0RA",
+            // //wrong halt count
+            // "BB3_TEST" => "1RB0LB_1LC1RB_---1LA",
+            NotableMachine::BB5Steps105 => "1RB1LC_0LB1LA_1RD1LB_1RE0RD_0RA---",
+            NotableMachine::EndlessSimple => "0RA---",
+        };
+
+        MachineGeneric::try_from_standard_tm_text_format(transitions_text).unwrap()
+    }
+}
+
+impl TryFrom<&str> for NotableMachine {
+    type Error = &'static str;
+
+    fn try_from(name: &str) -> Result<Self, Self::Error> {
+        // normalize string
+        let s = name.replace("_", "").to_ascii_lowercase();
+
+        let nm = match s.as_str() {
+            "bb3max" => NotableMachine::BB3Max,
+            "bb4max" => NotableMachine::BB4Max,
+            "bb5max" => NotableMachine::BB5Max,
+            _ => return Err("Not a valid machine name."),
+        };
+
+        Ok(nm)
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn try_from_name() {
+        let text = "BB3_MAX";
+        let n = NotableMachine::try_from(text);
+        assert!(n.is_ok());
+    }
 
     #[test]
     fn machine_2x2_6_4() {

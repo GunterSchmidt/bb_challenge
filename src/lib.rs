@@ -12,7 +12,7 @@ pub mod config;
 // pub mod examples;
 // pub mod html;
 // pub mod machine;
-// pub mod machine_binary;
+pub mod machine_binary;
 // pub mod machine_info;
 // pub mod pre_decider;
 // pub mod reporter;
@@ -20,8 +20,8 @@ pub mod config;
 // pub mod status;
 // pub mod step_record;
 // pub mod tape;
-// pub mod transition_binary;
 pub mod machine_generic;
+pub mod transition_binary;
 pub mod utils;
 
 // /// This is used to define the CPU usage during generator and decider run.

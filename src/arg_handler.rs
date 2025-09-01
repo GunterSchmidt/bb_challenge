@@ -1,7 +1,7 @@
 //! This crate provides an argument handler, which may be used to support typical arguments, e.g.
 //! '-m 1RB1LC_1RC1RB_1RD0LE_1LA1LD_1RZ0LA'. See below in the help_string().
 
-use crate::machine_generic::MachineGeneric;
+use crate::machine_generic::{MachineGeneric, NotableMachine};
 
 /// This is the return value of the argument handler
 #[non_exhaustive]
@@ -45,20 +45,15 @@ pub fn standard_args(args: &[String]) -> ArgValue {
     #[allow(clippy::single_match)]
     match args.len() {
         3 => match args[1].as_str() {
-            // TODO by name
-            // "-b" | "--name" => {
-            //     // if let Ok(no) = args[1].parse::<u64>() {}
-            //     let machine = Machine::build_machine(args[2].as_str());
-            //     match machine {
-            //         Some(m) => return ArgValue::Machine(Box::new(m)),
-            //         None => {
-            //             return ArgValue::Error(format!(
-            //                 "No machine with name '{}' found.",
-            //                 args[2]
-            //             ));
-            //         }
-            //     }
-            // }
+            "-b" | "--name" => {
+                // if let Ok(no) = args[1].parse::<u64>() {}
+                let n = NotableMachine::try_from(args[2].as_str());
+                match n {
+                    Ok(notable) => return ArgValue::Machine(Box::new(notable.machine())),
+                    Err(e) => return ArgValue::Error(e.to_string()),
+                }
+            }
+
             "-m" | "--machine" => {
                 let mg = MachineGeneric::try_from_standard_tm_text_format(&args[2]);
                 match mg {
