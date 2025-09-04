@@ -1,0 +1,4 @@
+id_calc_forward = true
+bb_challenge_filename_path = "../res/all_5_states_undecided_machines_with_global_header"
+html_out_path = "../bb_result_html"
+html_tape_shifts = true

@@ -2,6 +2,9 @@
 //! The limit is set to 10 symbols and 10 states, which should be sufficient for now. \
 //! Currently this only serves as intermediate format to read machine data and convert it then to MachineBinary,
 //! as the Busy Beaver Challenge only works with the symbols 0 and 1, which can be handled more efficiently.
+// TODO convert to use with Enums, the machine is not good to use anyhow
+// TODO Efficient Transition for BB(8,8) or BB(4/10), see what is reasonable. (symbols, states). bb_challenge deals with (6,2), (2,6) and (4,3)
+// largest according to wiki pages (https://wiki.bbchallenge.org/wiki/Champions).
 
 use std::fmt::Display;
 
@@ -243,7 +246,7 @@ impl TransitionGeneric {
     ///
     /// \[symbol,direction,status\] with first char the symbol to write on the tape, can be 0, 1 or any other char as undefined. \
     /// The distinction between 0,1 and undefined is relevant in the last transition. \
-    /// 0,1 will write and hold in the last transition, undefined will only hold. \
+    /// 0,1 will write and halt in the last transition, undefined will only halt. \
     /// This results in a different 'number of ones' count. \
     /// BBChallenge uses both notations. \
     /// Second char is L or R for direction or any other for undefined. \
@@ -252,7 +255,7 @@ impl TransitionGeneric {
     /// This is the main halt condition. Numbers are used for the downloadable seeds.
     pub fn new(transition: [u8; 3]) -> Self {
         assert!(transition.len() == 3);
-        // special hold in case of array
+        // special halt if direction is undefined
         if transition[2] == 0 {
             return TRANSITION_HALT;
         }

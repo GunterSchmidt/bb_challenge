@@ -1,13 +1,15 @@
 //! This crate provides an argument handler, which may be used to support typical arguments, e.g.
 //! '-m 1RB1LC_1RC1RB_1RD0LE_1LA1LD_1RZ0LA'. See below in the help_string().
 
-use crate::machine_generic::{MachineGeneric, NotableMachine};
+use crate::{
+    config::CONFIG_TOML,
+    data_provider::bb_file_reader::BBFileReader,
+    machine_generic::{MachineGeneric, NotableMachine},
+};
 
 /// This is the return value of the argument handler
 #[non_exhaustive]
 pub enum ArgValue {
-    // TODO machine
-    // Machine(Box<Machine>),
     Machine(Box<MachineGeneric>),
     /// Returned when the arg value leads to an action which is performed directly.
     Done,
@@ -64,22 +66,21 @@ pub fn standard_args(args: &[String]) -> ArgValue {
                 }
             }
 
-            // TODO
-            // "-n" | "--file-number" => {
-            //     if let Ok(no) = args[2].parse::<u64>() {
-            //         let mut file_path = FILE_PATH_BB5_CHALLENGE_DATA_FILE;
-            //         if args.len() > 3 {
-            //             file_path = args[3].as_str();
-            //         }
-            //         // println!("Machine number: {}", no);
-            //         match BBFileReader::read_machine_single(no, file_path) {
-            //             Ok(machine) => return ArgValue::Machine(Box::new(machine)),
-            //             Err(e) => return ArgValue::Error(format!("{e:?}")),
-            //         };
-            //     } else {
-            //         return ArgValue::Error(format!("Invalid machine number: {}", args[2]));
-            //     }
-            // }
+            "-n" | "--file-number" => {
+                if let Ok(no) = args[2].parse::<u64>() {
+                    let mut file_path = CONFIG_TOML.bb_challenge_filename_path();
+                    if args.len() > 3 {
+                        file_path = args[3].as_str();
+                    }
+                    // println!("Machine number: {}", no);
+                    match BBFileReader::read_machine_single(no, file_path) {
+                        Ok(machine) => return ArgValue::Machine(Box::new(machine.into())),
+                        Err(e) => return ArgValue::Error(format!("{e:?}")),
+                    };
+                } else {
+                    return ArgValue::Error(format!("Invalid machine number: {}", args[2]));
+                }
+            }
 
             // No valid argument
             _ => {}

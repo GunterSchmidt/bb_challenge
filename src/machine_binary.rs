@@ -1,14 +1,23 @@
+//! The [MachineBinary] holds the transitions for one machine where the symbol can only be 0 or 1.
+//! This is a single column array with an additional first line. The transition for state/symbol is
+//! calculated by state * 2 + symbol with state A=1, so C1 would become 3*2+1 = transitions[7]. \
+//! Transition[0] contains additional information, always the number of states used, see [MachineBinary],
+//! therefore use either new or make sure the number of states are set.
+//!
+//! Use TryFrom to create a machine from Standard TM Text Format. \
+//! A normalized ID can be calculated by calling calc_normalized_id, see [calc_normalized_id].
+
 use crate::{
-    config::{MAX_STATES, NUM_FIELDS},
+    config::{IdNormalized, MAX_STATES, NUM_FIELDS},
     machine_generic::{MachineGeneric, NotableMachine, StateType, SymbolType},
     transition_binary::{TransitionBinary, TransitionType, TRANSITION_BINARY_UNUSED},
 };
 // use crate::{
-//     data_provider::generator::create_all_transition_permutations,
+//     data_provider::enumerator::create_all_transition_permutations,
 //     transition_binary::{TransitionBinary, TransitionType, TRANSITION_UNUSED},
 // };
 
-/// Holds the transitions for one turing machine. \
+/// Contains the transitions for one turing machine. \
 /// This usually would be a table of 2 * n_states fields, having A0 A1 in the first line.
 /// As state 0 is undefined and to avoid number shifting to access the data for each state, the line 0 is unused.
 /// For faster access, the 2 field wide table is reduced to a single dimensional array, with access by state*2 + status,
@@ -36,15 +45,17 @@ pub struct MachineBinary {
 }
 
 impl MachineBinary {
-    /// Creates a new transition table and stores the n_states. \
-    /// This is the correct fast approach.
-    pub fn new_with_n_states(
-        transitions: TransitionTableBinaryArray1D,
-        n_states: usize,
-    ) -> MachineBinary {
-        let mut table = Self { transitions };
-        table.set_n_states(n_states);
-        table
+    // Use new only if the transition[0] already contains the n_states (usually only from enumerator).
+    pub fn new(transitions: TransitionTableBinaryArray1D) -> Self {
+        Self { transitions }
+    }
+
+    /// Creates a new machine and stores the n_states. \
+    /// This is the correct fast approach when the number of states is known, but not in the machine data.
+    pub fn new_with_n_states(transitions: TransitionTableBinaryArray1D, n_states: usize) -> Self {
+        let mut machine = Self { transitions };
+        machine.set_n_states(n_states);
+        machine
     }
 
     /// Creates a new transition table and stores the n_states. \
@@ -242,21 +253,32 @@ impl MachineBinary {
         &self.transitions[2..n_states * 2 + 2]
     }
 
-    /// Calculates the id for forward rotating or backward rotating transitions.
-    pub fn calc_id(&self, as_forward: bool) -> u64 {
+    /// Calculates the id for forward rotating or backward rotating transitions. \
+    /// This is an expensive operation and should only be used for display purposes.
+    // TODO create normalized transition permutations array, so no calc is necessary, just cut for n_states.
+    // Should be building up for the states, so it is not alphabetically sorted, e.g. all 0 first, but
+    // ---, 0LA, 0RA, 1LA, 1RA, 0LB, 0RB, 1LB, 1RA, etc.
+    // machine BB2 1RB---_1LA0LA would have the same id as BB3 1RB---_1LA0LA_------
+    // Since the fields are rotated from field 0,1,2 etc. all machines before the second to last has a value
+    // other than --- can be skipped. Is this better for enumeration?
+    // Rotating backward all machines can be skipped if the first entry is --- or once the last entry is reached.
+    // Need to think about it.
+    pub fn calc_normalized_id(&self) -> IdNormalized {
         let n_states = self.n_states();
         let tr_permutations = TransitionBinary::create_all_transition_permutations(n_states);
-        if as_forward {
-            Self::calc_id_forward(&self, &tr_permutations)
-        } else {
-            Self::calc_id_backward(&self, &tr_permutations)
-        }
+        #[cfg(not(feature = "normalized_id_reversed"))]
+        return Self::calc_normalized_id_forward(&self, &tr_permutations);
+        #[cfg(feature = "normalized_id_reversed")]
+        Self::calc_normalized_id_backward(&self, &tr_permutations)
     }
 
     /// Calculates the id from the given transitions
-    pub fn calc_id_forward(table: &MachineBinary, tr_permutations: &[TransitionBinary]) -> u64 {
+    pub fn calc_normalized_id_forward(
+        table: &MachineBinary,
+        tr_permutations: &[TransitionBinary],
+    ) -> IdNormalized {
         let n_states = table.n_states();
-        let mut id: u64 = 0;
+        let mut id: IdNormalized = 0;
         let n2 = n_states as u32 * 2;
         let last_pos = tr_permutations.len() - 1;
 
@@ -271,15 +293,18 @@ impl MachineBinary {
                     .unwrap()
             };
 
-            id += (pos * tr_permutations.len().pow(n2 - (n2 - i as u32))) as u64;
+            id += (pos * tr_permutations.len().pow(n2 - (n2 - i as u32))) as IdNormalized;
         }
 
         id
     }
 
-    pub fn calc_id_backward(table: &MachineBinary, tr_permutations: &[TransitionBinary]) -> u64 {
+    pub fn calc_normalized_id_backward(
+        table: &MachineBinary,
+        tr_permutations: &[TransitionBinary],
+    ) -> IdNormalized {
         let n_states = table.n_states();
-        let mut id: u64 = 0;
+        let mut id: IdNormalized = 0;
         let n2 = n_states as u32 * 2;
         let last_pos = tr_permutations.len() - 1;
 
@@ -294,7 +319,7 @@ impl MachineBinary {
                     .unwrap()
             };
 
-            id += (pos * tr_permutations.len().pow(n2 - i as u32 - 1)) as u64;
+            id += (pos * tr_permutations.len().pow(n2 - i as u32 - 1)) as IdNormalized;
         }
 
         id
@@ -461,6 +486,14 @@ impl TryFrom<MachineGeneric> for MachineBinary {
         transitions[0].transition |= dim.n_states as TransitionType;
 
         Ok(Self { transitions })
+    }
+}
+
+// convert from Machine Binary to MachineGeneric, simple, but slow
+impl From<MachineBinary> for MachineGeneric {
+    fn from(mb: MachineBinary) -> Self {
+        let tm = mb.to_standard_tm_text_format();
+        MachineGeneric::try_from_standard_tm_text_format(&tm).unwrap()
     }
 }
 

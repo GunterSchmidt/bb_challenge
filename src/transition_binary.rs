@@ -7,7 +7,33 @@
 //! With only 2 bytes for each transition, a Turing Machine can be stored in just 24 bytes
 //! (5 * 2 transitions and 2 dummy transitions.). This reduces the memory footprint considerably. \
 //! In debug mode the transition is also carried as chars to allow an easy understanding of the data in the debugger. \
-//! See struct [TransitionBinary] for details.
+//!
+//! Performance considerations
+//!
+//! In modern computers usually memory is the bottleneck. Therefore it is usually faster to use more CPU cycles instead
+//! of memory. Bit Operations only use 1 CPU cycle and tend to be not noticeable. Also arrays are much faster than Vec as
+//! the memory is on the stack and in L1 cache. One also wants to avoid if branching, as this disrupt the lookahead of the CPU. \
+//! This is used for the setup of the transition.
+//! - symbol:     bit 0: Bit 0 (most right bit) contains the symbol 0 or 1. For symbol, undefined does not exists, because
+//! if the symbol is undefined, then also the direction is undefined, so it is sufficient to check if the direction is undefined.
+//! To retrieve the symbol, only one AND 0b0000_0001 need to be performed;
+//! - direction:  bits 6, 7: value right 3, left 1 and undefined 2 (because -2 = 0, no change in direction)
+//! The direction can be retrieved with an AND operation and subtracting 2 to get direction, which is then -1, 0 or one which can be
+//! directly added to the head position avoiding costly if operations.
+//! - state: bits 1-4: The state can be retrieved with an AND and a shift right operation. However,
+//! since the machine stores the data in a single column array (not a 2D array like [state][symbol]), to get the transition for
+//! the state/symbol combination one needs to calculate state * 2 + symbol. Since the symbol is store starting from bit 1, it is
+//! naturally doubled and the shift operation can be omitted.
+//!
+//! While this is stored in i16 data type, it also could be stored in an u8 halving the size of the machine. In my measurements
+//! the time to convert from u8 to u32/u64 for the CPU takes more time than having a larger memory footprint. This question is still open.
+//!
+//! Usage
+//!
+//! While this may be confusing, this needs to be treated as a black box. This internal bit setup maybe changed. There are plenty
+//! functions to retrieve the symbol, direction and state or check on statuses. These calls will be highly optimized in release mode.
+//!
+// TODO possibly move direction and symbol to bit 2, leaving only state in bit 1, reducing one filter operation for state.
 
 use crate::config::MAX_STATES;
 use crate::machine_binary::MachineBinary;
@@ -23,9 +49,9 @@ pub const TRANSITION_SYM2_UNUSED: TransitionBinary = TransitionBinary {
     #[cfg(debug_assertions)]
     text: ['_', '_', '_'],
 };
-// This is the undefined hold ('---'), where no last symbol is written.
-pub const TRANSITION_SYM2_HOLD: TransitionBinary = TransitionBinary {
-    transition: TRANSITION_HOLD,
+// This is the undefined halt ('---'), where no last symbol is written.
+pub const TRANSITION_BINARY_HALT: TransitionBinary = TransitionBinary {
+    transition: TRANSITION_UNDEFINED,
     #[cfg(debug_assertions)]
     text: ['-', '-', '-'],
 };
@@ -54,29 +80,25 @@ const FILTER_SYMBOL_0_1: TransitionType = 0b0000_0001;
 const FILTER_DIR: TransitionType = 0b1100_0000;
 pub const FILTER_STATE: TransitionType = 0b0001_1110;
 const FILTER_ARRAY_ID: TransitionType = 0b0001_1111;
-pub const TRANSITION_HOLD: TransitionType = DIRECTION_UNDEFINED; // | SYMBOL_UNDEFINED | STATE_HOLD;
+pub const TRANSITION_UNDEFINED: TransitionType = DIRECTION_UNDEFINED;
 pub const TRANSITION_BINARY_UNUSED: TransitionType = 0b0000_0000; // 0b1010_0001;
 pub const TRANSITION_0RA: TransitionType = 0b1100_0010;
 const SYMBOL_ZERO: TransitionType = 0b0000_0000;
 const SYMBOL_ONE: TransitionType = 0b0000_0001;
-// const SYMBOL_UNDEFINED: TransitionType = 0b0010_0000;
 const DIRECTION_UNDEFINED: TransitionType = 0b1000_0000;
 const TO_RIGHT: TransitionType = 0b1100_0000;
 const TO_LEFT: TransitionType = 0b0100_0000;
-pub const STATE_HOLD_SYM2: TransitionType = 0;
+pub const STATE_HALT_SYM2: TransitionType = 0;
 
-// TODO doc
-// TODO change Undefined: Symbol only bit 0 (0 and 1), Direction holds undefined. Symbol and Direction are either both defined or undefined.
-// TODO state could be limited to 8 values, then two bits (4,5) would be free for other uses.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionBinary {
-    /// - symbol:     bits 0,5: write symbol, allows check with just 0b0000_0001 if undefined not relevant;
+    /// - symbol:     bit 0: write symbol, allows check with just AND 0b0000_0001
     ///   in combination with state the last 5 bits directly give the transition array id. \
     ///   value 0,1 or 2 for undefined, TODO old 3 for unused (for unused transitions in array)
     /// - direction:  bits 6, 7: direction \
     ///   value right 3, left 1 or 2 for undefined (because -2 = 0, not change in direction), calculated with -2 to get direction.
     /// - next state: bits 1-4: The value is naturally doubled for faster array id calculation \
-    ///   value state or 0 for hold
+    ///   value state or 0 for halt
     pub transition: TransitionType,
     /// transition as text for debugging
     #[cfg(debug_assertions)]
@@ -94,14 +116,13 @@ impl TransitionBinary {
     /// \[symbol,direction,status\]
     /// With first char the symbol to write on the tape, can be 0, 1 or any other char as undefined. \
     /// The distinction between 0,1 and undefined is relevant in the last transition. \
-    /// 0,1 will write and hold in the last transition, undefined will only hold. \
+    /// 0,1 will write and halt in the last transition, undefined will only halt. \
     /// This results in a different 'number of ones' count. \
     /// BBChallenge uses both notations. \
     /// Second car is L or R for direction or any other for undefined. \
     /// L,R or undefined is irrelevant in last transition, in any other step it must be defined. \
     /// Third car is next state, it can be denoted as number 1-9, or letter A-Y. 0 or Z represent halt. \
     /// This is the main halt condition. Numbers are used for the downloadable seeds.
-    /// TODO make try_from and possibly new without Result
     pub fn try_new(transition_text: [u8; 3]) -> Result<Self, TransitionError> {
         // let symbol_char = transition_text[0];
         // let direction_char = transition_text[1];
@@ -113,18 +134,18 @@ impl TransitionBinary {
             b'0' | 0 => 0,
             b'1' | 1 => SYMBOL_ONE,
             // No undefined here
-            b'-' => return Ok(TRANSITION_SYM2_HOLD), // SYMBOL_UNDEFINED,
+            b'-' => return Ok(TRANSITION_BINARY_HALT), // SYMBOL_UNDEFINED,
             _ => return Err(TransitionError::InvalidSymbol(transition_text[0])),
         };
 
         match state_char {
-            // Numeric 0 or char Z means Hold State
+            // Numeric 0 or char Z means Halt State
             // This does nothing, because it would be 0 which it already is.
             0 | b'Z' => {
                 // if transition_bits == SYMBOL_UNDEFINED {
-                //     return Ok(TRANSITION_SYM2_HOLD);
+                //     return Ok(TRANSITION_SYM2_HALT);
                 // }
-                // transition_bits |= STATE_HOLD; // is 0 anyway
+                // transition_bits |= STATE_HALT; // is 0 anyway
             }
             // Numeric states (number from array)
             1..=9 => {
@@ -152,7 +173,7 @@ impl TransitionBinary {
                 transition_bits |= (num_state as TransitionType) << 1;
             }
             // '-' is an error as it cannot be undefined if symbol is not undefined also.
-            // If symbol is defined, 0 or 'Z' are expected as hold char.
+            // If symbol is defined, 0 or 'Z' are expected as halt char.
             _ => return Err(TransitionError::InvalidStateChar(state_char)),
         }
 
@@ -182,52 +203,6 @@ impl TransitionBinary {
         })
     }
 
-    // / Create transition from array, where all values are numbers only, not chars.
-    // / This is faster than new and used for the generator, but only used during batch creation.
-    // / Discarded for DRY principle.
-    // / [symbol, direction, state]
-    //     pub fn new_int(transition_data: [u8; 3]) -> Self {
-    //         const MAX: u8 = MAX_STATES as u8 + 1;
-    //         // special hold in case of array
-    //         if transition_data[2] == 0 {
-    //             return TRANSITION_SYM2_HOLD;
-    //         }
-    //         // symbol
-    //         let mut transition: TransitionType = match transition_data[0] {
-    //             0 => 0,
-    //             1 => SYMBOL_ONE,
-    //             _ => SYMBOL_UNDEFINED,
-    //         };
-    //         // direction
-    //         match transition_data[1] {
-    //             1 => transition |= TO_LEFT,
-    //             0 => transition |= TO_RIGHT,
-    //             _ => {
-    //                 panic!("Direction can only be 0 or 1. Hold is only defined in state, field [2].")
-    //             }
-    //         };
-    //         // state
-    //         match transition_data[2] {
-    //             1..MAX => transition |= (transition_data[2] as TransitionType) << 1,
-    //             _ => {
-    //                 panic!(
-    //                     "Unknown value for state: {}. Only 0-{MAX_STATES} are allowed.",
-    //                     transition_data[2]
-    //                 )
-    //             }
-    //         };
-    //
-    //         Self {
-    //             transition,
-    //             #[cfg(debug_assertions)]
-    //             text: [
-    //                 (transition_data[0] + b'0') as char,
-    //                 if transition_data[1] == 1 { 'L' } else { 'R' },
-    //                 (transition_data[2] + b'A' - 1) as char,
-    //             ],
-    //         }
-    //     }
-
     // pub fn get_n_states(transitions: &[TransitionSymbol2]) -> usize {
     //     for (i, t) in transitions[4..].iter().enumerate().step_by(2) {
     //         if t.is_unused() {
@@ -243,17 +218,6 @@ impl TransitionBinary {
 
     pub fn is_dir_left(&self) -> bool {
         self.transition & FILTER_DIR == TO_LEFT
-    }
-
-    /// Returns the array_id for a 1D array, which is state * 2 + symbol.
-    /// This only works for self referencing transitions, as the written symbol = tape read symbol.
-    pub fn self_ref_array_id(&self) -> usize {
-        (self.transition & FILTER_ARRAY_ID) as usize
-    }
-
-    /// This only works for self referencing transitions, as the written symbol = tape read symbol.
-    pub fn self_ref_array_id_to_field_name(&self) -> String {
-        MachineBinary::array_id_to_field_name(self.self_ref_array_id())
     }
 
     /// returns direction for left = -1, for right 1
@@ -313,7 +277,7 @@ impl TransitionBinary {
     }
 
     pub fn is_halt(&self) -> bool {
-        self.transition & FILTER_STATE == STATE_HOLD_SYM2
+        self.transition & FILTER_STATE == STATE_HALT_SYM2
     }
 
     // pub fn is_self_ref(&self) -> bool {
@@ -341,6 +305,17 @@ impl TransitionBinary {
     //     self.transition |= FILTER_SELF_REF;
     // }
 
+    /// Returns the array_id for a 1D array, which is state * 2 + symbol.
+    /// This only works for self referencing transitions, as the written symbol = tape read symbol.
+    pub fn self_ref_array_id(&self) -> usize {
+        (self.transition & FILTER_ARRAY_ID) as usize
+    }
+
+    /// This only works for self referencing transitions, as the written symbol = tape read symbol.
+    pub fn self_ref_array_id_to_field_name(&self) -> String {
+        MachineBinary::array_id_to_field_name(self.self_ref_array_id())
+    }
+
     /// This creates all transition permutations for one field, e.g. \
     /// 0RA, 1RA, 0LA, 1LA, --- for BB1 \
     /// The number can be calculated by (4 * n_states + 1), e.g. 21 for BB5. \
@@ -367,8 +342,8 @@ impl TransitionBinary {
             tr[0] = 1;
             transitions.push(TransitionBinary::try_new(tr).unwrap());
         }
-        // hold as last transition
-        transitions.push(TRANSITION_SYM2_HOLD);
+        // halt as last transition
+        transitions.push(TRANSITION_BINARY_HALT);
 
         transitions
     }
@@ -380,7 +355,6 @@ impl Default for TransitionBinary {
     }
 }
 
-// TODO Own Error Type or Simple Error crate
 impl TryFrom<&str> for TransitionBinary {
     type Error = String;
 
@@ -398,9 +372,9 @@ impl TryFrom<&str> for TransitionBinary {
 
 impl From<&TransitionGeneric> for TransitionBinary {
     fn from(tg: &TransitionGeneric) -> Self {
-        // quick check if undefined hold
+        // quick check if undefined halt
         if tg.direction == 0 {
-            return TRANSITION_SYM2_HOLD;
+            return TRANSITION_BINARY_HALT;
         }
 
         // symbol
@@ -421,7 +395,7 @@ impl From<&TransitionGeneric> for TransitionBinary {
         if let 1..9 = tg.state_next {
             t_new |= (tg.state_next as i16) << 1;
         };
-        // else 0 for hold
+        // else 0 for halt
 
         #[cfg(not(debug_assertions))]
         return Self { transition: t_new };
@@ -447,7 +421,7 @@ impl From<&TransitionGeneric> for TransitionBinary {
 impl std::fmt::Display for TransitionBinary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.transition {
-            TRANSITION_HOLD => write!(f, "---"),
+            TRANSITION_UNDEFINED => write!(f, "---"),
             TRANSITION_BINARY_UNUSED => write!(f, "   "),
             _ => {
                 let write_symbol = match self.transition & FILTER_SYMBOL_0_1 {

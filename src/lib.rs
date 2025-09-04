@@ -6,28 +6,22 @@
 // // pub mod sub_decider_loop_v4;
 pub mod arg_handler;
 pub mod config;
-// pub mod data_provider;
-// pub mod decider;
+pub mod data_provider;
+pub mod decider;
 // pub mod error;
 // pub mod examples;
-// pub mod html;
+pub mod html;
 // pub mod machine;
 pub mod machine_binary;
-// pub mod machine_info;
+pub mod machine_info;
 // pub mod pre_decider;
-// pub mod reporter;
+pub mod reporter;
 // pub mod single_thread_worker;
-// pub mod status;
+pub mod status;
 // pub mod step_record;
-// pub mod tape;
 pub mod machine_generic;
+// pub mod machine_id;
+pub mod tape;
+pub mod toml;
 pub mod transition_binary;
 pub mod utils;
-
-// /// This is used to define the CPU usage during generator and decider run.
-// // TODO possibly move CPU percent into this enum, remove from Config
-// pub enum CoreUsage {
-//     SingleCore,
-//     SingleCoreGeneratorMultiCoreDecider,
-//     MultiCore,
-// }
