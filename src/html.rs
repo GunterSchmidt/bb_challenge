@@ -176,6 +176,14 @@ impl HtmlWriter {
         self.write_html_line_count = 0;
     }
 
+    pub fn create_html_file_start(
+        &mut self,
+        decider_id: &DeciderId,
+        machine: &MachineBinary,
+    ) -> io::Result<()> {
+        let mi = MachineInfo::from(machine);
+        self.create_html_file_start_m_info(decider_id, &mi)
+    }
     /// Writes to html header and the start of the body to the file. \
     /// Sets file_name in self.
     /// # Arguments
@@ -183,7 +191,7 @@ impl HtmlWriter {
     /// - machine to write, uses tm_standard_name for file name
     ///
     /// Example: ("data", "hold", m) creates /data/hold_1RB0RC_1RA0RA_0RB1RC.html
-    pub fn create_html_file_begin(
+    pub fn create_html_file_start_m_info(
         &mut self,
         decider_id: &DeciderId,
         machine: &MachineInfo,
@@ -193,7 +201,7 @@ impl HtmlWriter {
                 if !std::fs::exists(path)? {
                     std::fs::create_dir_all(path)?;
                 }
-                let file_name = decider_id.name.replace(" ", "_")
+                let file_name = decider_id.name.replace(" ", "_").to_lowercase()
                     + "_"
                     + machine.file_name().as_str()
                     + ".html";
@@ -227,10 +235,10 @@ impl HtmlWriter {
                     }
 
                     let text = s.join("</br>");
-                    writeln!(file, "<p>{text}</p>",)?;
-                    self.write_html_p("Note: This machine has self-referencing transitions (e.g. Field A1: 1RA) \
+                    writeln!(file, "<p>{text}</p>")?;
+                    writeln!(file,"<p>Note: This machine has self-referencing transitions (e.g. Field A1: 1RA) \
                 which leads to repeatedly calling itself in case of tape head reads 1. This is used to speed up the \
-                decider by jumping over these repeated steps.");
+                decider by jumping over these repeated steps.</p>")?;
                 }
 
                 // start with an opening <p> tag, as the lines end with </br>, but this actually leads to nested paragraphs.
@@ -249,7 +257,16 @@ impl HtmlWriter {
         }
     }
 
+    pub fn rename_file_to_status_self(&mut self, status: &MachineStatus) {
+        rename_file_to_status(
+            self.path.as_ref().unwrap(),
+            self.file_name.as_ref().unwrap(),
+            status,
+        );
+    }
+
     pub fn write_html_file_end(&mut self, step_no: StepTypeBig, status: &MachineStatus) {
+        // no if let as borrow checker would complain
         if self.buf_writer.is_some() {
             use num_format::ToFormattedString;
             let locale = config::user_locale();
@@ -289,12 +306,19 @@ impl HtmlWriter {
             if let Some(buf_writer) = self.buf_writer.as_mut() {
                 crate::html::write_file_end(buf_writer).expect("Html file could not be written")
             }
+
+            // dbg!(
+            //     self.file_name.as_ref().unwrap(),
+            //     self.path.as_ref().unwrap()
+            // );
+            // Rename file to status
+            self.rename_file_to_status_self(status);
         }
     }
 
     pub fn write_html_p(&mut self, text: &str) {
         if let Some(buf_writer) = self.buf_writer.as_mut() {
-            crate::html::write_html_p(buf_writer, text);
+            write_html_p(buf_writer, text);
         }
     }
 
@@ -374,9 +398,7 @@ pub fn get_html_path(sub_path: &str, config: &Config) -> Option<String> {
 /// #Panics
 /// If file could not be renamed.
 pub fn rename_file_to_status(file_path: &str, file_name: &str, machine_status: &MachineStatus) {
-    // -> io::Result<()>
     let old_path = format!("{}{}{}", file_path, MAIN_SEPARATOR_STR, file_name);
-    // let mut new_path: Option<String> = None;
     let new_path = match machine_status {
         MachineStatus::NoDecision => todo!(),
         MachineStatus::EliminatedPreDecider(_) => todo!(),
@@ -385,8 +407,19 @@ pub fn rename_file_to_status(file_path: &str, file_name: &str, machine_status: &
             let f_name_new = "undecided_".to_string() + file_name;
             Some(format!("{}{}{}", file_path, MAIN_SEPARATOR_STR, f_name_new))
         }
+        MachineStatus::DecidedHalts(steps) => {
+            // rename file
+            let f_name_new = format!("decided_halt_{steps}_{}", file_name);
+            Some(format!("{}{}{}", file_path, MAIN_SEPARATOR_STR, f_name_new))
+        }
+        MachineStatus::DecidedNonHalt(_) => {
+            // rename file
+            let f_name_new = format!("decided_non_halt_{}", file_name);
+            Some(format!("{}{}{}", file_path, MAIN_SEPARATOR_STR, f_name_new))
+        }
         _ => {
             // rename file
+            // dbg!(machine_status);
             let f_name_new = "decided_".to_string() + file_name;
             Some(format!("{}{}{}", file_path, MAIN_SEPARATOR_STR, f_name_new))
         }
@@ -488,6 +521,7 @@ fn write_dark_css_content(file: &mut File) -> io::Result<()> {
 pub fn write_file_end(buf_writer: &mut BufWriter<File>) -> io::Result<()> {
     writeln!(buf_writer, "</body>")?;
     writeln!(buf_writer, "</html>")?;
+    buf_writer.flush().expect("Could not flush");
     Ok(())
 }
 

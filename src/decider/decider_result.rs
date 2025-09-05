@@ -101,7 +101,7 @@ impl Display for EndReason {
     }
 }
 
-/// The result of the decider. It holds a number of counters for each result type and may carry the
+/// The result of the decider. It halts a number of counters for each result type and may carry the
 /// max steps and undecided machines.
 /// This is always returned. end_reason should give error information if any.
 // TODO list of deciders with id, name, config, runtime, evaluated and decided (= and undecided)
@@ -112,10 +112,10 @@ pub struct DeciderResultStats {
     num_processed_total: u64,
     /// Number of machines which have run through deciders. This included the Pre-Decider if not eliminated in the enumerator.
     num_evaluated: u64,
-    /// Tested machines which come to a hold.
+    /// Tested machines which come to a halt.
     /// This does not include machines which have not been tested, e.g. because they cannot produce the maximal steps.
-    num_hold: u64,
-    /// Eliminated machines which cannot reach the maximum steps (may or may not hold).
+    num_halt: u64,
+    /// Eliminated machines which cannot reach the maximum steps (may or may not halt).
     num_not_max: u64,
     /// Tested machines which did not come to a result.
     num_undecided: u64,
@@ -128,7 +128,7 @@ pub struct DeciderResultStats {
     n_states: usize,
     /// Number of Turing machines to decide.
     // num_total_turing_machines: IdBig,
-    num_not_max_too_many_hold_transitions: u64,
+    num_not_max_too_many_halt_transitions: u64,
     /// Eliminated machines which cannot reach the maximum steps because not all states were used.
     num_not_max_not_all_states_used: u64,
 
@@ -231,24 +231,24 @@ impl DeciderResultStats {
         self.num_evaluated += 1;
         match status {
             MachineStatus::DecidedHalts(steps) => {
-                self.num_hold += 1;
+                self.num_halt += 1;
                 self.steps_max.add_steps(*steps, machine, status);
 
                 #[cfg(feature = "bb_counter_stats")]
                 {
                     self.counter_stats.add_steps(*steps);
 
-                    // if *steps == 3 && self.counter_stats.hold_steps_stats[3] < 20 {
-                    //     println!("Holds in 3: {}, {}", machine, status);
+                    // if *steps == 3 && self.counter_stats.halt_steps_stats[3] < 20 {
+                    //     println!("Halts in 3: {}, {}", machine, status);
                     // }
-                    // if *steps == 4 && self.counter_stats.hold_steps_stats[4] < 20 {
-                    //     println!("Holds in 4: {}, {}", machine, status);
+                    // if *steps == 4 && self.counter_stats.halt_steps_stats[4] < 20 {
+                    //     println!("Halts in 4: {}, {}", machine, status);
                     // }
-                    // if *steps == 5 && self.counter_stats.hold_steps_stats[5] < 20 {
-                    //     println!("Holds in 5: {}, {}", machine, status);
+                    // if *steps == 5 && self.counter_stats.halt_steps_stats[5] < 20 {
+                    //     println!("Halts in 5: {}, {}", machine, status);
                     // }
-                    // if *steps == 6 && self.counter_stats.hold_steps_stats[6] < 20 {
-                    //     println!("Holds in 6: {}, {}", machine, status);
+                    // if *steps == 6 && self.counter_stats.halt_steps_stats[6] < 20 {
+                    //     println!("Halts in 6: {}, {}", machine, status);
                     // }
                 }
             }
@@ -257,8 +257,8 @@ impl DeciderResultStats {
                 PreDeciderReason::NotAllStatesUsed => {
                     self.pre_decider_count.num_not_all_states_used += 1
                 }
-                PreDeciderReason::NotExactlyOneHoldCondition => {
-                    self.pre_decider_count.num_not_exactly_one_hold_condition += 1
+                PreDeciderReason::NotExactlyOneHaltCondition => {
+                    self.pre_decider_count.num_not_exactly_one_halt_condition += 1
                 }
                 PreDeciderReason::OnlyOneDirection => {
                     self.pre_decider_count.num_only_one_direction += 1
@@ -275,14 +275,14 @@ impl DeciderResultStats {
                 }
             },
             MachineStatus::DecidedHaltsDetail(_, _, _) => todo!(),
-            // MachineStatus::DecidedHoldsOld(steps, _) => {
-            //     self.num_hold += 1;
+            // MachineStatus::DecidedHaltsOld(steps, _) => {
+            //     self.num_halt += 1;
             //     #[cfg(feature = "bb_counter_stats")]
             //     {
             //         if steps < COUNTER_ARRAY_SIZE as StepTypeBig {
-            //             self.hold_steps_stats[steps as usize] += 1;
+            //             self.halt_steps_stats[steps as usize] += 1;
             //         } else {
-            //             self.hold_steps_stats[0] += 1;
+            //             self.halt_steps_stats[0] += 1;
             //         }
             //     }
             //     self.add_steps(*steps, machine, status);
@@ -311,7 +311,7 @@ impl DeciderResultStats {
                 self.num_undecided += 1;
             }
             MachineStatus::DecidedNotMaxTooManyHaltTransitions => {
-                self.num_not_max_too_many_hold_transitions += 1;
+                self.num_not_max_too_many_halt_transitions += 1;
             }
             MachineStatus::DecidedNotMaxNotAllStatesUsed => {
                 self.num_not_max_not_all_states_used += 1;
@@ -357,7 +357,7 @@ impl DeciderResultStats {
     pub fn add_result(&mut self, result: &DeciderResultStats) -> bool {
         self.num_processed_total += result.num_processed_total;
         self.num_evaluated += result.num_evaluated;
-        self.num_hold += result.num_hold;
+        self.num_halt += result.num_halt;
         // self.num_endless += result.num_endless;
         self.num_not_max += result.num_not_max;
 
@@ -368,7 +368,7 @@ impl DeciderResultStats {
         self.endless_count.add_self(&result.endless_count);
 
         self.num_not_max_not_all_states_used += result.num_not_max_not_all_states_used;
-        self.num_not_max_too_many_hold_transitions += result.num_not_max_too_many_hold_transitions;
+        self.num_not_max_too_many_halt_transitions += result.num_not_max_too_many_halt_transitions;
 
         let mut is_ok = true;
 
@@ -492,11 +492,11 @@ impl DeciderResultStats {
     //         let last = machines.len().min(max_machines);
     //         let mut s = String::new();
     //         for m in machines.iter().take(last) {
-    //             s.push_str(format!("Hold {}\n", m).as_str());
+    //             s.push_str(format!("Halt {}\n", m).as_str());
     //         }
     //         s
     //     } else if self.num_machines_for_steps_max == 0 {
-    //         "No machines found that holds!".to_string()
+    //         "No machines found that halts!".to_string()
     //     } else {
     //         format!(
     //             "No max step machines recorded, but {} machines found!",
@@ -588,8 +588,8 @@ impl DeciderResultStats {
         self.num_evaluated
     }
 
-    pub fn num_hold(&self) -> u64 {
-        self.num_hold
+    pub fn num_halt(&self) -> u64 {
+        self.num_halt
     }
 
     pub fn num_not_max(&self) -> u64 {
@@ -614,8 +614,8 @@ impl DeciderResultStats {
         num_turing_machine_permutations(self.n_states) as IdNormalized
     }
 
-    pub fn num_not_max_too_many_hold_transitions(&self) -> u64 {
-        self.num_not_max_too_many_hold_transitions
+    pub fn num_not_max_too_many_halt_transitions(&self) -> u64 {
+        self.num_not_max_too_many_halt_transitions
     }
 
     pub fn pre_decider_count(&self) -> PreDeciderCount {
@@ -677,16 +677,16 @@ impl Display for DeciderResultStats {
             )
             .as_str(),
         );
-        buf.write_formatted(&self.num_hold, &locale);
+        buf.write_formatted(&self.num_halt, &locale);
         s.push_str(
             format!(
-                "  {LEVEL_1_CHAR} Decided Holds:    {:>NUM_LONG_LEN$}\n",
+                "  {LEVEL_1_CHAR} Decided Halts:    {:>NUM_LONG_LEN$}\n",
                 buf.as_str()
             )
             .as_str(),
         );
-        // buf.write_formatted(&self.num_not_max_too_many_hold_transitions, &locale);
-        // s.push_str(format!("  Two+ Hold Trans.: {:>NUM_LEN$}\n", buf.as_str()).as_str());
+        // buf.write_formatted(&self.num_not_max_too_many_halt_transitions, &locale);
+        // s.push_str(format!("  Two+ Halt Trans.: {:>NUM_LEN$}\n", buf.as_str()).as_str());
         // buf.write_formatted(&self.num_not_max_not_all_states_used, &locale);
         // s.push_str(format!("  Not All States used:{:>13}\n", buf.as_str()).as_str());
         // buf.write_formatted(&self.num_endless, &locale);
@@ -738,9 +738,9 @@ pub struct EndlessCount {
     pub num_expanding_cycler: u64,
     pub num_expanding_bouncer: u64,
     pub num_only_one_direction: u64,
-    /// Eliminated machines which cannot hold because they have no hold conditions.
-    pub num_no_hold_transition: u64,
-    /// Eliminated machines which cannot reach the maximum steps because they have two or more hold conditions.
+    /// Eliminated machines which cannot halt because they have no halt conditions.
+    pub num_no_halt_transition: u64,
+    /// Eliminated machines which cannot reach the maximum steps because they have two or more halt conditions.
     pub num_simple_start_cycle: u64,
     pub num_start_recursive: u64,
     pub num_writes_only_zeros: u64,
@@ -757,8 +757,8 @@ impl EndlessCount {
             NonHaltReason::ExpandingCycler => todo!(),
             // EndlessReason::OnlyOneDirection => self.num_only_one_direction += 1,
             NonHaltReason::OnlyOneDirection => todo!(),
-            // EndlessReason::NoHoldTransition => self.num_no_hold_transition += 1,
-            NonHaltReason::NoHoldTransition => todo!(),
+            // EndlessReason::NoHaltTransition => self.num_no_halt_transition += 1,
+            NonHaltReason::NoHaltTransition => todo!(),
             // EndlessReason::SimpleStartCycle => self.num_simple_start_cycle += 1,
             NonHaltReason::SimpleStartCycle => todo!(),
             // EndlessReason::StartRecursive => self.num_start_recursive += 1,
@@ -792,7 +792,7 @@ impl EndlessCount {
         self.num_expanding_cycler += other.num_expanding_cycler;
         self.num_expanding_bouncer += other.num_expanding_bouncer;
         self.num_only_one_direction += other.num_only_one_direction;
-        self.num_no_hold_transition += other.num_no_hold_transition;
+        self.num_no_halt_transition += other.num_no_halt_transition;
         self.num_simple_start_cycle += other.num_simple_start_cycle;
         self.num_start_recursive += other.num_start_recursive;
         self.num_writes_only_zeros += other.num_writes_only_zeros;
@@ -805,7 +805,7 @@ impl EndlessCount {
         self.num_expanding_cycler
             + self.num_expanding_bouncer
             + self.num_only_one_direction
-            + self.num_no_hold_transition
+            + self.num_no_halt_transition
             + self.num_simple_start_cycle
             + self.num_start_recursive
             + self.num_writes_only_zeros
@@ -824,12 +824,12 @@ impl Display for EndlessCount {
             "  {LEVEL_1_CHAR} Decided Endless:  {:>NUM_LONG_LEN$}",
             buf.as_str()
         )?;
-        // buf.write_formatted(&self.num_no_hold_transition, &locale);
-        // s.push_str(format!("   No Hold Transition: {:>NUM_SHORT_LEN$}\n", buf.as_str()).as_str());
+        // buf.write_formatted(&self.num_no_halt_transition, &locale);
+        // s.push_str(format!("   No Halt Transition: {:>NUM_SHORT_LEN$}\n", buf.as_str()).as_str());
         // // s.push_str(
         // //     format!(
-        // //         "   2+ Hold Transitions:{:10}\n",
-        // //         self.num_not_max_too_many_hold_transitions
+        // //         "   2+ Halt Transitions:{:10}\n",
+        // //         self.num_not_max_too_many_halt_transitions
         // //     )
         // //     .as_str(),
         // // );
@@ -874,23 +874,23 @@ impl Display for EndlessCount {
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PreDeciderCount {
-    // reference for percent calculation, holds the total number checked (not only pre-decider)
+    // reference for percent calculation, halts the total number checked (not only pre-decider)
     pub num_checked_total_for_display: u64,
     pub num_not_all_states_used: u64,
-    pub num_not_exactly_one_hold_condition: u64,
+    pub num_not_exactly_one_halt_condition: u64,
     pub num_not_enumerated: u64,
     pub num_not_start_state_b_right: u64,
     pub num_only_one_direction: u64,
     pub num_simple_start_cycle: u64,
     pub num_start_recursive: u64,
     pub num_writes_only_zero: u64,
-    // TODO num_hold or DeciderStats
+    // TODO num_halt or DeciderStats
 }
 
 impl PreDeciderCount {
     pub fn add_self(&mut self, other: &Self) {
         self.num_not_all_states_used += other.num_not_all_states_used;
-        self.num_not_exactly_one_hold_condition += other.num_not_exactly_one_hold_condition;
+        self.num_not_exactly_one_halt_condition += other.num_not_exactly_one_halt_condition;
         self.num_not_enumerated += other.num_not_enumerated;
         self.num_only_one_direction += other.num_only_one_direction;
         self.num_simple_start_cycle += other.num_simple_start_cycle;
@@ -901,7 +901,7 @@ impl PreDeciderCount {
 
     pub fn num_total(&self) -> u64 {
         self.num_not_all_states_used
-            + self.num_not_exactly_one_hold_condition
+            + self.num_not_exactly_one_halt_condition
             + self.num_not_enumerated
             + self.num_only_one_direction
             + self.num_simple_start_cycle
@@ -962,10 +962,10 @@ impl Display for PreDeciderCount {
                     .as_str(),
                 );
             }
-            buf.write_formatted(&self.num_not_exactly_one_hold_condition, &locale);
+            buf.write_formatted(&self.num_not_exactly_one_halt_condition, &locale);
             s.push_str(
                 format!(
-                    "    - Not One Hold Condition:      {:>NUM_SHORT_LEN$}\n",
+                    "    - Not One Halt Condition:      {:>NUM_SHORT_LEN$}\n",
                     buf.as_str()
                 )
                 .as_str(),
@@ -1142,7 +1142,7 @@ impl StepMaxResult {
             for m in machines.iter().take(end) {
                 s.push_str(
                     format!(
-                        "Hold M No. {:5} {}, Steps: {}\n",
+                        "Halt M No. {:5} {}, Steps: {}\n",
                         m.id(),
                         m.to_standard_tm_text_format(),
                         m.steps()
@@ -1152,7 +1152,7 @@ impl StepMaxResult {
             }
             s
         } else if self.num_machines_steps_max == 0 {
-            "No machines found that holds!".to_string()
+            "No machines found that halts!".to_string()
         } else {
             format!(
                 "No max step machines recorded, but {} machines found!",
@@ -1175,7 +1175,7 @@ impl StepMaxResult {
         }
     }
 
-    /// Returns the recorded steps max. If steps_min is given, steps_max may not hold the correct value.
+    /// Returns the recorded steps max. If steps_min is given, steps_max may not halt the correct value.
     pub fn steps_max(&self) -> StepTypeBig {
         if self.num_machines_steps_max == 0 {
             0
@@ -1232,7 +1232,7 @@ pub struct MachinesStates {
     /// All undecided machines of one batch run. \
     /// Machines can be used directly in next batch run with undecided only.
     pub machines: Vec<MachineBinary>,
-    /// The detailed MachineStatus which holds the UndecidedReason. State corresponds with the machine with the same index.
+    /// The detailed MachineStatus which halts the UndecidedReason. State corresponds with the machine with the same index.
     pub states: Vec<MachineStatus>,
 }
 
@@ -1280,6 +1280,8 @@ pub struct BatchResult {
 #[derive(Debug)]
 pub struct BatchData<'a> {
     pub machines: &'a [MachineBinary],
+    /// Optional Ids for the machines, using same index
+    pub ids: &'a Option<Vec<u64>>,
     pub result_decided: DeciderResultStats,
     pub machines_decided: MachinesStates,
     pub machines_undecided: MachinesStates,
@@ -1324,21 +1326,21 @@ pub const COUNTER_ARRAY_SIZE: usize = 110;
 #[cfg(feature = "bb_counter_stats")]
 #[derive(Debug)]
 pub struct CounterStats {
-    /// Array for the first 100 steps, [0] holds all which are greater
-    pub hold_steps_stats: [StepTypeBig; COUNTER_ARRAY_SIZE],
+    /// Array for the first 100 steps, [0] halts all which are greater
+    pub halt_steps_stats: [StepTypeBig; COUNTER_ARRAY_SIZE],
     pub cycle_size_stats: [StepTypeBig; COUNTER_ARRAY_SIZE],
     pub cycle_steps_stats: [StepTypeBig; COUNTER_ARRAY_SIZE],
     // HashMap for larger
-    // pub hold_steps_long: HashMap<StepTypeBig, StepTypeBig>,
+    // pub halt_steps_long: HashMap<StepTypeBig, StepTypeBig>,
 }
 
 #[cfg(feature = "bb_counter_stats")]
 impl CounterStats {
     pub fn add_steps(&mut self, steps: StepTypeBig) {
         if steps < COUNTER_ARRAY_SIZE as StepTypeBig {
-            self.hold_steps_stats[steps as usize] += 1;
+            self.halt_steps_stats[steps as usize] += 1;
         } else {
-            self.hold_steps_stats[0] += 1;
+            self.halt_steps_stats[0] += 1;
         }
     }
 
@@ -1362,7 +1364,7 @@ impl CounterStats {
 
     pub fn add_result(&mut self, result: &DeciderResultStats) {
         for i in 0..COUNTER_ARRAY_SIZE {
-            self.hold_steps_stats[i] += result.counter_stats.hold_steps_stats[i];
+            self.halt_steps_stats[i] += result.counter_stats.halt_steps_stats[i];
             self.cycle_size_stats[i] += result.counter_stats.cycle_size_stats[i];
             self.cycle_steps_stats[i] += result.counter_stats.cycle_steps_stats[i];
         }
@@ -1373,7 +1375,7 @@ impl CounterStats {
 impl Default for CounterStats {
     fn default() -> Self {
         Self {
-            hold_steps_stats: [0; COUNTER_ARRAY_SIZE],
+            halt_steps_stats: [0; COUNTER_ARRAY_SIZE],
             cycle_size_stats: [0; COUNTER_ARRAY_SIZE],
             cycle_steps_stats: [0; COUNTER_ARRAY_SIZE],
         }
@@ -1384,13 +1386,13 @@ impl Default for CounterStats {
 impl Display for CounterStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "\nCounter Statistic:")?;
-        let steps: StepTypeBig = self.hold_steps_stats.iter().sum();
+        let steps: StepTypeBig = self.halt_steps_stats.iter().sum();
         writeln!(
             f,
-            "Hold: Steps till {}: total {}\n{}",
+            "Halt: Steps till {}: total {}\n{}",
             COUNTER_ARRAY_SIZE,
             steps,
-            fmt_array(&self.hold_steps_stats)
+            fmt_array(&self.halt_steps_stats)
         )?;
 
         writeln!(

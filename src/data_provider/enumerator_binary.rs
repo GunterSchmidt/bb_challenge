@@ -449,11 +449,11 @@ impl EnumeratorBinary {
                     // let mut permutation = Machine::new(id, self.transition_table);
                     // There is no hold in A0
                     if num_hold_a1 + num_hold_other_lines != 1 {
-                        pre_decider_count_batch.num_not_exactly_one_hold_condition += 1;
+                        pre_decider_count_batch.num_not_exactly_one_halt_condition += 1;
                         #[cfg(feature = "bb_enumerator_longest_skip_chain")]
                         self.longest_skip_chain.add_counter(
                             &permutation,
-                            PreDeciderReason::NotExactlyOneHoldCondition,
+                            PreDeciderReason::NotExactlyOneHaltCondition,
                         );
                     } else {
                         // run pre-decider check
@@ -491,8 +491,8 @@ impl EnumeratorBinary {
                             PreDeciderReason::NotAllStatesUsed => {
                                 pre_decider_count_batch.num_not_all_states_used += 1;
                             }
-                            PreDeciderReason::NotExactlyOneHoldCondition => {
-                                pre_decider_count_batch.num_not_exactly_one_hold_condition += 1;
+                            PreDeciderReason::NotExactlyOneHaltCondition => {
+                                pre_decider_count_batch.num_not_exactly_one_halt_condition += 1;
                             }
                             PreDeciderReason::OnlyOneDirection => {
                                 pre_decider_count_batch.num_only_one_direction += 1;
@@ -622,11 +622,11 @@ impl EnumeratorBinary {
                     // }
                     // Check exactly one hold condition
                     if v0.is_halt() as usize + num_hold_e0 + num_hold_other_lines != 1 {
-                        pre_decider_count_batch.num_not_exactly_one_hold_condition += 1;
+                        pre_decider_count_batch.num_not_exactly_one_halt_condition += 1;
                         #[cfg(feature = "bb_enumerator_longest_skip_chain")]
                         self.longest_skip_chain.add_counter(
                             &permutation,
-                            PreDeciderReason::NotExactlyOneHoldCondition,
+                            PreDeciderReason::NotExactlyOneHaltCondition,
                         );
                     } else {
                         // run pre-decider check
@@ -664,8 +664,8 @@ impl EnumeratorBinary {
                             PreDeciderReason::NotAllStatesUsed => {
                                 pre_decider_count_batch.num_not_all_states_used += 1;
                             }
-                            PreDeciderReason::NotExactlyOneHoldCondition => {
-                                pre_decider_count_batch.num_not_exactly_one_hold_condition += 1;
+                            PreDeciderReason::NotExactlyOneHaltCondition => {
+                                pre_decider_count_batch.num_not_exactly_one_halt_condition += 1;
                             }
                             PreDeciderReason::OnlyOneDirection => {
                                 pre_decider_count_batch.num_only_one_direction += 1;

@@ -84,9 +84,14 @@ impl DeciderCycler {
 
         #[cfg(feature = "enable_html_reports")]
         {
-            decider
-                .data
-                .set_path_option(crate::html::get_html_path("cycler", config));
+            if config.write_html_file() {
+                decider
+                    .data
+                    .html_writer
+                    .as_mut()
+                    .unwrap()
+                    .init_sub_dir(Self::decider_id().sub_dir);
+            }
         }
 
         decider
@@ -108,24 +113,9 @@ impl Decider for DeciderCycler {
     }
 
     fn decide_machine(&mut self, machine: &MachineBinary) -> MachineStatus {
-        // #[cfg(debug_assertions)]
-        // {
-        //     if machine.id != DEBUG_MACHINE_NO {
-        //         // return MachineStatus::NoDecision;
-        //     }
-        //     println!("\nDecider Cycle for {}", machine.to_string_without_status());
-        // }
-        // println!("Machine {}", machine);
-
-        // if machine.id() >= 1_341_092 {
-        //     print!("");
-        // }
-
         #[cfg(feature = "enable_html_reports")]
-        self.data.write_html_file_start(
-            Self::decider_id(),
-            &bb_challenge::machine_info::MachineInfo::from(machine),
-        );
+        self.data
+            .write_html_file_start(Self::decider_id(), &machine);
 
         // initialize decider
         self.clear();
@@ -154,14 +144,8 @@ impl Decider for DeciderCycler {
                 self.data.step_no = self.steps.len() as StepTypeBig;
                 if self.data.is_done() {
                     #[cfg(feature = "enable_html_reports")]
-                    {
-                        self.data.write_html_file_end();
-                        // close the file so it can be renamed (not sure if necessary)
-                        // self.file = None;
+                    self.data.write_html_file_end();
 
-                        // html::rename_file_to_status(&self.data.path.unwrap(), &self.data.file_name.unwrap(), &ms);
-                        self.data.rename_html_file_to_status();
-                    }
                     return self.data.status;
                 } else {
                     panic!("Logic error");
@@ -306,6 +290,15 @@ impl Decider for DeciderCycler {
                                 machine
                             );
                         }
+                        #[cfg(feature = "enable_html_reports")]
+                        {
+                            self.data.status =
+                                MachineStatus::DecidedNonHalt(NonHaltReason::Cycler(
+                                    self.steps.len() as StepTypeSmall,
+                                    distance as StepTypeSmall,
+                                ));
+                            self.data.write_html_file_end();
+                        }
                         return MachineStatus::DecidedNonHalt(NonHaltReason::Cycler(
                             self.steps.len() as StepTypeSmall,
                             distance as StepTypeSmall,
@@ -397,6 +390,15 @@ impl Decider for DeciderCycler {
                                 machine
                             );
                         }
+                        #[cfg(feature = "enable_html_reports")]
+                        {
+                            self.data.status =
+                                MachineStatus::DecidedNonHalt(NonHaltReason::Cycler(
+                                    self.steps.len() as StepTypeSmall,
+                                    distance as StepTypeSmall,
+                                ));
+                            self.data.write_html_file_end();
+                        }
                         return MachineStatus::DecidedNonHalt(NonHaltReason::Cycler(
                             self.steps.len() as StepTypeSmall,
                             distance as StepTypeSmall,
@@ -420,7 +422,7 @@ impl Decider for DeciderCycler {
 
     fn decider_run_batch(batch_data: &mut BatchData) -> ResultUnitEndReason {
         let decider = Self::new(batch_data.config);
-        decider::decider_generic_run_batch_v2(decider, batch_data)
+        decider::decider_generic_run_batch(decider, batch_data)
     }
 }
 
@@ -479,24 +481,24 @@ mod tests {
         assert_eq!(res, MachineStatus::DecidedHalts(107));
     }
 
-//     #[test]
-//     fn is_decider_bouncer_bb3_584567() {
-//         // BB3 584567 really odd, needs more investigation, possibly cycler
-//         let machine = MachineBinary::try_from("1RC---_0RA0LB_1LB1RA").unwrap();
-//         assert!(is_cycler(&machine));
-//     }
-// 
-//     #[test]
-//     fn is_decider_bouncer_bb3_1265977() {
-//         // BB3 1265977 odd behavior, possibly cycler
-//         let mut transitions: Vec<(&str, &str)> = Vec::new();
-//         transitions.push(("1LC", "---"));
-//         transitions.push(("0LA", "0RB"));
-//         transitions.push(("1RB", "1LA"));
-//         let machine = MachineBinary::from_string_tuple(&transitions);
-//         assert!(is_cycler(&machine));
-//     }
-// 
+    //     #[test]
+    //     fn is_decider_bouncer_bb3_584567() {
+    //         // BB3 584567 really odd, needs more investigation, possibly cycler
+    //         let machine = MachineBinary::try_from("1RC---_0RA0LB_1LB1RA").unwrap();
+    //         assert!(is_cycler(&machine));
+    //     }
+    //
+    //     #[test]
+    //     fn is_decider_bouncer_bb3_1265977() {
+    //         // BB3 1265977 odd behavior, possibly cycler
+    //         let mut transitions: Vec<(&str, &str)> = Vec::new();
+    //         transitions.push(("1LC", "---"));
+    //         transitions.push(("0LA", "0RB"));
+    //         transitions.push(("1RB", "1LA"));
+    //         let machine = MachineBinary::from_string_tuple(&transitions);
+    //         assert!(is_cycler(&machine));
+    //     }
+    //
     #[test]
     fn decider_cycler_unspecified() {
         // free test without expected result

@@ -147,9 +147,14 @@ impl DeciderBouncer128 {
 
         #[cfg(feature = "enable_html_reports")]
         {
-            decider
-                .data
-                .set_path_option(crate::html::get_html_path("bouncer", config));
+            if config.write_html_file() {
+                decider
+                    .data
+                    .html_writer
+                    .as_mut()
+                    .unwrap()
+                    .init_sub_dir(Self::decider_id().sub_dir);
+            }
         }
 
         decider
@@ -189,10 +194,8 @@ impl Decider for DeciderBouncer128 {
 
         // loop over transitions to write tape
         loop {
-            self.data.next_transition();
-
-            // check if done
-            if self.data.is_done() {
+            if self.data.next_transition() {
+                // is done
                 break;
             }
 
@@ -346,14 +349,7 @@ impl Decider for DeciderBouncer128 {
         }
 
         #[cfg(feature = "enable_html_reports")]
-        {
-            self.data.write_html_file_end();
-            // close the file so it can be renamed (not sure if necessary)
-            // self.file = None;
-
-            // html::rename_file_to_status(&self.data.path.unwrap(), &self.data.file_name.unwrap(), &ms);
-            self.data.rename_html_file_to_status();
-        }
+        self.data.write_html_file_end();
 
         self.data.status
     }
@@ -368,7 +364,7 @@ impl Decider for DeciderBouncer128 {
 
     fn decider_run_batch(batch_data: &mut BatchData) -> ResultUnitEndReason {
         let decider = Self::new(batch_data.config);
-        decider::decider_generic_run_batch_v2(decider, batch_data)
+        decider::decider_generic_run_batch(decider, batch_data)
     }
 }
 

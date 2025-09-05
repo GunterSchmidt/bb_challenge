@@ -272,7 +272,7 @@ pub trait Decider {
 }
 
 #[inline]
-pub fn decider_generic_run_batch_v2(
+pub fn decider_generic_run_batch(
     mut decider: impl Decider,
     batch_data: &mut BatchData,
 ) -> ResultUnitEndReason {

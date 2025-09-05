@@ -35,7 +35,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # default = ["enable_html_reports", "bb_no_self_ref"]
 # default = ["enable_html_reports", "bb_debug_tape"]
 # default = ["enable_html_reports", "bb_debug"]
-# default = ["enable_html_reports"]
+default = ["enable_html_reports"]
 bb_debug = []
 bb_debug_cycler = []
 # detailed information on tape changes

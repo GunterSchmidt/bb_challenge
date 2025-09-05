@@ -149,7 +149,6 @@ impl DeciderHoldLong {
         #[allow(unused_mut)]
         let mut decider = Self {
             data: DeciderDataLong::new(config),
-            // machine_id: 0,
         };
 
         #[cfg(feature = "enable_html_reports")]
@@ -214,10 +213,8 @@ impl Decider for DeciderHoldLong {
         self.data.transition_table = *machine;
 
         #[cfg(feature = "enable_html_reports")]
-        self.data.write_html_file_start(
-            Self::decider_id(),
-            &crate::machine_info::MachineInfo::from(machine),
-        );
+        self.data
+            .write_html_file_start(Self::decider_id(), &machine);
 
         #[cfg(feature = "without_self_ref_acceleration")]
         let result_status = self.decide_machine_without_self_referencing_transitions();
@@ -246,7 +243,7 @@ impl Decider for DeciderHoldLong {
 
     fn decider_run_batch(batch_data: &mut BatchData) -> ResultUnitEndReason {
         let decider = Self::new(batch_data.config);
-        decider::decider_generic_run_batch_v2(decider, batch_data)
+        decider::decider_generic_run_batch(decider, batch_data)
     }
 }
 

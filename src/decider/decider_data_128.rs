@@ -13,9 +13,10 @@ use crate::{
         },
         Tape, TapeSpeedUp,
     },
-    transition_binary::{TransitionBinary, TRANSITION_SYM2_START},
+    transition_binary::{TransitionBinary, TRANSITION_BINARY_FIRST},
 };
 
+// TODO this could be merged as decider_data with traits
 /// This contains the functionality for a hold decider and can be used to create more elaborate deciders. \
 #[derive(Debug)]
 pub struct DeciderData128 {
@@ -43,28 +44,28 @@ pub struct DeciderData128 {
     pub status: MachineStatus,
     /// HTML step limit limits output to file. Set to 0 if write_html_file is false.
     #[cfg(feature = "enable_html_reports")]
-    pub html_writer: crate::html::HtmlWriter,
+    pub html_writer: Option<crate::html::HtmlWriter>,
 }
 
 impl DeciderData128 {
     // Sets the defaults and start transition A0.
     pub fn new(config: &Config) -> Self {
         Self {
-            // decider_id,
             tape: Tape128::new(config),
 
             step_no: 0,
             machine: MachineBinary::default(),
             // Initialize transition with A0 as start
-            tr: TRANSITION_SYM2_START,
+            tr: TRANSITION_BINARY_FIRST,
             tr_field: 2,
-            // copy the transition table as this runs faster
-            // machine_id: 0,
-            // transition_table: TransitionTableSymbol2::default(),
             status: MachineStatus::NoDecision,
             step_limit: config.step_limit_decider_halt(),
             #[cfg(feature = "enable_html_reports")]
-            html_writer: crate::html::HtmlWriter::new(config),
+            html_writer: if config.write_html_file() {
+                Some(crate::html::HtmlWriter::new(config))
+            } else {
+                None
+            },
         }
     }
 
@@ -74,11 +75,9 @@ impl DeciderData128 {
         self.tape.clear();
 
         self.step_no = 0;
-        self.tr = TRANSITION_SYM2_START;
+        self.tr = TRANSITION_BINARY_FIRST;
         self.tr_field = 2;
         self.status = MachineStatus::NoDecision;
-        // self.html_writer.reset_write_html_line_count();
-        // keep step_limit and other config data
     }
 
     #[inline(always)]
@@ -86,14 +85,19 @@ impl DeciderData128 {
         self.tape.get_current_symbol()
     }
 
-    // Returns the next transition and updates the step counter, but does not update the tape yet
+    /// Sets the next transition and updates the step counter. It does not update the tape yet,
+    /// but in the case the execution ended because of halt or limit.
+    /// # Returns
+    /// true if execution ended (is_done)
+    #[must_use]
     #[inline(always)]
-    pub fn next_transition(&mut self) {
+    pub fn next_transition(&mut self) -> bool {
         self.step_no += 1;
         self.tr_field = self.tr.state_x2() + self.tape.get_current_symbol();
         self.tr = self.machine.transition(self.tr_field);
         // #[cfg(all(debug_assertions, feature = "bb_debug"))]
         // println!("{}", self.step_to_string());
+        self.is_done()
     }
 
     /// Checks if the decider is done.
@@ -112,11 +116,13 @@ impl DeciderData128 {
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
             #[cfg(feature = "enable_html_reports")]
             self.write_step_html();
+
             return true;
         } else if self.step_no >= self.step_limit {
             self.status = self.status_undecided_step_limit();
             #[cfg(feature = "enable_html_reports")]
             self.write_step_html();
+
             return true;
         }
         false
@@ -127,20 +133,10 @@ impl DeciderData128 {
     /// line count must be smaller, so one more can fit
     #[cfg(feature = "enable_html_reports")]
     pub fn is_write_html_in_limit(&self) -> bool {
-        self.html_writer.is_write_html_in_limit(self.step_no)
-    }
-
-    #[cfg(feature = "enable_html_reports")]
-    pub fn is_write_html_file(&self) -> bool {
-        self.html_writer.is_write_html_file()
-    }
-
-    #[cfg(feature = "enable_html_reports")]
-    pub fn rename_html_file_to_status(&self) {
-        if let Some(file_name) = self.html_writer.file_name() {
-            let path: &String = self.html_writer.path().unwrap();
-            // self.file = None;
-            crate::html::rename_file_to_status(path, file_name, &self.status);
+        if let Some(html_writer) = &self.html_writer {
+            html_writer.is_write_html_in_limit(self.step_no)
+        } else {
+            false
         }
     }
 
@@ -269,14 +265,12 @@ impl DeciderData128 {
     #[cfg(feature = "enable_html_reports")]
     pub fn write_html_file_start(
         &mut self,
-        decider_id: &bb_challenge::decider::DeciderId,
+        decider_id: &crate::decider::DeciderId,
         machine: &MachineBinary,
     ) {
-        if self.html_writer.is_write_html_file() {
-            use bb_challenge::machine_info::MachineInfo;
-
-            self.html_writer
-                .create_html_file_start(decider_id, &MachineInfo::from(machine))
+        if let Some(html_writer) = &mut self.html_writer {
+            html_writer
+                .create_html_file_start(decider_id, machine)
                 .expect("Html file could not be written");
             self.write_html_p("Note: Here the full 128 Bit Tape is shown, there is no long tape.");
         }
@@ -284,20 +278,28 @@ impl DeciderData128 {
 
     #[cfg(feature = "enable_html_reports")]
     pub fn write_html_file_end(&mut self) {
-        self.html_writer
-            .write_html_file_end(self.step_no, &self.status);
+        if let Some(html_writer) = &mut self.html_writer {
+            html_writer.write_html_file_end(self.step_no, &self.status);
+        }
     }
 
     #[cfg(feature = "enable_html_reports")]
     pub fn write_html_p(&mut self, text: &str) {
-        self.html_writer.write_html_p(text);
+        if let Some(html_writer) = &mut self.html_writer {
+            html_writer.write_html_p(text);
+        }
     }
 
     #[cfg(feature = "enable_html_reports")]
     pub fn write_step_html(&mut self) {
-        if self.is_write_html_in_limit() {
-            let step_data = crate::html::StepHtml::from(&*self);
-            self.html_writer.write_step_html(&step_data);
+        if let Some(html_writer) = &self.html_writer {
+            if html_writer.is_write_html_in_limit(self.step_no) {
+                let step_data = crate::html::StepHtml::from(&*self);
+                self.html_writer
+                    .as_mut()
+                    .unwrap()
+                    .write_step_html(&step_data);
+            }
         }
     }
 
@@ -311,16 +313,6 @@ impl DeciderData128 {
             self.tape,
         )
     }
-
-    #[cfg(feature = "enable_html_reports")]
-    pub fn set_path(&mut self, path: &str) {
-        self.html_writer.set_path(path);
-    }
-
-    #[cfg(feature = "enable_html_reports")]
-    pub fn set_path_option(&mut self, path_option: Option<String>) {
-        self.html_writer.set_path_option(path_option);
-    }
 }
 
 impl Display for DeciderData128 {
@@ -333,7 +325,11 @@ impl Display for DeciderData128 {
 #[cfg(feature = "enable_html_reports")]
 impl From<&DeciderData128> for crate::html::StepHtml {
     fn from(data: &DeciderData128) -> Self {
-        let is_u128_tape = !data.html_writer.write_html_tape_shifted_64_bit();
+        let is_u128_tape = if let Some(html_writer) = &data.html_writer {
+            !html_writer.write_html_tape_shifted_64_bit()
+        } else {
+            true
+        };
         let tape_shifted = if is_u128_tape {
             data.tape.tape_shifted_clean()
         } else {

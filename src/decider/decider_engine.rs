@@ -154,6 +154,8 @@ pub fn decide_batch_chain(
                     // borrow checker requires new object instead of just updating ref to machines
                     batch_data = BatchData {
                         machines: &m_undecided,
+                        // TODO id required?
+                        ids: &None,
                         result_decided: DeciderResultStats::new_init_steps_max(
                             first_decider.config(),
                             result_batch.steps_max(),
@@ -262,6 +264,8 @@ pub fn batch_run_decider_chain_data_provider_single_thread_reporting(
                     // let first_decider_config = decider_config.first().expect("No decider!");
                     let batch_data = BatchData {
                         machines: &data.machines,
+                        // TODO id required?
+                        ids: &None,
                         result_decided: DeciderResultStats::new_init_steps_max(
                             first_config,
                             result_main.steps_max(),
@@ -479,6 +483,7 @@ pub fn batch_run_decider_chain_threaded_data_provider_single_thread_reporting(
                     // create batch data for first decider
                     let batch_data = BatchData {
                         machines: &gen_result.machines,
+                        ids: &gen_result.ids,
                         result_decided,
                         machines_decided: Default::default(),
                         machines_undecided: Default::default(),
@@ -790,6 +795,8 @@ pub fn batch_run_decider_chain_threaded_data_provider_multi_thread_reporting(
                     // create batch data for first decider
                     let batch_data = BatchData {
                         machines: &gen_result.machines,
+                        // TODO id required?
+                        ids: &None,
                         result_decided,
                         machines_decided: Default::default(),
                         machines_undecided: Default::default(),

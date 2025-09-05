@@ -56,7 +56,7 @@ pub const TRANSITION_BINARY_HALT: TransitionBinary = TransitionBinary {
     text: ['-', '-', '-'],
 };
 /// Initialize transition with A0 as start
-pub const TRANSITION_SYM2_START: TransitionBinary = TransitionBinary {
+pub const TRANSITION_BINARY_FIRST: TransitionBinary = TransitionBinary {
     transition: TRANSITION_0RA,
     #[cfg(debug_assertions)]
     text: ['0', 'R', 'A'],

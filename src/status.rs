@@ -9,7 +9,7 @@ pub enum PreDeciderReason {
     /// No Reason to eliminate machine found.
     None,
     NotAllStatesUsed,
-    NotExactlyOneHoldCondition,
+    NotExactlyOneHaltCondition,
     NotStartStateBRight,
     OnlyOneDirection,
     SimpleStartCycle,
@@ -30,7 +30,7 @@ pub enum NonHaltReason {
 
     // These have been moved to PreDeciderReason
     OnlyOneDirection,
-    NoHoldTransition,
+    NoHaltTransition,
     SimpleStartCycle,
     /// Always comes back to start with left or right tape all 0, only extending to one side endlessly
     /// e.g. BB3: 84080
@@ -66,7 +66,7 @@ pub enum MachineStatus {
     #[default]
     NoDecision,
     DecidedNonHalt(NonHaltReason),
-    /// Hold for fast evaluation
+    /// Halt for fast evaluation
     DecidedHalts(StepTypeBig),
     /// Halts after steps, tape size, ones on tape
     DecidedHaltsDetail(StepTypeBig, u32, u32),

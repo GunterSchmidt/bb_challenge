@@ -57,7 +57,7 @@ pub fn run_pre_decider_strict(machine: &MachineBinary) -> MachineStatus {
     let n_states = machine.n_states();
     let tr_used = machine.transitions_used(n_states);
     if count_hold_transitions(tr_used) != 1 {
-        return MachineStatus::EliminatedPreDecider(PreDeciderReason::NotExactlyOneHoldCondition);
+        return MachineStatus::EliminatedPreDecider(PreDeciderReason::NotExactlyOneHaltCondition);
     }
 
     if check_only_one_direction(tr_used) {
@@ -97,7 +97,7 @@ pub fn run_pre_decider_simple(machine: &MachineBinary) -> MachineStatus {
     let n_states = machine.n_states();
     let tr_used = machine.transitions_used(n_states);
     if count_hold_transitions(tr_used) != 1 {
-        return MachineStatus::EliminatedPreDecider(PreDeciderReason::NotExactlyOneHoldCondition);
+        return MachineStatus::EliminatedPreDecider(PreDeciderReason::NotExactlyOneHaltCondition);
     }
 
     if check_only_one_direction(tr_used) {

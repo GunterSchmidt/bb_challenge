@@ -14,7 +14,7 @@ use crate::{
         self, CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128, TAPE_SIZE_HALF_128,
     },
     tape::Tape,
-    transition_binary::{TransitionBinary, TRANSITION_SYM2_START},
+    transition_binary::{TransitionBinary, TRANSITION_BINARY_FIRST},
 };
 
 /// This contains the functionality for a hold decider and can be used to create more elaborate deciders. \
@@ -51,26 +51,22 @@ impl DeciderDataLong {
     // Sets the defaults and start transition A0.
     pub fn new(config: &Config) -> Self {
         Self {
-            // decider_id,
             tape: TapeLongShifted::new(config),
 
             step_no: 0,
             transition_table: MachineBinary::default(),
             // Initialize transition with A0 as start
-            tr: TRANSITION_SYM2_START,
+            tr: TRANSITION_BINARY_FIRST,
             tr_field: 2,
-            // copy the transition table as this runs faster
-            // machine_id: 0,
-            // transition_table: TransitionTableSymbol2::default(),
             status: MachineStatus::NoDecision,
             step_limit: config.step_limit_decider_halt(),
+
             #[cfg(feature = "enable_html_reports")]
             html_writer: if config.write_html_file() {
                 Some(crate::html::HtmlWriter::new(config))
             } else {
                 None
             },
-            // tape_size_limit_u32_blocks: config.tape_size_limit_u32_blocks(),
         }
     }
 
@@ -80,17 +76,14 @@ impl DeciderDataLong {
         self.tape.clear();
 
         self.step_no = 0;
-        self.tr = TRANSITION_SYM2_START;
+        self.tr = TRANSITION_BINARY_FIRST;
         self.tr_field = 2;
         self.status = MachineStatus::NoDecision;
-        // self.html_writer.reset_write_html_line_count();
-        // keep step_limit and other config data
     }
 
     /// Reads the current symbol of the tape. Use with care, as this inspects data in the tape directly, which should generally be avoided.
     #[inline(always)]
     pub fn get_current_symbol(&self) -> usize {
-        // resolves to one if bit is set
         self.tape.get_current_symbol()
     }
 
@@ -105,10 +98,10 @@ impl DeciderDataLong {
         self.tr_field = self.tr.state_x2() + self.tape.get_current_symbol();
         self.tr = self.transition_table.transition(self.tr_field);
 
-        self.is_done()
         // print tape before change
         // #[cfg(all(debug_assertions, feature = "bb_debug"))]
         // println!("{}", self.step_to_string());
+        self.is_done()
     }
 
     /// Checks if the decider is done.
@@ -140,11 +133,6 @@ impl DeciderDataLong {
         false
     }
 
-    // /// Tape shifted is clean (contains the correct cell values) as long the bounds have not been breached.
-    // pub fn is_tape_shifted_clean(&self) -> bool {
-    //     !self.tape.is_tape_extended()
-    // }
-
     /// Returns true if html is enabled and the step_no is < 1000 or > config.write_html_step_start .
     /// step_no must be smaller or equal \
     /// line count must be smaller, so one more can fit
@@ -158,21 +146,14 @@ impl DeciderDataLong {
     }
 
     // #[cfg(feature = "enable_html_reports")]
-    // pub fn is_write_html_file(&self) -> bool {
+    // pub fn rename_html_file_to_status(&self) {
     //     if let Some(html_writer) = &self.html_writer {
-    //         html_writer.is_write_html_file()
-    //     } else {
-    //         false
+    //         if let Some(file_name) = html_writer.file_name() {
+    //             let path = self.html_writer.as_ref().unwrap().path().unwrap();
+    //             crate::html::rename_file_to_status(path, file_name, &self.status);
+    //         }
     //     }
     // }
-
-    #[cfg(feature = "enable_html_reports")]
-    pub fn rename_html_file_to_status(&self) {
-        if let Some(file_name) = self.html_writer.as_ref().unwrap().file_name() {
-            let path = self.html_writer.as_ref().unwrap().path().unwrap();
-            crate::html::rename_file_to_status(path, file_name, &self.status);
-        }
-    }
 
     fn status_undecided_step_limit(&self) -> MachineStatus {
         MachineStatus::Undecided(
@@ -501,11 +482,11 @@ impl DeciderDataLong {
     pub fn write_html_file_start(
         &mut self,
         decider_id: &super::DeciderId,
-        machine: &crate::machine_info::MachineInfo,
+        machine: &MachineBinary,
     ) {
         if let Some(html_writer) = &mut self.html_writer {
             html_writer
-                .create_html_file_begin(decider_id, machine)
+                .create_html_file_start(decider_id, machine)
                 .expect("Html file could not be written");
             self.write_html_p(
                 "Note: Here only the 128 Bit Tape is shown, the underlying long tape holds more data.",
@@ -555,20 +536,6 @@ impl DeciderDataLong {
             self.tape.get_current_symbol(),
         )
     }
-
-    // #[cfg(feature = "enable_html_reports")]
-    // pub fn set_path_option(&mut self, path_option: Option<String>) {
-    //     if let Some(html_writer) = &mut self.html_writer {
-    //         html_writer.set_path_option(path_option);
-    //     }
-    // }
-
-    // #[cfg(feature = "enable_html_reports")]
-    // pub fn set_html_sub_path_option(&mut self, path_option: Option<String>) {
-    //     if let Some(html_writer) = &mut self.html_writer {
-    //         html_writer.set_path_option(path_option);
-    //     }
-    // }
 }
 
 impl Display for DeciderDataLong {
