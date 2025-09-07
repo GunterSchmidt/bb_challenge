@@ -1,0 +1,32 @@
+html {
+    background-color: white;
+    height: 100%;
+    margin: 0px;
+    padding: 0px;
+}
+body {
+    background-color: black;
+    min-height: 100vh;
+    margin: 0;
+    padding: 10px;
+    color: white;
+}
+table,
+th,
+td {
+    border: 1px solid white;
+    border-collapse: collapse;
+    padding: 3px;
+    margin-left: 10px;
+}
+.p_step {
+    padding: 0;
+    margin: 0;
+}
+
+.head_pos {
+    background-color: lavenderblush;
+}
+.change_pos {
+    font-weight: bold;
+}
