@@ -1,19 +1,21 @@
 #![allow(dead_code)]
+#![allow(unused_mut)]
+#![allow(unused_variables)]
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::time::Duration;
 
 use bb_challenge::{
-    config::{Config, CoreUsage, StepTypeBig},
+    config::{Config, CoreUsage, StepBig},
     data_provider::{
         enumerator::Enumerator,
         enumerator_binary::{EnumeratorBinary, EnumeratorType},
     },
     decider::{
-        decider_engine, decider_hold_long::DeciderHoldLong, decider_result::result_max_steps_known,
-        Decider, DeciderConfig, DeciderStandard,
+        decider_engine, decider_hold_long::DeciderHoldLong, decider_hold_macro::DeciderHoldMacro,
+        decider_result::result_max_steps_known, Decider, DeciderConfig, DeciderStandard,
     },
-    machine_binary::{MachineBinary, NotableMachineBinary},
+    machine_binary::{MachineId, NotableMachineBinary},
     status::MachineStatus,
 };
 
@@ -89,20 +91,20 @@ fn benchmark_decider_gen_bb3(c: &mut Criterion) {
         },
     );
 
-    // reduced single
-    group.bench_function(
-        "Decider Cycler (Data Provider Enumerator Reduced Backward) Single BB3",
-        |b| {
-            b.iter(|| {
-                bench_decider_data_provider_gen(
-                    &dc_cycler,
-                    &config,
-                    EnumeratorType::EnumeratorReducedBackward,
-                    CoreUsage::SingleCore,
-                )
-            })
-        },
-    );
+    // // reduced single
+    // group.bench_function(
+    //     "Decider Cycler (Data Provider Enumerator Reduced Backward) Single BB3",
+    //     |b| {
+    //         b.iter(|| {
+    //             bench_decider_data_provider_gen(
+    //                 &dc_cycler,
+    //                 &config,
+    //                 EnumeratorType::EnumeratorReducedBackward,
+    //                 CoreUsage::SingleCore,
+    //             )
+    //         })
+    //     },
+    // );
 
     // full threaded
     group.bench_function("Decider Cycler (Enumerator Full) Threaded BB3", |b| {
@@ -131,20 +133,20 @@ fn benchmark_decider_gen_bb3(c: &mut Criterion) {
         },
     );
 
-    // full reduced
-    group.bench_function(
-        "Decider Cycler (Enumerator Reduced Backward) Threaded BB3",
-        |b| {
-            b.iter(|| {
-                bench_decider_data_provider_gen(
-                    &dc_cycler,
-                    &config,
-                    EnumeratorType::EnumeratorReducedBackward,
-                    CoreUsage::MultiCore,
-                )
-            })
-        },
-    );
+    // // full reduced
+    // group.bench_function(
+    //     "Decider Cycler (Enumerator Reduced Backward) Threaded BB3",
+    //     |b| {
+    //         b.iter(|| {
+    //             bench_decider_data_provider_gen(
+    //                 &dc_cycler,
+    //                 &config,
+    //                 EnumeratorType::EnumeratorReducedBackward,
+    //                 CoreUsage::MultiCore,
+    //             )
+    //         })
+    //     },
+    // );
 
     group.finish();
 }
@@ -188,19 +190,19 @@ fn benchmark_decider_gen_bb4(c: &mut Criterion) {
         },
     );
 
-    group.bench_function(
-        "Decider Cycler (Data Provider Enumerator Reduced Backward) Single BB4",
-        |b| {
-            b.iter(|| {
-                bench_decider_data_provider_gen(
-                    &dc_cycler,
-                    &config,
-                    EnumeratorType::EnumeratorReducedBackward,
-                    CoreUsage::SingleCore,
-                )
-            })
-        },
-    );
+    // group.bench_function(
+    //     "Decider Cycler (Data Provider Enumerator Reduced Backward) Single BB4",
+    //     |b| {
+    //         b.iter(|| {
+    //             bench_decider_data_provider_gen(
+    //                 &dc_cycler,
+    //                 &config,
+    //                 EnumeratorType::EnumeratorReducedBackward,
+    //                 CoreUsage::SingleCore,
+    //             )
+    //         })
+    //     },
+    // );
 
     // full threaded
     group.bench_function("Decider (Enumerator Full) Threaded BB4", |b| {
@@ -235,8 +237,14 @@ fn benchmark_decider_gen_bb4(c: &mut Criterion) {
 fn benchmark_tape_type(c: &mut Criterion) {
     // let input = aoc_file_reader::read_file(FILENAME_PART_1);
     // machine_bb5_max.step_limit = 50_000_000;
-    let machine_p_bb4_max = NotableMachineBinary::BB4Max.machine();
-    let machine_p_bb5_max = NotableMachineBinary::BB5Max.machine();
+    let machine_bb4_max = NotableMachineBinary::BB4Max.machine_id();
+    let machine_bb5_max = NotableMachineBinary::BB5Max.machine_id();
+    let config_4 = Config::new_default(4);
+    let config_5 = Config::new_default(5);
+    let mut decider_hold_long_4 = DeciderHoldLong::new(&config_4);
+    let mut decider_hold_macro_4 = DeciderHoldMacro::new(&config_4);
+    let mut decider_hold_long_5 = DeciderHoldLong::new(&config_5);
+    let mut decider_hold_macro_5 = DeciderHoldMacro::new(&config_5);
 
     // c.bench_function("first deciders", |b| b.iter(|| run_decider_first()));
     // // c.bench_function("first deciders", |b| b.iter(|| test()));
@@ -263,14 +271,28 @@ fn benchmark_tape_type(c: &mut Criterion) {
     //     b.iter(|| bench_decider_hold_u128_object(&machine_p_bb4_max, 107))
     // });
 
-    group.bench_function("Create Config", |b| b.iter(|| Config::new_default(4)));
+    // group.bench_function("Create Config", |b| b.iter(|| Config::new_default(4)));
 
     group.bench_function("u128 long hold decider Bb4Max", |b| {
-        b.iter(|| bench_decider_hold_u128_long(&machine_p_bb4_max, 4, 107))
+        b.iter(|| bench_decider_hold_u128_long(&machine_bb4_max, 4, 107))
     });
-    group.bench_function("u128 long hold decider BB5 max V3", |b| {
-        b.iter(|| bench_decider_hold_u128_long(&machine_p_bb5_max, 5, 47176870))
+    group.bench_function("u128 long hold decider Bb5Max", |b| {
+        b.iter(|| bench_decider_hold_u128_long(&machine_bb5_max, 5, 47176870))
     });
+
+    group.bench_function("decider hold long Bb4Max single", |b| {
+        b.iter(|| decider_hold_long_4.decide_machine(&machine_bb4_max))
+    });
+    group.bench_function("decider hold macro Bb4Max single", |b| {
+        b.iter(|| decider_hold_macro_4.decide_machine(&machine_bb4_max))
+    });
+
+    // group.bench_function("decider hold long Bb5Max single", |b| {
+    //     b.iter(|| decider_hold_long_5.decide_machine(&machine_bb5_max))
+    // });
+    // group.bench_function("decider hold macro Bb5Max single", |b| {
+    //     b.iter(|| decider_hold_macro_5.decide_machine(&machine_bb5_max))
+    // });
 
     //     // fair comparison, u128 would run longer as it can handle more steps
     //     machine_bb5_max.step_limit = 300;
@@ -325,11 +347,7 @@ fn benchmark_tape_type(c: &mut Criterion) {
 //     assert_eq!(check_result, MachineStatus::DecidedHolds(steps));
 // }
 
-fn bench_decider_hold_u128_long(
-    machine: &MachineBinary,
-    n_states: usize,
-    steps_result: StepTypeBig,
-) {
+fn bench_decider_hold_u128_long(machine: &MachineId, n_states: usize, steps_result: StepBig) {
     let config = Config::new_default(n_states);
     let check_result = DeciderHoldLong::decide_single_machine(&machine, &config);
     // println!("{}", check_result);
@@ -394,16 +412,16 @@ fn bench_generate_reduced_forward() {
     }
 }
 
-fn bench_generate_reduced_backward() {
-    let mut enumerator =
-        EnumeratorBinary::new(EnumeratorType::EnumeratorReducedBackward, &config_bench(5));
-    loop {
-        let (_permutations, is_last_batch) = enumerator.enumerate_permutation_batch_next();
-        if is_last_batch {
-            break;
-        }
-    }
-}
+// fn bench_generate_reduced_backward() {
+//     let mut enumerator =
+//         EnumeratorBinary::new(EnumeratorType::EnumeratorReducedBackward, &config_bench(5));
+//     loop {
+//         let (_permutations, is_last_batch) = enumerator.enumerate_permutation_batch_next();
+//         if is_last_batch {
+//             break;
+//         }
+//     }
+// }
 
 fn bench_decider_data_provider_gen(
     dc_cycler: &DeciderConfig<'_>,

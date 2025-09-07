@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use num_format::ToFormattedString;
 
-use crate::config::{user_locale, StepTypeBig, StepTypeSmall};
+use crate::config::{user_locale, StepBig, StepSmall};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PreDeciderReason {
@@ -22,9 +22,9 @@ pub enum PreDeciderReason {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NonHaltReason {
     /// Cycler (steps run, number of steps in the cycle)
-    Cycler(StepTypeSmall, StepTypeSmall),
+    Cycler(StepSmall, StepSmall),
     /// Bouncer (steps run)
-    Bouncer(StepTypeSmall),
+    Bouncer(StepSmall),
     ExpandingBouncer(ExpandingBouncerReason),
     ExpandingCycler,
 
@@ -67,14 +67,14 @@ pub enum MachineStatus {
     NoDecision,
     DecidedNonHalt(NonHaltReason),
     /// Halt for fast evaluation
-    DecidedHalts(StepTypeBig),
+    DecidedHalts(StepBig),
     /// Halts after steps, tape size, ones on tape
-    DecidedHaltsDetail(StepTypeBig, u32, u32),
+    DecidedHaltsDetail(StepBig, u32, u32),
     DecidedNotMaxTooManyHaltTransitions,
     DecidedNotMaxNotAllStatesUsed,
     EliminatedPreDecider(PreDeciderReason),
     /// UndecidedReason, stopped after steps, tape size in cells
-    Undecided(UndecidedReason, StepTypeBig, u32),
+    Undecided(UndecidedReason, StepBig, u32),
     // UndecidedFastTapeBoundReached,
 }
 
@@ -112,8 +112,8 @@ impl Display for MachineStatus {
                 s.push_str(format!("Eliminated Pre-Decider {reason:?}").as_str())
             }
             MachineStatus::NoDecision => s.push_str("No decision"),
-            MachineStatus::DecidedNonHalt(endless_reason) => {
-                s.push_str(format!("Decided: Endless for {endless_reason:?}").as_str())
+            MachineStatus::DecidedNonHalt(non_halt_reason) => {
+                s.push_str(format!("Decided: Non-Halt for {non_halt_reason:?}").as_str())
             }
             MachineStatus::DecidedNotMaxTooManyHaltTransitions => todo!(),
             MachineStatus::DecidedNotMaxNotAllStatesUsed => {

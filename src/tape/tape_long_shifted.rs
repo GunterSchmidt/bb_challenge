@@ -89,14 +89,16 @@
 //! Step  1779 C1 0LE: 00000000000000000000000000000000_011111111101010101010101_01010101→00101010_101010101010101010101010_10101000000000000000000000000000 P: 62 TL P31 30..35 \
 
 use crate::{
-    config::{Config, MAX_TAPE_GROWTH_BLOCKS, TAPE_SIZE_INIT_CELL_BLOCKS},
-    tape::tape_utils::{
-        TapeLongPositions, U128Ext, CLEAR_HIGH127_96BITS_U128, CLEAR_HIGH95_64BITS_U128,
-        CLEAR_LOW31_00BITS_U128, CLEAR_LOW63_32BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128,
-        MIDDLE_BIT_U128, POS_HALF_U128, TAPE_SIZE_FOURTH_UPPER_128, TAPE_SIZE_HALF_128,
-        TL_POS_START_128,
+    config::{Config, StepBig, MAX_TAPE_GROWTH_BLOCKS, TAPE_SIZE_INIT_CELL_BLOCKS},
+    tape::{
+        tape_utils::{
+            TapeLongPositions, U128Ext, CLEAR_HIGH127_96BITS_U128, CLEAR_HIGH95_64BITS_U128,
+            CLEAR_LOW31_00BITS_U128, CLEAR_LOW63_00BITS_U128, CLEAR_LOW63_32BITS_U128,
+            HIGH32_SWITCH_U128, LOW32_SWITCH_U128, MIDDLE_BIT_U128, POS_HALF_U128,
+            TAPE_SIZE_FOURTH_UPPER_128, TAPE_SIZE_HALF_128, TL_POS_START_128,
+        },
+        Tape, TapeAcceleration,
     },
-    tape::Tape,
     transition_binary::TransitionBinary,
 };
 
@@ -158,10 +160,10 @@ impl TapeLongShifted {
     #[cfg(feature = "enable_html_reports")]
     /// Returns tape_shifted with the correct bits set (taken from tape_long).
     fn get_clean_tape_shifted(&self) -> u128 {
-        #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+        #[cfg(all(debug_assertions, feature = "debug_tape"))]
         println!("{}", self.long_tape_to_string());
         let mut ts = self.tape_shifted;
-        #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+        #[cfg(all(debug_assertions, feature = "debug_tape"))]
         println!("shifted org:  {}", ts.to_binary_split_string());
         // shift tape back to fill correctly
         // update dirty section
@@ -169,10 +171,10 @@ impl TapeLongShifted {
         if self.pos_middle < MIDDLE_BIT_U128 {
             // Here bits 63-32 are clean, all other are potentially dirty.
             let shift = MIDDLE_BIT_U128 - self.pos_middle;
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             dbg!(shift, self.pos_middle);
             ts <<= shift;
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             println!("shifted mid:  {}", ts.to_binary_split_string());
             ts &= CLEAR_HIGH127_96BITS_U128;
             // bits 127-96 are always stored
@@ -194,11 +196,11 @@ impl TapeLongShifted {
                 ts &= CLEAR_LOW31_00BITS_U128;
                 ts |= self.tape_long[self.tl_pos + 3] as u128;
             }
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             println!("shifted fil:  {}", ts.to_binary_split_string());
             // shift back to original position
             ts >>= shift;
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             println!("shifted bck:  {}", ts.to_binary_split_string());
             // now the first bits are dirty again, fill them
             let mut extra = self.tape_long[self.tl_pos] as u64;
@@ -210,10 +212,10 @@ impl TapeLongShifted {
         } else if self.pos_middle > MIDDLE_BIT_U128 {
             // Here bits 95-64 are clean, all other are potentially dirty.
             let shift = self.pos_middle - MIDDLE_BIT_U128;
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             dbg!(shift, self.pos_middle);
             ts >>= shift;
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             println!("shifted mid:  {}", ts.to_binary_split_string());
             // bits 31-0 are always stored
             ts &= CLEAR_LOW31_00BITS_U128;
@@ -233,12 +235,12 @@ impl TapeLongShifted {
                 ts &= CLEAR_HIGH127_96BITS_U128;
                 ts |= (self.tape_long[self.tl_pos] as u128) << 96;
             }
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             println!("shifted fil:  {}", ts.to_binary_split_string());
             // shift back to original position
             ts <<= shift;
             // now the last bits are dirty again, fill them
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             println!("shifted bck:  {}", ts.to_binary_split_string());
             let mut extra = (self.tape_long[self.tl_pos + 3] as u64) << 32;
             if self.tl_pos + 3 < self.tl_high_bound {
@@ -248,14 +250,14 @@ impl TapeLongShifted {
         } else {
             // In the middle, both middle u32 are clean, one of them just loaded.
             // Also position matches tape_long, just load both outer u32.
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             dbg!(self.tl_pos);
             ts &= CLEAR_HIGH127_96BITS_U128;
             ts |= (self.tape_long[self.tl_pos] as u128) << 96;
             ts &= CLEAR_LOW31_00BITS_U128;
             ts |= self.tape_long[self.tl_pos + 3] as u128;
         }
-        #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+        #[cfg(all(debug_assertions, feature = "debug_tape"))]
         println!("shifted end:  {}\n", ts.to_binary_split_string());
 
         ts
@@ -264,10 +266,10 @@ impl TapeLongShifted {
     /// Shifts and cleans tape_shifted, so it can be inserted in tape_long.
     pub fn get_clean_tape_shifted_for_tape_long(&self) -> u128 {
         // This is the same logic as in get_clean_tape_shifted, but only until fil
-        #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+        #[cfg(all(debug_assertions, feature = "debug_tape"))]
         println!("{}", self.long_tape_to_string());
         let mut ts = self.tape_shifted;
-        #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+        #[cfg(all(debug_assertions, feature = "debug_tape"))]
         println!("shifted org:  {}", ts.to_binary_split_string());
         // shift tape back to fill correctly
         // update dirty section
@@ -275,10 +277,10 @@ impl TapeLongShifted {
         if self.pos_middle < MIDDLE_BIT_U128 {
             // Here bits 63-32 are clean, all other are potentially dirty.
             let shift = MIDDLE_BIT_U128 - self.pos_middle;
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             dbg!(shift, self.pos_middle);
             ts <<= shift;
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             println!("shifted mid:  {}", ts.to_binary_split_string());
             ts &= CLEAR_HIGH127_96BITS_U128;
             // bits 127-96 are always stored
@@ -304,10 +306,10 @@ impl TapeLongShifted {
         } else if self.pos_middle > MIDDLE_BIT_U128 {
             // Here bits 95-64 are clean, all other are potentially dirty.
             let shift = self.pos_middle - MIDDLE_BIT_U128;
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             dbg!(shift, self.pos_middle);
             ts >>= shift;
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             println!("shifted mid:  {}", ts.to_binary_split_string());
             // bits 31-0 are always stored
             ts &= CLEAR_LOW31_00BITS_U128;
@@ -337,7 +339,7 @@ impl TapeLongShifted {
             ts &= CLEAR_LOW31_00BITS_U128;
             ts |= self.tape_long[self.tl_pos + 3] as u128;
         }
-        #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+        #[cfg(all(debug_assertions, feature = "debug_tape"))]
         println!("shifted end:  {}\n", ts.to_binary_split_string());
 
         // self.tape_long[self.tl_pos] = (ts >> 96) as u32;
@@ -378,7 +380,7 @@ impl TapeLongShifted {
                         return false;
                     }
                 }
-                #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+                #[cfg(all(debug_assertions, feature = "debug_tape"))]
                 {
                     println!(
                         "  Tape Resize at start, len {} -> {}",
@@ -424,7 +426,7 @@ impl TapeLongShifted {
                         return false;
                     }
                 }
-                #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+                #[cfg(all(debug_assertions, feature = "debug_tape"))]
                 {
                     println!(
                         "  Tape Resize at end: {} -> {}",
@@ -454,7 +456,7 @@ impl TapeLongShifted {
             // The shift is left, so tape_shifted wanders right -> store low 32 bits.
             self.tape_long[self.tl_pos + 3] = self.tape_shifted as u32;
 
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             println!(
                 "  LEFT  SAVE HIGH P{}-{}: tape wanders right -> {:?}",
                 self.pos_middle,
@@ -471,7 +473,7 @@ impl TapeLongShifted {
             self.tape_shifted = (self.tape_shifted & CLEAR_HIGH95_64BITS_U128)
                 | ((self.tape_long[self.tl_pos + 1] as u128) << TAPE_SIZE_HALF_128);
 
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             {
                 println!(
                     "  ALoad {}",
@@ -517,7 +519,7 @@ impl TapeLongShifted {
             // }
             self.tape_long[self.tl_pos] = (self.tape_shifted >> TAPE_SIZE_FOURTH_UPPER_128) as u32;
 
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             println!(
                 "  RIGHT SAVE HIGH P{}-{}: tape wanders left -> {:?}",
                 self.pos_middle,
@@ -536,14 +538,14 @@ impl TapeLongShifted {
             //         "Error shift: TL len {}, tl_pos +2 {}",
             //         self.tape_long.len(),
             //         self.tl_pos + 2 // "Step {}: {}, {}",
-            //                         // self.step_no, self.tr, self.transition_table
+            //                         // self.step_no, tr, transition_table
             //     );
             //     // } else {
             // }
             self.tape_shifted = (self.tape_shifted & CLEAR_LOW63_32BITS_U128)
                 | ((self.tape_long[self.tl_pos + 2] as u128) << 32);
 
-            #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+            #[cfg(all(debug_assertions, feature = "debug_tape"))]
             {
                 use crate::tape::tape_utils::{VecU32Ext as _, TAPE_DISPLAY_RANGE_128};
 
@@ -716,7 +718,7 @@ impl Tape for TapeLongShifted {
         self.pos_middle as i64
     }
 
-    // /// Update tape: write symbol at head position into cell
+    /// Update tape: write symbol at head position into cell
     #[inline(always)]
     fn set_current_symbol(&mut self, transition: TransitionBinary) {
         if transition.is_symbol_one() {
@@ -726,9 +728,12 @@ impl Tape for TapeLongShifted {
         };
     }
 
-    // fn supports_speed_up(&self) -> bool {
-    //     false
-    // }
+    #[inline(always)]
+    fn write_last_symbol(&mut self, transition: TransitionBinary) {
+        if !transition.is_symbol_undefined() {
+            self.set_current_symbol(transition);
+        }
+    }
 
     fn tape_long_positions(&self) -> Option<TapeLongPositions> {
         Some(TapeLongPositions {
@@ -755,11 +760,7 @@ impl Tape for TapeLongShifted {
     #[inline(always)]
     fn update_tape_single_step(&mut self, transition: TransitionBinary) -> bool {
         // set current symbol
-        if transition.is_symbol_one() {
-            self.tape_shifted |= POS_HALF_U128
-        } else {
-            self.tape_shifted &= !POS_HALF_U128
-        };
+        self.set_current_symbol(transition);
 
         if transition.is_dir_right() {
             self.tape_shifted <<= 1;
@@ -771,9 +772,187 @@ impl Tape for TapeLongShifted {
             self.shift_tape_long_head_dir_left()
         }
     }
+}
 
-    fn update_tape_self_ref_speed_up_unused_or_used(&mut self, transition: TransitionBinary) -> bool {
-        todo!()
+impl TapeAcceleration for TapeLongShifted {
+    fn update_tape_self_ref_speed_up(&mut self, tr: TransitionBinary, tr_field: usize) -> StepBig {
+        let mut jump;
+        // Check if self referencing, which speeds up the shift greatly.
+        // Self referencing means also that the symbol does not change, ergo no need to update the fields
+        if tr.self_ref_array_id() == tr_field {
+            if tr.is_dir_right() {
+                // normal shift RIGHT -> tape moves left
+
+                // get jump within tape_shifted, which is only the lower part and thus a maximum of 63 bits
+                jump = self.count_right(tr_field & 1);
+                // if self.num_steps > 50_000 {
+                //     // #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                //     println!("  jump R {jump}, {}", self.step_to_string());
+                // }
+                // The content is either always 0 or always 1, which makes looping over multiple u32 fields easy
+                // Interestingly, the version with the long_jump logic runs faster.
+                let mut long_jump = false;
+                if jump == 32 && self.pos_middle + jump == HIGH32_SWITCH_U128 {
+                    // check further for larger jump
+                    // compare depending on symbol
+                    let v32 = if tr_field & 1 == 0 { 0 } else { u32::MAX };
+                    // head goes right, tape shifts left
+                    // tl_pos + 2 is now a known required value v32, because that is what count_right just tested
+                    let mut p = self.tl_pos() + 3;
+                    let mut j = 1;
+                    while p < self.tl_high_bound() && self.tape_long[p] == v32 {
+                        p += 1;
+                        j += 1;
+                    }
+                    // j is one more as the first one is already checked with count_right
+                    if j >= 2 {
+                        // if tape_shifted_left_0 != v32 {
+                        //     println!("Not v32 {v32} but {tape_shifted_left_0}");
+                        // }
+                        // println!(
+                        //     "Step {}: Long jump = {j} u32 = {} bits",
+                        //     self.num_steps,
+                        //     j * 32
+                        // );
+                        // shift out high bit after moving 32 bit
+                        let tape_shifted_left_1 = (self.tape_shifted >> 64) as u32;
+                        let p_tmp = self.tl_pos() + 1;
+                        self.tape_long[p_tmp] = tape_shifted_left_1;
+                        self.set_tl_pos(p - 3);
+                        // println!("before {}", self_shifted.to_binary_split_string());
+                        self.tape_shifted = if tr_field & 1 == 0 {
+                            0
+                        } else {
+                            CLEAR_LOW63_00BITS_U128
+                        };
+                        // println!("filled {}", self_shifted.to_binary_split_string());
+                        self.pos_middle = HIGH32_SWITCH_U128;
+                        jump = j * 32;
+                        // shift in low bits (low part is already cleared)
+                        self.tape_shifted |= (self.tape_long[self.tl_pos() + 3] as u128) << 32;
+                        // println!("fill 2 {}", self_shifted.to_binary_split_string());
+                        long_jump = true;
+                    }
+                }
+                if !long_jump {
+                    if self.pos_middle + jump > HIGH32_SWITCH_U128 {
+                        jump = HIGH32_SWITCH_U128 - self.pos_middle;
+                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                        println!("  jump right adjusted {jump}");
+                    }
+                    self.pos_middle += jump;
+
+                    // shift tape
+                    // self.set_current_symbol(); not required as it does not change
+                    self.tape_shifted <<= jump;
+                }
+                // #[cfg(feature = "enable_html_reports")]
+                // if self.write_html_step_limit > 0 {
+                //     let tl_pos_min_1 = if self.tl_pos == 0 { 0 } else { self.tl_pos - 1 };
+                //     let s = format!(
+                //         "num_steps: {}, t pos {}, tl: {}, [{},{},{},{}], {}",
+                //         self.num_steps,
+                //         self.tl_pos,
+                //         self_long[tl_pos_min_1],
+                //         self_long[self.tl_pos],
+                //         self_long[self.tl_pos + 1],
+                //         self_long[self.tl_pos + 2],
+                //         self_long[self.tl_pos + 3],
+                //         self_long[self.tl_pos + 4],
+                //     );
+                //     self.write_html_p(&s);
+                // }
+
+                self.shift_tape_long_head_dir_right()
+            } else {
+                // normal shift LEFT -> tape moves right
+                jump = self.count_left(tr_field & 1);
+                #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                println!("  jump left {jump}");
+                // The content is either always 0 or always 1, which makes looping over multiple u32 fields easy
+                // Interestingly, the version with the long_jump logic runs faster.
+                let mut long_jump = false;
+                if jump == 33 && LOW32_SWITCH_U128 - 1 + jump == self.pos_middle {
+                    // check further for larger jump
+                    // compare depending on symbol
+                    let v32 = if tr_field & 1 == 0 { 0 } else { u32::MAX };
+                    // head goes left, tape shifts right
+                    // tl_pos + 1 is known required value v32, because that is what count_left just tested
+                    let mut p = self.tl_pos();
+                    let mut j = 1;
+                    while p >= self.tl_low_bound() && self.tape_long[p] == v32 {
+                        p -= 1;
+                        j += 1;
+                    }
+                    // j is one more as the first one is already checked with count_right
+                    if j >= 2 {
+                        // if tape_shifted_left_0 != v32 {
+                        //     println!("Not v32 {v32} but {tape_shifted_left_0}");
+                        // }
+                        // #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                        // println!(
+                        //     "Step {}: Long jump = {j} u32 = {} bits",
+                        //     self.num_steps,
+                        //     j * 32
+                        // );
+                        // shift out low bit after moving 32 bit
+                        let tape_shifted_left_2 = (self.tape_shifted >> 32) as u32;
+                        let p_tmp = self.tl_pos() + 2;
+                        self.tape_long[p_tmp] = tape_shifted_left_2;
+                        self.set_tl_pos(p);
+                        // println!("before {}", self_shifted.to_binary_split_string());
+                        self.tape_shifted = if tr_field & 1 == 0 {
+                            0
+                        } else {
+                            u64::MAX as u128
+                        };
+                        // println!("filled {}", self_shifted.to_binary_split_string());
+                        self.pos_middle = LOW32_SWITCH_U128;
+                        jump = j * 32;
+                        // shift in high bits (high part is already cleared)
+                        self.tape_shifted |=
+                            (self.tape_long[self.tl_pos()] as u128) << TAPE_SIZE_HALF_128;
+                        // println!("fill 2 {}", self_shifted.to_binary_split_string());
+                        long_jump = true;
+                    }
+                }
+                if !long_jump {
+                    if self.pos_middle < LOW32_SWITCH_U128 + jump {
+                        jump = self.pos_middle - LOW32_SWITCH_U128;
+                        #[cfg(all(debug_assertions, feature = "bb_debug"))]
+                        println!("  jump left adjusted {jump}");
+                    }
+                    self.pos_middle -= jump;
+
+                    // self.set_current_symbol();
+                    // shift tape
+                    self.tape_shifted >>= jump;
+                }
+                // #[cfg(feature = "enable_html_reports")]
+                // if self.write_html_step_limit > 0 && self.num_steps < self.write_html_step_limit
+                // {
+                //     let tl_pos_min_1 = if self.tl_pos == 0 { 0 } else { self.tl_pos - 1 };
+                //     let s = format!(
+                //         "num_steps: {}, t pos {}, tl: {}, [{},{},{},{}], {}",
+                //         self.num_steps,
+                //         self.tl_pos,
+                //         self_long[tl_pos_min_1],
+                //         self_long[self.tl_pos],
+                //         self_long[self.tl_pos + 1],
+                //         self_long[self.tl_pos + 2],
+                //         self_long[self.tl_pos + 3],
+                //         self_long[self.tl_pos + 4],
+                //     );
+                //     self.write_html_p(&s);
+                // }
+
+                self.shift_tape_long_head_dir_left()
+            };
+        } else {
+            let r = self.update_tape_single_step(tr);
+            jump = r as StepBig;
+        }
+        jump
     }
 }
 

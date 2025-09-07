@@ -113,3 +113,85 @@ A machine has a number of properties in the case it halts:
 ## Features
 
 * bb_debug: This will output detailed information on the steps in the Terminal.
+
+## Enumerator
+
+The enumerator in this library does not use the TNF tree usually used. When I started programming, I was
+not aware of that algorithm, but now I think my algorithm may be faster. \
+The beauty of the TNF algorithm is that is eliminates whole tree sections. But this comes with a price. Handling
+trees is much more complex than handling a table where mostly one field needs to change only. A tree requires predecessor
+and successor handling which hardly can be done on stack memory. It also is difficult to parallelize.
+
+My algorithm basically creates all machines (limited to A0 0RB and 1RB) and then decides quickly, if it is
+even relevant for the deciders. Going backward, this also allows to cut tree sections (not yet implemented), but
+even without the tree elimination it is very fast as most work can be done on the stack and parallelization is easy.
+Creating all 16,679,880,978,201 machines for BB5 and filtering those for the deciders takes about 8 hours on a single CPU.
+Splitting this means less than one hour calculation time on a halfway modern computer.
+
+## Reverse enumeration
+
+Enumeration order:
+
+|   |  0 | 1 |
+| - | -- | - |
+| A | 10 | 9 |
+| B |  8 | 7 |
+| C |  6 | 5 |
+| D |  4 | 3 |
+| E |  2 | 1 |
+
+Enumeration begins with field E1. If the pre-decider now finds this combination is eliminated it also can cut the tree, \
+e.g. 0RB---\_0LA0RB\_... always encounters a 0 in each new step (only A0 and B0 are used). Since
+B0 is the last used field, all other fields can be reset to start and B0 increased by one. Similar logic applies if higher
+fields are facing the same issue.
+
+But there is no need to check all this.
+
+Field A0: Always is the 1st field. Only possible transitions are 0RB or 1RB.\
+Others are excluded for immediate Halt, NonHalt in case of state A, L R similarity and state similarity. \
+Field B0: Always is the 2nd field. Only possible transitions are 0LB, 1LA, 1LB:
+
+* ---: No, halt in step 2, cannot be most steps.
+* 0LA: \
+  If AO is 0RB then this is Non-Halt as only 0 is written. Can be checked easily by just checking on this combination. \
+  If A0 is 1RB then 10 is written on the tape repeatedly in the same place. Non-Halt.
+* 0LB: \
+  If AO is 0RB then this is Non-Halt as only 0 is written. Can be checked easily by just checking on this combination. \
+  If A0 is 1RB then possible.
+* 0RA: Non-Halt, always moves right
+* 0RB: Non-Halt, always moves right
+* 1LA: possible
+* 1LB: possible
+* 1RA: Non-Halt, goes always right
+* 1RB: Non-Halt, goes always right
+* 0LC: possible
+* 0RC: possible
+* 1LC: possible
+* 1RC: possible
+* xxD, xxE: not possible for state symmetry
+
+## Statistics
+
+Of all possible machines less than 0,5% are relevant for deciders, all others do not meet the criteria.
+
+For example BB(2,4): \
+
+|                       | Count         |
+| --------------------- | ------------- |
+| Total machines        | 6,975,757,441 |
+| Total machines        | 6,975,757,441 |
+| Relevant for deciders |    30,199,552 (0,43%) |
+| Decided Halts         |    10,758,178 |
+| Decided Non-Halt      |    19,439,058 |
+| - Cycler              |    19,378,244 |
+| - Bouncer             |        60,814 |
+| Undecided             |         2,316 |
+
+Of the 30,199,552 machines a whopping 30,136,422 are decided by a cycler with a low step
+limit as it decides Halt and Cycler. \
+Notably, 10,752,250 (99.9945%) of the halting machines are decided in the first 25 steps. \
+Same goes for the Cycler, where 99,4% are detected in the first 25 steps, 99,96% after 50 steps. \
+This also holds true for larger machines with 5 or more states and only <0,000001% are running longer than 100 steps.
+
+This shows the importance of having a fast cycler capable of running a few steps only. It can be executed directly
+in the enumerator, eliminating the need to pass the machines into heap memory to be be able to run deciders on them.

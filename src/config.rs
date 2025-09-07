@@ -38,12 +38,13 @@ pub static CONFIG_TOML: LazyLock<ConfigToml> = LazyLock::new(|| ConfigToml::read
 // --- Below are program defining definitions, where changes may have a serious impact. ---
 
 /// Number type used for step counters which may exceed u64 and are not used as collection index.
-pub type StepTypeBig = u32;
-/// Number type used for step counters which are used as collection index.
-pub type StepTypeCol = usize;
+pub type StepBig = u32;
 /// Number type used for step counters which never exceed u32 and may be used as collection index (casting is free on u64 machines).
 /// Smaller may be better for memory usage and performance, larger if more than 2.4 billion steps (u32) are required.
-pub type StepTypeSmall = u32;
+pub type StepSmall = u32;
+// / Number type used for step counters which are used as collection index.
+// pub type StepIdx = usize;
+
 /// Number type for the machine id and other values related to MAX_STATES.
 /// The idea is to allow states 8, 9 and 10 by switching to u128.
 /// However, most code was written before this was introduced, and needs to be evaluated and tested for u128.
@@ -89,16 +90,16 @@ pub enum CoreUsage {
 pub struct Config {
     n_states: usize,
     /// This is the decider halt step limit. If this many steps are walked, then exit undecided.
-    step_limit_decider_halt: StepTypeBig,
+    step_limit_decider_halt: StepBig,
     /// Search step limit for cycles. The loop size can be close to the max step size,
     /// but requires twice as many steps as the loop can only be identified if a repeated loop is found.
-    step_limit_decider_cycler: StepTypeSmall,
+    step_limit_decider_cycler: StepSmall,
     /// Search step limit for bouncer.
-    step_limit_decider_bouncer: StepTypeSmall,
+    step_limit_decider_bouncer: StepSmall,
     /// The init value determines if machines with less steps are recorded.
     /// This can be updated as previous batch runs max can be used as init value for next batches,
     /// reducing updates because a new machine with higher max steps was found.
-    steps_min: StepTypeBig,
+    steps_min: StepBig,
     /// Tape Size Limit recalculated in full u32 blocks, e.g. 100 -> 4.
     tape_size_limit_u32_blocks: u32,
     /// For data provider: Return max this many machines.
@@ -132,7 +133,7 @@ pub struct Config {
     write_html_file: bool,
     /// First step No for output, allows basically e.g. [782_000_000..] and is ended by write_html_line_limit. \
     /// Steps 0-1000 are always written.
-    write_html_step_start: StepTypeBig,
+    write_html_step_start: StepBig,
     /// Limits the actually written steps. If set to 0 no html output is done.
     write_html_line_limit: u32,
     /// reduces 128 bit tape_shifted to 64 bits, which can be printed on a landscape page
@@ -185,7 +186,7 @@ impl Config {
     }
 
     /// Step limit defaults for actual runs.
-    pub fn step_limit_decider_halt_default(n_states: usize) -> StepTypeBig {
+    pub fn step_limit_decider_halt_default(n_states: usize) -> StepBig {
         match n_states {
             1 => 10,
             2 => 10,
@@ -197,7 +198,7 @@ impl Config {
     }
 
     /// Step limit defaults for actual runs of deciders of type bouncer.
-    pub fn step_limit_bouncer_default(n_states: usize) -> StepTypeSmall {
+    pub fn step_limit_bouncer_default(n_states: usize) -> StepSmall {
         // TODO fine tune
         match n_states {
             1 => 1_000,
@@ -210,7 +211,7 @@ impl Config {
     }
 
     /// Step limit defaults for actual runs of deciders of type cycler.
-    pub fn step_limit_cycler_default(n_states: usize) -> StepTypeSmall {
+    pub fn step_limit_cycler_default(n_states: usize) -> StepSmall {
         // TODO fine tune
         match n_states {
             1 => 100,
@@ -318,7 +319,7 @@ impl Config {
         self.n_states
     }
 
-    pub fn steps_min(&self) -> StepTypeBig {
+    pub fn steps_min(&self) -> StepBig {
         self.steps_min
     }
 
@@ -329,15 +330,15 @@ impl Config {
     //     }
     // }
 
-    pub fn step_limit_decider_halt(&self) -> StepTypeBig {
+    pub fn step_limit_decider_halt(&self) -> StepBig {
         self.step_limit_decider_halt
     }
 
-    pub fn step_limit_decider_bouncer(&self) -> StepTypeSmall {
+    pub fn step_limit_decider_bouncer(&self) -> StepSmall {
         self.step_limit_decider_bouncer
     }
 
-    pub fn step_limit_decider_cycler(&self) -> StepTypeSmall {
+    pub fn step_limit_decider_cycler(&self) -> StepSmall {
         self.step_limit_decider_cycler
     }
 
@@ -361,7 +362,7 @@ impl Config {
         self.write_html_line_limit
     }
 
-    pub fn write_html_step_start(&self) -> StepTypeBig {
+    pub fn write_html_step_start(&self) -> StepBig {
         self.write_html_step_start
     }
 
@@ -400,9 +401,9 @@ pub struct ConfigBuilder {
     enumerator_first_rotate_field_front: Option<bool>,
     enumerator_batch_size_request_full: Option<usize>,
     enumerator_batch_size_request_reduced: Option<usize>,
-    step_limit_decider_halt: Option<StepTypeBig>,
-    step_limit_decider_bouncer: Option<StepTypeSmall>,
-    step_limit_decider_cycler: Option<StepTypeSmall>,
+    step_limit_decider_halt: Option<StepBig>,
+    step_limit_decider_bouncer: Option<StepSmall>,
+    step_limit_decider_cycler: Option<StepSmall>,
     tape_size_limit_u32_blocks: Option<u32>,
     machines_limit: Option<u64>,
     limit_machines_decided: Option<usize>,
@@ -411,7 +412,7 @@ pub struct ConfigBuilder {
     config_key_value_pair: Option<HashMap<String, String>>,
     use_local_time: Option<bool>,
     write_html_file: Option<bool>,
-    write_html_step_start: Option<StepTypeBig>,
+    write_html_step_start: Option<StepBig>,
     write_html_line_limit: Option<u32>,
     write_html_tape_shifted_64_bit: Option<bool>,
 }
@@ -476,17 +477,17 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn step_limit_decider_halt(mut self, step_limit: StepTypeBig) -> Self {
+    pub fn step_limit_decider_halt(mut self, step_limit: StepBig) -> Self {
         self.step_limit_decider_halt = Some(step_limit);
         self
     }
 
-    pub fn step_limit_decider_bouncer(mut self, step_limit: StepTypeSmall) -> Self {
+    pub fn step_limit_decider_bouncer(mut self, step_limit: StepSmall) -> Self {
         self.step_limit_decider_bouncer = Some(step_limit);
         self
     }
 
-    pub fn step_limit_decider_cycler(mut self, step_limit: StepTypeSmall) -> Self {
+    pub fn step_limit_decider_cycler(mut self, step_limit: StepSmall) -> Self {
         self.step_limit_decider_cycler = Some(step_limit);
         self
     }
@@ -507,7 +508,7 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn write_html_step_start(mut self, value: StepTypeBig) -> Self {
+    pub fn write_html_step_start(mut self, value: StepBig) -> Self {
         self.write_html_step_start = Some(value);
         self
     }

@@ -1,10 +1,16 @@
 //! This is a simple decider bouncer.\
-//! It detects all bouncers which iterate over the tape start point left and right. \
-//! Then it is checked if the left and right side each have the same bits which are added, see examples below. \
-//! TODO This bouncer works on the long tape but does not use it. This is actually worse than not using the long tape
-//! as now it is not known if the full sides were used.
-//! This also means step_limit_bouncer can be set high as mostly the tape borders are reached.
-//! This is still highly effective and eliminates >90% of the machines the cycler does not catch. \
+//! It detects bouncers which iterate over the tape start point left and right. \
+//! It checks in cases where left or right of head is 0, if the expanding bits
+//! follow a rhythm, see examples below. \
+//! It runs on the 128 bit tape, which limits the expansion to the sides, but is highly effective
+//! and eliminates >90% of the machines the cycler does not catch.
+//!
+//! # Config
+//! step_limit_decider_bouncer: Undecided if number of steps are reached.
+//! This can be set high as mostly the bouncer is identified quickly or the tape borders are reached,
+//! e.g. 20_000. Since the cycler takes care of most machines, the amount of checked machines is fairly low.
+//!
+//! # Statistics
 //! BB4 with cycler limit 1500 leaves 63,130 of the 6,975,757,441 machines undecided.
 //! Using this bouncer with limit 20_000 reduces this to 1,664 machines (only 2,7% left). \
 //! Since only very few machines are left, the cycler can now be run again with a limit of 100_000 steps; for
@@ -24,9 +30,12 @@
 //! 7,827,594 machines are left undecided.
 //!
 //! # Examples
-//! When left is 0, then right must be expanding with the same bits as before, \
-//! e.g. 11337065 1RB0LB_1LA0LC_---1RD_0RA0RA: \
-//! Here step 18 and 46 are identical (both first with left 0), only 46 is expanded by 01 which is ok, as 01 is before that. \
+//!
+//! ## 1RB0LB_1LA0LC_---1RD_0RA0RA
+//! When left of head is all 0, then right must be expanding with the same bits as before \
+//! (see test is_bouncer_bb4_example1): \
+//! Here step 18 and 46 are identical (both first with left 0), only step 46 is expanded by 01
+//! which indicates a bouncer, as 01 is before that. \
 //! Probably need to count the inner cycle which results from this, which is B0-A1 and thus has 2 elements. \
 //! Step    18 B0 1LA: 000000000000000000000000_00000000\***110101**00_000000000000000000000000 \
 //! Step    19 A1 0LB: 000000000000000000000000_00000000\*00101010_000000000000000000000000 \
@@ -35,7 +44,7 @@
 //! Step    45 A1 0LB: 000000000000000000000000_00000001\*00101010_100000000000000000000000 \
 //! Step    46 B0 1LA: 000000000000000000000000_00000000\***11010101**_010000000000000000000000 \
 //! \
-//! Same goes for right side 0: Step 11 & 35 \
+//! Same goes for right of head is all 0: Step 11 & 35, step 35 is expanded by 1010 (2 x 10) \
 //! Step    10 B1 0LC: 000000000000000000000000_00000010\*10000000_000000000000000000000000 \
 //! Step    11 C1 1RD: 000000000000000000000000_00000**101**\*00000000_000000000000000000000000 \
 //! Step    12 D0 0RA: 000000000000000000000000_00001010\*00000000_000000000000000000000000 \
@@ -64,7 +73,7 @@
 //! Step    33 A0 1RB: 000000000000000000000000_01010101\*10000000_000000000000000000000000 \
 //! Step    34 B1 0LC: 000000000000000000000000_00101010\*10000000_000000000000000000000000 \
 //! Step    35 C1 1RD: 000000000000000000000000_0**1010101**\*00000000_000000000000000000000000 \
-//! This needs approval by 3rd, step 71, as 4 is longer then the existing 3: \
+//! This needs approval by 3rd, step 71, here again expansion by 1010: \
 //! Step    64 D0 0RA: 000000000000000000000000_10101010\*01010000_000000000000000000000000 \
 //! Step    65 A0 1RB: 000000000000000000000001_01010101\*10100000_000000000000000000000000 \
 //! Step    66 B1 0LC: 000000000000000000000000_10101010\*10010000_000000000000000000000000 \
@@ -73,9 +82,13 @@
 //! Step    69 A0 1RB: 000000000000000000000101_01010101\*10000000_000000000000000000000000 \
 //! Step    70 B1 0LC: 000000000000000000000010_10101010\*10000000_000000000000000000000000 \
 //! Step    71 C1 1RD: 000000000000000000000**101_01010101**\*00000000_000000000000000000000000 \
-//! \
-//! Machine 18226348 0RB---_1LC1RB_0LD0LC_0RA0RA behaves differently: \
-//! left is just growing by 1, so same here, but right inserts a 0 always. This is a different kind of extension. \
+//!
+//! ## 0RB---_1LC1RB_0LD0LC_0RA0RA
+//! This machine expands the tape differently. \
+//! Left is just expanding by 1, so same logic here, compare steps 6, 17, 40, 87 and 182
+//! but right inserts one 0 in between always. This is a different kind of extension, \
+//! compare steps 7, 19, 43 and 91
+//! (see test is_bouncer_bb4_example2): \
 //! Step     6 B1 1RB: 000000000000000000000000_0000000**1**\*00000000_000000000000000000000000 \
 //! Step     7 B0 1LC: 000000000000000000000000_00000000\***11**000000_000000000000000000000000 \
 //! ... \
@@ -93,30 +106,31 @@
 //! Step    89 C1 0LC: 000000000000000000000000_00000011\*10100000_000000000000000000000000 \
 //! Step    90 C1 0LC: 000000000000000000000000_00000001\*10010000_000000000000000000000000 \
 //! Step    91 C1 0LC: 000000000000000000000000_00000000\***10001**000_000000000000000000000000 \
-//! \
-//! Machine Id: 247831398 1RB---_1LC0RD_0LC0LE_0RB0RA_0RA0RA \
-//! That is a good test case \
+//!
+//! ## 1RB---_1LC0RD_0LC0LE_0RB0RA_0RA0RA
+//! In the previous example it was simple to identify the relevant entries which either have all 0
+//! left or right of the head, because they were clearly alternating. \
+//! In this example there is not just one entry with all 0 right of head, but always 2 consecutive.
+//! In this case, always the first step is compared. In fact, no other with right 0 is evaluated until
+//! a head left all 0 is encountered. \
+//! (use the test is_bouncer_bb5_example3 to create the HTML file): \
+//! For right of head is 0, step 1, 6 (7), 20 (21), 50 (51), 112 (113) skipped in brackets, \
+//! for left of head is 2 (3, 4), 10 (11, 12, 15, 16), 26 (27, 28, 38, 39, 42, 43)
 
 use std::fmt::Display;
 
-// #[cfg(debug_assertions)]
-// use bb_challenge::config::StepTypeBig;
-
-use crate::decider::{
-    self,
-    decider_data_128::DeciderData128,
-    decider_result::{BatchData, ResultUnitEndReason},
-    Decider,
-};
 use crate::{
     config::Config,
-    machine_binary::MachineBinary,
+    decider::{
+        self,
+        decider_data_128::DeciderData128,
+        decider_result::{BatchData, ResultUnitEndReason},
+        Decider,
+    },
+    machine_binary::MachineId,
     status::{MachineStatus, NonHaltReason},
     tape::{tape_utils::U64Ext, Tape},
 };
-
-// #[cfg(debug_assertions)]
-// const DEBUG_EXTRA: bool = false;
 
 /// Initial capacity for step recorder. Not so relevant.
 const MAX_INIT_CAPACITY: usize = 10_000;
@@ -126,7 +140,7 @@ const MAX_INIT_CAPACITY: usize = 10_000;
 pub struct DeciderBouncer128 {
     data: DeciderData128,
     /// Store all steps to do comparisons (test if a cycle is repeating)
-    /// All even are lower bits, all odd upper bits
+    /// All even indices are lower bits, all odd upper bits
     steps: Vec<StepBouncer>,
     // / Stores the step ids (2 = 3rd step) for each field in the transition table. \
     // / (basically e.g. all steps for e.g. field 'B0' steps: 1 if A0 points to B, as step 1 then has state B and head symbol 0.)
@@ -135,7 +149,6 @@ pub struct DeciderBouncer128 {
 }
 
 impl DeciderBouncer128 {
-    /// Creates a new bouncer. Only uses step_limit_bouncer from config.
     pub fn new(config: &Config) -> Self {
         let cap = (config.step_limit_decider_bouncer() as usize).min(MAX_INIT_CAPACITY);
         let mut decider = Self {
@@ -164,9 +177,6 @@ impl DeciderBouncer128 {
     fn clear(&mut self) {
         self.data.clear();
         self.steps.clear();
-        // for map in self.maps_1d.iter_mut() {
-        //     map.clear();
-        // }
     }
 }
 
@@ -180,7 +190,7 @@ impl Decider for DeciderBouncer128 {
         }
     }
 
-    fn decide_machine(&mut self, machine: &MachineBinary) -> MachineStatus {
+    fn decide_machine(&mut self, machine: &MachineId) -> MachineStatus {
         #[cfg(feature = "enable_html_reports")]
         self.data.write_html_file_start(Self::decider_id(), machine);
 
@@ -357,7 +367,7 @@ impl Decider for DeciderBouncer128 {
     // tape_long_bits in machine?
     // TODO counter: longest cycle
 
-    fn decide_single_machine(machine: &MachineBinary, config: &Config) -> MachineStatus {
+    fn decide_single_machine(machine: &MachineId, config: &Config) -> MachineStatus {
         let mut d = Self::new(config);
         d.decide_machine(machine)
     }
@@ -376,7 +386,7 @@ impl Decider for DeciderBouncer128 {
 struct StepBouncer {
     /// only for debugging purposes
     #[cfg(debug_assertions)]
-    _step_no: crate::config::StepTypeBig,
+    _step_no: crate::config::StepBig,
     /// only for debugging purposes
     #[cfg(debug_assertions)]
     _is_upper_bits: bool,
@@ -387,7 +397,7 @@ struct StepBouncer {
 /// Function to test single machine
 pub fn test_decider(transition_tm_format: &str) {
     // let config = Config::new_default(5);
-    let machine = MachineBinary::try_from(transition_tm_format).unwrap();
+    let machine = MachineId::try_from(transition_tm_format).unwrap();
     let config = Config::builder(machine.n_states())
         .write_html_file(true)
         .write_html_step_start(792_199_000)
@@ -410,18 +420,14 @@ impl Changed {
     fn new(newer_tape: u64, older_tape: u64) -> Self {
         // identify changed bits
         let changed = newer_tape ^ older_tape;
-        // let pos = changed.leading_zeros();
         let trailing_zeros = if changed != 0 {
             changed.trailing_zeros()
         } else {
             0
         };
-        // let len_1 = 64 - pos_1 - trailing_zeros;
-        // let pos_1 = pos_1 as i32;
-        // let change_moved = changed >> trailing_zeros;
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
         {
-            use bb_challenge::tape::tape_utils::U64Ext;
+            use crate::tape::tape_utils::U64Ext;
 
             println!(" OLD {}", older_tape.to_binary_split_string());
             println!(" NEW {}", newer_tape.to_binary_split_string());
@@ -458,19 +464,17 @@ impl Display for Changed {
     }
 }
 
-// Note: 'is_not_decider_bouncer_1RB1LC_0RCZZZ_1LD1RC_0RC0RA' will take 16 seconds if not --release
+// Note: 'is_not_bouncer_1RB1LC_0RCZZZ_1LD1RC_0RC0RA' will take 16 seconds if not --release
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod tests {
 
-    use crate::status::UndecidedReason;
+    use crate::{config::StepBig, status::UndecidedReason};
 
     use super::*;
 
-    #[test]
-    fn is_bouncer_1RB0LB_1LA0LC_ZZZ1RD_0RA0RA() {
-        let machine = MachineBinary::try_from("1RB0LB_1LA0LC_---1RD_0RA0RA").unwrap();
-        // let config = Config::new_default(machine.n_states());
+    fn is_bouncer(tm: &str, steps: StepBig) {
+        let machine = MachineId::try_from(tm).unwrap();
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .build();
@@ -478,8 +482,23 @@ mod tests {
         // println!("{}", check_result);
         assert_eq!(
             check_result,
-            MachineStatus::DecidedNonHalt(NonHaltReason::Bouncer(119))
+            MachineStatus::DecidedNonHalt(NonHaltReason::Bouncer(steps))
         );
+    }
+
+    #[test]
+    fn is_bouncer_bb4_example1_1RB0LB_1LA0LC_zzz1RD_0RA0RA() {
+        is_bouncer("1RB0LB_1LA0LC_---1RD_0RA0RA", 119);
+    }
+
+    #[test]
+    fn is_bouncer_bb4_example2_0RBzzz_1LC1RB_0LD0LC_0RA0RA() {
+        is_bouncer("0RB---_1LC1RB_0LD0LC_0RA0RA", 182);
+    }
+
+    #[test]
+    fn is_bouncer_bb5_example3_1RBzzz_1LC0RD_0LC0LE_0RB0RA_0RA0RA() {
+        is_bouncer("1RB---_1LC0RD_0LC0LE_0RB0RA_0RA0RA", 112);
     }
 
     /// This works almost identical, only every second step needs to be compared, here only the right empty side:
@@ -492,7 +511,7 @@ mod tests {
     /// Step   144 B1 0RA: 00000000000000**101010**1010_10101010\*00000000 P: 75 TL 30 30..33
     #[test]
     fn is_bouncer_1RBZZZ_1LC0RA_0LD0LB_1RA0RA() {
-        let machine = MachineBinary::try_from("1RB---_1LC0RA_0LD0LB_1RA0RA").unwrap();
+        let machine = MachineId::try_from("1RB---_1LC0RA_0LD0LB_1RA0RA").unwrap();
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -520,8 +539,8 @@ mod tests {
     /// Step    84 A1 1RA: 00000000000000000**1**111111_0111111**1**\*00000000 P: 77 TL 30 30..33
 
     #[test]
-    fn is_decider_bouncer_1RB1RA_1LCZZZ_1RD1LC_0RA0RA() {
-        let machine = MachineBinary::try_from("1RB1RA_1LC---_1RD1LC_0RA0RA").unwrap();
+    fn is_bouncer_1RB1RA_1LCZZZ_1RD1LC_0RA0RA() {
+        let machine = MachineId::try_from("1RB1RA_1LC---_1RD1LC_0RA0RA").unwrap();
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -536,14 +555,14 @@ mod tests {
     }
 
     #[test]
-    fn is_not_decider_bouncer_bb3_41399() {
+    fn is_not_bouncer_bb3_41399() {
         // BB3 41399 (this is a cycler, but it actually expands endless with 0)
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1LB", "---"));
         transitions.push(("0RC", "1RB"));
         transitions.push(("1RA", "0RA"));
 
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -560,14 +579,14 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_84080() {
+    fn is_bouncer_bb3_84080() {
         // BB3 84080 (high bound check)
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RC", "0LB"));
         transitions.push(("1LA", "---"));
         transitions.push(("0LA", "0RA"));
 
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -581,14 +600,14 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_112641() {
+    fn is_bouncer_bb3_112641() {
         // BB3 112641
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RC", "0LB"));
         transitions.push(("1LA", "---"));
         transitions.push(("1LA", "0RA"));
 
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -602,13 +621,13 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_569564() {
+    fn is_bouncer_bb3_569564() {
         // BB3 569564
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("0RC", "0LA"));
         transitions.push(("1LA", "---"));
         transitions.push(("0LB", "1RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -622,13 +641,13 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_584567() {
+    fn is_bouncer_bb3_584567() {
         // BB3 584567 step_delta doubles
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RC", "---"));
         transitions.push(("0RA", "0LB"));
         transitions.push(("1LB", "1RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -641,13 +660,13 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_1265977() {
+    fn is_bouncer_bb3_1265977() {
         // BB3 1265977 step_delta doubles
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1LC", "---"));
         transitions.push(("0LA", "0RB"));
         transitions.push(("1RB", "1LA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -660,13 +679,13 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_1970063() {
+    fn is_bouncer_bb3_1970063() {
         // BB3 1970063 step_delta iterates same delta +-
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("0RB", "0LA"));
         transitions.push(("1RC", "---"));
         transitions.push(("1LA", "1RB"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -679,13 +698,13 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_3044529() {
+    fn is_bouncer_bb3_3044529() {
         // BB3 3044529 A0 always same low_bound and pos = MIDDLE_BIT
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1LB", "---"));
         transitions.push(("1RC", "1LB"));
         transitions.push(("0LA", "0RC"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -698,13 +717,13 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_3554911() {
+    fn is_bouncer_bb3_3554911() {
         // BB3 3554911 A0 always same low_bound and pos = MIDDLE_BIT
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RB", "---"));
         transitions.push(("1LC", "1RB"));
         transitions.push(("0RA", "0LC"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -717,14 +736,14 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_6317243() {
+    fn is_bouncer_bb3_6317243() {
         // BB4 Start out of sync
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RC", "---"));
         transitions.push(("1RD", "0LC"));
         transitions.push(("1LB", "0RB"));
         transitions.push(("0RA", "0RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -737,14 +756,14 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_13318557() {
+    fn is_bouncer_bb3_13318557() {
         // BB4 Start High bound out of sync
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RC", "---"));
         transitions.push(("0LD", "1LB"));
         transitions.push(("0LB", "1RC"));
         transitions.push(("0RA", "0RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -757,14 +776,14 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_15783962() {
+    fn is_bouncer_bb3_15783962() {
         // BB4 ascending shift with gap and linear growing distance between head pos
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("0LB", "1RD"));
         transitions.push(("1LC", "---"));
         transitions.push(("1RA", "1LC"));
         transitions.push(("0RA", "0RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -777,14 +796,14 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb3_32538705() {
+    fn is_bouncer_bb3_32538705() {
         // BB4 sinus, but not with A0
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("0RC", "1LC"));
         transitions.push(("---", "1RC"));
         transitions.push(("1LD", "1RB"));
         transitions.push(("1RA", "0RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -809,14 +828,14 @@ mod tests {
     /// Step 894 D1 0RA: 000000000000000000000000000**10111_010**111010111010111010111_01011100\*00000000 P: 81 TL 2 2..5 \
 
     #[test]
-    fn is_not_decider_bouncer_bb4_45935166() {
+    fn is_not_bouncer_bb4_45935166() {
         // BB4 delta of delta rhythm 22, 14, 20 repeats; requires 128-bit tape
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("0LC", "1LA"));
         transitions.push(("0RD", "---"));
         transitions.push(("1RB", "1LD"));
         transitions.push(("1RA", "0RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -830,14 +849,14 @@ mod tests {
     }
 
     #[test]
-    fn is_decider_bouncer_bb4_2793430() {
+    fn is_bouncer_bb4_2793430() {
         // BB4 every 2nd step
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1LB", "0LD"));
         transitions.push(("1RC", "1LB"));
         transitions.push(("---", "1RA"));
         transitions.push(("0RA", "0RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -851,14 +870,14 @@ mod tests {
 
     // TODO interesting machine, endless, but need other check
     #[test]
-    fn is_not_decider_bouncer_bb4_64379691() {
+    fn is_not_bouncer_bb4_64379691() {
         // BB4 every steps repeating, but with growing amount of identical steps
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1LC", "1RA"));
         transitions.push(("---", "1RD"));
         transitions.push(("1RB", "1LC"));
         transitions.push(("0LA", "0RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -876,7 +895,7 @@ mod tests {
         transitions.push(("1RC", "1LB"));
         transitions.push(("---", "1RD"));
         transitions.push(("0LA", "0RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -889,13 +908,13 @@ mod tests {
     }
 
     #[test]
-    fn is_not_decider_bouncer_bb3_max_651320() {
+    fn is_not_bouncer_bb3_max_651320() {
         // BB3 Max
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1LB", "---"));
         transitions.push(("1RB", "0LC"));
         transitions.push(("1RC", "1RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -905,14 +924,14 @@ mod tests {
     }
 
     #[test]
-    fn is_not_decider_bouncer_bb4_max_322636617() {
+    fn is_not_bouncer_bb4_max_322636617() {
         // BB4 Max
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RC", "1LC"));
         transitions.push(("---", "1LD"));
         transitions.push(("1LA", "0LB"));
         transitions.push(("1RD", "0RA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -922,7 +941,7 @@ mod tests {
     }
 
     #[test]
-    fn is_not_decider_bouncer_bb5_max() {
+    fn is_not_bouncer_bb5_max() {
         // BB5 Max
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RB", "1LC"));
@@ -930,7 +949,7 @@ mod tests {
         transitions.push(("1RD", "0LE"));
         transitions.push(("1LA", "1LD"));
         transitions.push(("---", "0LA"));
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
@@ -949,8 +968,8 @@ mod tests {
     /// This is a long running test checking if the tape_size_limit is reached. \
     /// It also demonstrates the use of write_html_step_start to produces a reasonable size html file. \
     /// Runtime is around 4 seconds in release mode, 16 s in normal mode.
-    fn is_not_decider_bouncer_1RB1LC_0RCZZZ_1LD1RC_0RC0RA() {
-        let machine = MachineBinary::try_from("1RB1LC_0RC---_1LD1RC_0RC0RA").unwrap();
+    fn is_not_bouncer_1RB1LC_0RCZZZ_1LD1RC_0RC0RA() {
+        let machine = MachineId::try_from("1RB1LC_0RC---_1LD1RC_0RC0RA").unwrap();
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .write_html_step_start(792_199_000)

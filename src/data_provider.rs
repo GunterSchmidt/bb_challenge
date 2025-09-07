@@ -8,9 +8,8 @@ pub mod enumerator_binary;
 use std::fmt::Display;
 
 use crate::decider::decider_result::{EndReason, PreDeciderCount};
-use crate::{
-    decider::pre_decider::PreDeciderRun, machine_binary::MachineBinary, machine_info::MachineInfo,
-};
+use crate::machine_binary::MachineId;
+use crate::{decider::pre_decider::PreDeciderRun, machine_info::MachineInfo};
 
 // Returning DataProviderBatch in a box degrades performance.
 pub type ResultDataProvider = Result<DataProviderBatch, Box<DataProviderError>>;
@@ -57,9 +56,9 @@ pub struct DataProviderBatch {
     /// Current batch no, first batch is 0.
     pub batch_no: usize,
     /// Machines for Decider
-    pub machines: Vec<MachineBinary>,
-    /// Optional Ids for the machines, using same index
-    pub ids: Option<Vec<u64>>,
+    // TODO this could be a trait MachineWork which may not have an id. This could speed up the enumeration and deciders a tiny bit.
+    // Generally, enumeration is not the bottleneck. Expected gain <1%.
+    pub machines: Vec<MachineId>,
     /// Info if machines have been eliminated from the full list. For statistics only.
     pub pre_decider_count: Option<PreDeciderCount>,
     // TODO Possibly not used fully

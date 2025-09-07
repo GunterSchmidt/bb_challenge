@@ -15,7 +15,7 @@ use crate::{
         DeciderConfig,
     },
     machine_binary::{
-        MachineBinary, TransitionTableBinaryArray1D, TRANSITION_TABLE_BINARY_DEFAULT,
+        MachineBinary, MachineId, TransitionTableBinaryArray1D, TRANSITION_TABLE_BINARY_DEFAULT,
     },
     transition_binary::TransitionBinary,
 };
@@ -85,7 +85,7 @@ impl BBFileReader {
 
     /// get single machine
     /// Slow, do not use in loops.
-    pub fn read_machine_single(machine_id: u64, file_path: &str) -> io::Result<MachineBinary> {
+    pub fn read_machine_single(machine_id: u64, file_path: &str) -> io::Result<MachineId> {
         // path of file in current folder
         // let mut file = BBFileReader::new(file_path)?;
         let mut file;
@@ -106,7 +106,10 @@ impl BBFileReader {
         let mut buffer: [u8; BYTES_MACHINE] = [0; BYTES_MACHINE];
 
         if file.reader.read(&mut buffer)? == BYTES_MACHINE {
-            Ok(Self::machine_from_file_data(&buffer))
+            Ok(MachineId::new(
+                machine_id,
+                Self::machine_from_file_data(&buffer),
+            ))
         } else {
             Err(io::Error::new(
                 io::ErrorKind::UnexpectedEof,
@@ -124,9 +127,8 @@ impl BBFileReader {
         &mut self,
         first_id: u64,
         count: usize,
-    ) -> io::Result<(Vec<MachineBinary>, Vec<u64>)> {
-        let mut machines: Vec<MachineBinary> = Vec::with_capacity(count);
-        let mut ids: Vec<u64> = Vec::with_capacity(count);
+    ) -> io::Result<Vec<MachineId>> {
+        let mut machines: Vec<MachineId> = Vec::with_capacity(count);
         self.reader
             .seek(SeekFrom::Start(Self::file_pos(first_id)))?;
         let mut buffer: [u8; BYTES_MACHINE] = [0; BYTES_MACHINE];
@@ -158,10 +160,9 @@ impl BBFileReader {
                 Self::file_data_array_into_transitions(&buffer),
                 5,
             );
-            machines.push(machine);
-            ids.push(first_id + machines.len() as u64);
+            machines.push(MachineId::new(first_id + machines.len() as u64, machine));
         }
-        Ok((machines, ids))
+        Ok(machines)
     }
 
     fn file_pos(id: u64) -> u64 {
@@ -236,7 +237,7 @@ impl DataProvider for BBDataProvider {
         };
         let count = (end - self.id_next) as usize;
 
-        let (machines, ids) = match self.bb_file_reader.read_machine_range(self.id_next, count) {
+        let machines = match self.bb_file_reader.read_machine_range(self.id_next, count) {
             Ok(m) => m,
             Err(e) => {
                 batch.end_reason = EndReason::Error(0, e.to_string());
@@ -257,7 +258,6 @@ impl DataProvider for BBDataProvider {
         //     machines[0].to_standard_tm_text_format()
         // );
         batch.machines = machines;
-        batch.ids = Some(ids);
 
         Ok(batch)
     }
@@ -473,7 +473,7 @@ mod tests {
                         // if machine.transition_table().transition_start() != tr_1rb {
                         //     panic!("Machine id {} does not start with 1RB", machine.id());
                         // }
-                        assert_eq!(machine.transition_start(), tr_1rb);
+                        assert_eq!(machine.machine().transition_start(), tr_1rb);
                     }
                     if data.end_reason == EndReason::IsLastBatch {
                         break;

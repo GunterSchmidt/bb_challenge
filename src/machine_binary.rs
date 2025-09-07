@@ -7,9 +7,14 @@
 //! Use TryFrom to create a machine from Standard TM Text Format. \
 //! A normalized ID can be calculated by calling calc_normalized_id, see [calc_normalized_id].
 
+use std::{fmt::Display, u64};
+
+use num_format::ToFormattedString;
+
 use crate::{
     config::{IdNormalized, MAX_STATES, NUM_FIELDS},
     machine_generic::{MachineGeneric, NotableMachine, StateType, SymbolType},
+    machine_info::MachineInfo,
     transition_binary::{TransitionBinary, TransitionType, TRANSITION_BINARY_UNUSED},
 };
 // use crate::{
@@ -459,8 +464,8 @@ impl TryFrom<&str> for MachineBinary {
 impl TryFrom<MachineGeneric> for MachineBinary {
     type Error = &'static str;
 
-    fn try_from(table: MachineGeneric) -> Result<Self, Self::Error> {
-        let dim = table.dimensions();
+    fn try_from(mg: MachineGeneric) -> Result<Self, Self::Error> {
+        let dim = mg.dimensions();
         if dim.n_symbols != 2 {
             return Err("This transition format is only for transitions with symbols 0 and 1.");
         }
@@ -472,13 +477,7 @@ impl TryFrom<MachineGeneric> for MachineBinary {
             return Err("This transition format is limited to 7 states.");
         }
         let mut transitions = TRANSITION_TABLE_BINARY_DEFAULT;
-        for (i, t) in table
-            .transitions
-            .iter()
-            .enumerate()
-            .skip(1)
-            .take(dim.n_states)
-        {
+        for (i, t) in mg.transitions.iter().enumerate().skip(1).take(dim.n_states) {
             transitions[i * 2] = TransitionBinary::from(&t[0]);
             transitions[i * 2 + 1] = TransitionBinary::from(&t[1]);
             // transitions[i * 2] = (&t[0]).into();
@@ -486,6 +485,14 @@ impl TryFrom<MachineGeneric> for MachineBinary {
         transitions[0].transition |= dim.n_states as TransitionType;
 
         Ok(Self { transitions })
+    }
+}
+
+impl From<&MachineInfo> for MachineBinary {
+    fn from(mi: &MachineInfo) -> Self {
+        Self {
+            transitions: mi.machine().transitions,
+        }
     }
 }
 
@@ -497,9 +504,162 @@ impl From<MachineBinary> for MachineGeneric {
     }
 }
 
-impl std::fmt::Display for MachineBinary {
+impl Display for MachineBinary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_standard_tm_text_format())
+    }
+}
+
+/// This struct is used in DataProvider to allow an index id. \
+/// To keep the size small, instead of Option<id> the u64::MAX is used to indicate not used.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct MachineId {
+    id: u64,
+    machine: MachineBinary,
+}
+
+impl MachineId {
+    pub fn new(id: u64, machine: MachineBinary) -> Self {
+        Self { id, machine }
+    }
+
+    pub fn new_no_id(machine: MachineBinary) -> Self {
+        Self {
+            id: u64::MAX,
+            machine,
+        }
+    }
+
+    /// new from transitions as String tuple
+    /// # Panics
+    /// Panics if wrong format
+    pub fn from_string_tuple(transitions_as_str: &[(&str, &str)]) -> Self {
+        let m = MachineBinary::from_string_tuple(transitions_as_str);
+        Self::from(&m)
+    }
+
+    /// Unused: u64::MAX
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    pub fn id_as_option(&self) -> Option<u64> {
+        if self.id == u64::MAX {
+            None
+        } else {
+            Some(self.id)
+        }
+    }
+
+    pub fn has_id(&self) -> bool {
+        self.id != u64::MAX
+    }
+
+    pub fn machine(&self) -> &MachineBinary {
+        &self.machine
+    }
+
+    pub fn machine_mut(&mut self) -> &mut MachineBinary {
+        &mut self.machine
+    }
+
+    pub fn file_name(&self) -> String {
+        if self.has_id() {
+            format!(
+                "BB{}_ID_{}_{}",
+                self.machine.n_states(),
+                self.id,
+                self.to_standard_tm_text_format()
+            )
+        } else {
+            format!(
+                "BB{}_{}",
+                self.machine.n_states(),
+                self.to_standard_tm_text_format()
+            )
+        }
+    }
+
+    pub fn n_states(&self) -> usize {
+        self.machine.n_states()
+    }
+
+    pub fn to_standard_tm_text_format(&self) -> String {
+        self.machine.to_standard_tm_text_format()
+    }
+}
+
+impl Default for MachineId {
+    fn default() -> Self {
+        Self {
+            id: u64::MAX,
+            machine: MachineBinary::default(),
+        }
+    }
+}
+
+impl From<&MachineBinary> for MachineId {
+    fn from(mb: &MachineBinary) -> Self {
+        Self {
+            id: u64::MAX,
+            machine: *mb,
+        }
+    }
+}
+
+impl From<&MachineInfo> for MachineId {
+    fn from(mi: &MachineInfo) -> Self {
+        Self {
+            id: mi.id(),
+            machine: mi.machine(),
+        }
+    }
+}
+
+// convert from Machine Binary to MachineGeneric, simple, but slow
+impl From<MachineId> for MachineGeneric {
+    fn from(m_id: MachineId) -> Self {
+        let tm = m_id.to_standard_tm_text_format();
+        let mut mg = MachineGeneric::try_from_standard_tm_text_format(&tm).unwrap();
+        mg.id = m_id.id_as_option();
+
+        mg
+    }
+}
+
+impl TryFrom<MachineGeneric> for MachineId {
+    type Error = &'static str;
+
+    fn try_from(mg: MachineGeneric) -> Result<Self, Self::Error> {
+        let m = MachineBinary::try_from(mg)?;
+        if let Some(id) = mg.id {
+            Ok(Self::new(id, m))
+        } else {
+            Ok(Self::new_no_id(m))
+        }
+    }
+}
+
+impl TryFrom<&str> for MachineId {
+    type Error = &'static str;
+
+    fn try_from(tm_text_format: &str) -> Result<Self, Self::Error> {
+        let mg = MachineGeneric::try_from_standard_tm_text_format(tm_text_format)?;
+        let m = MachineBinary::try_from(mg)?;
+
+        Ok(MachineId::new_no_id(m))
+    }
+}
+
+impl Display for MachineId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let locale = &crate::config::user_locale();
+        write!(
+            f,
+            "ID: {} {}",
+            self.id.to_formatted_string(locale),
+            self.machine
+        )
     }
 }
 
@@ -559,5 +719,11 @@ impl NotableMachineBinary {
         //
 
         MachineBinary::try_from(mg).unwrap()
+    }
+
+    pub fn machine_id(&self) -> MachineId {
+        let m = self.machine();
+
+        MachineId::new_no_id(m)
     }
 }

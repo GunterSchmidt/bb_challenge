@@ -40,9 +40,9 @@ use std::{
 };
 
 use crate::{
-    config::{self, Config, StepTypeBig},
+    config::{self, Config, StepBig},
     decider::{decider_hold_long::DeciderHoldLong, Decider},
-    machine_binary::MachineBinary,
+    machine_binary::{MachineBinary, MachineId},
     machine_info::MachineInfo,
     status::MachineStatus,
     tape::tape_utils::TapeLongPositions,
@@ -89,13 +89,15 @@ td {
     margin-left: 10px;
 }";
 
-#[derive(Debug)]
+// All calls do nothing, if write_html_file() is off.
+#[derive(Debug, Default)]
 pub struct HtmlWriter {
+    write_html_file: bool,
     /// limits output to file by the actual written lines (only steps count).
     write_html_line_limit: u32,
     /// current line count
     write_html_line_count: u32,
-    write_html_step_start: StepTypeBig,
+    write_html_step_start: StepBig,
     write_html_tape_shifted_64_bit: bool,
 
     n_states: usize,
@@ -111,26 +113,22 @@ pub struct HtmlWriter {
 
 impl HtmlWriter {
     pub fn new(config: &Config) -> Self {
-        Self {
-            // decider_id,
-            write_html_line_limit: if config.write_html_file() {
-                config.write_html_line_limit()
-            } else {
-                0
-            },
-            write_html_line_count: 0,
-            write_html_step_start: if config.write_html_file() {
-                config.write_html_step_start()
-            } else {
-                0
-            },
-            write_html_tape_shifted_64_bit: config.write_html_tape_shifted_64_bit(),
+        if config.write_html_file() {
+            Self {
+                write_html_file: true,
+                write_html_line_count: 0,
+                write_html_line_limit: config.write_html_line_limit(),
+                write_html_step_start: config.write_html_step_start(),
+                write_html_tape_shifted_64_bit: config.write_html_tape_shifted_64_bit(),
 
-            n_states: config.n_states(),
-            html_out_path: config.config_toml().html_out_path().to_string(),
-            path: None,
-            file_name: None,
-            buf_writer: None,
+                n_states: config.n_states(),
+                html_out_path: config.config_toml().html_out_path().to_string(),
+                path: None,
+                file_name: None,
+                buf_writer: None,
+            }
+        } else {
+            Self::default()
         }
     }
 
@@ -138,7 +136,6 @@ impl HtmlWriter {
     /// # Panics
     /// If the sub directory could not be created.
     pub fn init_sub_dir(&mut self, sub_dir: &str) {
-        // self.sub_dir = Some(dir.to_string());
         let path = format!(
             "{}{MAIN_SEPARATOR_STR}{sub_dir}_bb{}",
             self.html_out_path, self.n_states
@@ -156,7 +153,8 @@ impl HtmlWriter {
     /// Returns true if html is enabled and the step_no is < 1000 or > config.write_html_step_start .
     /// step_no must be smaller or equal \
     /// line count must be smaller, so one more can fit
-    pub fn is_write_html_in_limit(&self, step_no: StepTypeBig) -> bool {
+    pub fn is_write_html_in_limit(&self, step_no: StepBig) -> bool {
+        // write_html_line_limit is 0 when write_html_file == 0
         self.write_html_line_limit != 0
             && (step_no <= 1000 || step_no >= self.write_html_step_start)
             && self.write_html_line_count < self.write_html_line_limit
@@ -164,7 +162,7 @@ impl HtmlWriter {
 
     /// Checks if config.write_html_file was set to true and if the path is set
     pub fn is_write_html_file(&self) -> bool {
-        self.write_html_line_limit != 0 && self.path.is_some()
+        self.write_html_file && self.path.is_some()
     }
 
     pub fn path(&self) -> Option<&String> {
@@ -176,14 +174,6 @@ impl HtmlWriter {
         self.write_html_line_count = 0;
     }
 
-    pub fn create_html_file_start(
-        &mut self,
-        decider_id: &DeciderId,
-        machine: &MachineBinary,
-    ) -> io::Result<()> {
-        let mi = MachineInfo::from(machine);
-        self.create_html_file_start_m_info(decider_id, &mi)
-    }
     /// Writes to html header and the start of the body to the file. \
     /// Sets file_name in self.
     /// # Arguments
@@ -191,11 +181,14 @@ impl HtmlWriter {
     /// - machine to write, uses tm_standard_name for file name
     ///
     /// Example: ("data", "hold", m) creates /data/hold_1RB0RC_1RA0RA_0RB1RC.html
-    pub fn create_html_file_start_m_info(
+    pub fn create_html_file_start(
         &mut self,
         decider_id: &DeciderId,
-        machine: &MachineInfo,
+        machine: &MachineId,
     ) -> io::Result<()> {
+        if !self.is_write_html_file() {
+            return Ok(());
+        }
         match &self.path {
             Some(path) => {
                 if !std::fs::exists(path)? {
@@ -227,7 +220,7 @@ impl HtmlWriter {
                 writeln!(file, "{}", machine.machine().to_table_html_string(true))?;
 
                 // write self-referencing
-                if machine.has_self_referencing_transition() {
+                if machine.machine().has_self_referencing_transition() {
                     let ts = machine.machine().get_self_referencing_transitions();
                     let mut s = vec![String::from("Self-referencing transitions:")];
                     for t in ts.iter() {
@@ -265,7 +258,7 @@ impl HtmlWriter {
         );
     }
 
-    pub fn write_html_file_end(&mut self, step_no: StepTypeBig, status: &MachineStatus) {
+    pub fn write_html_file_end(&mut self, step_no: StepBig, status: &MachineStatus) {
         // no if let as borrow checker would complain
         if self.buf_writer.is_some() {
             use num_format::ToFormattedString;
@@ -334,6 +327,10 @@ impl HtmlWriter {
 
     pub fn write_html_tape_shifted_64_bit(&self) -> bool {
         self.write_html_tape_shifted_64_bit
+    }
+
+    pub fn write_html_file(&self) -> bool {
+        self.write_html_file
     }
 }
 
@@ -587,19 +584,15 @@ pub fn write_machines_to_html(
     if config.write_html_file() {
         let mut last_progress_info = Instant::now();
         for (i, m_info) in machine_infos.iter().take(limit_num_files).enumerate() {
-            // let machine = Machine::from(m_info);
+            let machine = MachineId::from(m_info);
             // write hold (because self ref)
-            DeciderHoldLong::decide_single_machine(&m_info.machine(), &config);
+            DeciderHoldLong::decide_single_machine(&machine, &config);
             // write bouncer (because single step)
             crate::decider::decider_bouncer_128::DeciderBouncer128::decide_single_machine(
-                &m_info.machine(),
-                &config,
+                &machine, &config,
             );
             // write cycler (because single step)
-            crate::decider::decider_cycler::DeciderCycler::decide_single_machine(
-                &m_info.machine(),
-                &config,
-            );
+            crate::decider::decider_cycler::DeciderCycler::decide_single_machine(&machine, &config);
             let dur = Instant::now() - last_progress_info;
             if dur.as_millis() > 5000 {
                 println!("progress: {} / {}", i + 1, machine_infos.len());
@@ -617,7 +610,7 @@ pub fn write_machines_to_html(
 #[derive(Debug, Clone, Copy)]
 pub struct StepHtml {
     /// Current step no, starting at 1.
-    pub step_no: StepTypeBig,
+    pub step_no: StepBig,
     /// Table field which lead to the current transition.
     pub tr_field_id: usize,
     /// Current transition

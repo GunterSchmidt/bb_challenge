@@ -2,10 +2,10 @@ use num_format::{Buffer, ToFormattedString};
 use std::{fmt::Display, time::Duration};
 
 use crate::{
-    config::{user_locale, Config, IdNormalized, StepTypeBig, StepTypeSmall},
+    config::{user_locale, Config, IdNormalized, StepBig, StepSmall},
     data_provider::enumerator::num_turing_machine_permutations,
     decider::{pre_decider::PreDeciderRun, DeciderId},
-    machine_binary::MachineBinary,
+    machine_binary::{MachineBinary, MachineId},
     machine_info::MachineInfo,
     reporter::format_duration_hhmmss_ms,
     status::{MachineStatus, NonHaltReason, PreDeciderReason},
@@ -121,8 +121,8 @@ pub struct DeciderResultStats {
     num_undecided: u64,
     /// Breakdown of eliminated machines
     pre_decider_count: PreDeciderCount,
-    /// Breakdown of endless running machines
-    endless_count: EndlessCount,
+    /// Breakdown of non-halting machines
+    non_halt_count: NonHaltCount,
 
     /// Number of states used for the Turing machines.
     n_states: usize,
@@ -156,7 +156,7 @@ pub struct DeciderResultStats {
 
     // Additional statistics, possibly make this a struct in an Option to turn on at runtime
     // TODO HashMaps for larger
-    #[cfg(feature = "bb_counter_stats")]
+    #[cfg(feature = "counter_stats")]
     pub counter_stats: CounterStats,
 }
 
@@ -170,7 +170,7 @@ impl DeciderResultStats {
 
     /// Creates a new result stat with higher init_steps_max which avoids storing irrelevant machines
     /// with less than max steps. Used in decider engine.
-    pub fn new_init_steps_max(config: &Config, init_steps_max: StepTypeBig) -> Self {
+    pub fn new_init_steps_max(config: &Config, init_steps_max: StepBig) -> Self {
         // limit_machines_decided is handled differently because there is no counter like num_undecided
         let limit_machines_decided = config.limit_machines_decided();
         DeciderResultStats {
@@ -225,7 +225,7 @@ impl DeciderResultStats {
     /// False if <limit_machines_(un)decided> (Un)decided Machines have been stored
     /// which allows the caller to stop further processing. \
     /// In this case the end_reason is set also.  
-    pub fn add(&mut self, machine: &MachineBinary, status: &MachineStatus) -> bool {
+    pub fn add(&mut self, machine: &MachineId, status: &MachineStatus) -> bool {
         // self.num_checked_total += 1;
         let mut is_decided = true;
         self.num_evaluated += 1;
@@ -234,7 +234,7 @@ impl DeciderResultStats {
                 self.num_halt += 1;
                 self.steps_max.add_steps(*steps, machine, status);
 
-                #[cfg(feature = "bb_counter_stats")]
+                #[cfg(feature = "counter_stats")]
                 {
                     self.counter_stats.add_steps(*steps);
 
@@ -277,7 +277,7 @@ impl DeciderResultStats {
             MachineStatus::DecidedHaltsDetail(_, _, _) => todo!(),
             // MachineStatus::DecidedHaltsOld(steps, _) => {
             //     self.num_halt += 1;
-            //     #[cfg(feature = "bb_counter_stats")]
+            //     #[cfg(feature = "counter_stats")]
             //     {
             //         if steps < COUNTER_ARRAY_SIZE as StepTypeBig {
             //             self.halt_steps_stats[steps as usize] += 1;
@@ -287,20 +287,20 @@ impl DeciderResultStats {
             //     }
             //     self.add_steps(*steps, machine, status);
             // }
-            MachineStatus::DecidedNonHalt(endless_reason) => {
-                self.endless_count.add_endless_reason(endless_reason);
-                #[cfg(feature = "bb_counter_stats")]
-                self.counter_stats.add_endless_cycle(endless_reason);
+            MachineStatus::DecidedNonHalt(non_halt_reason) => {
+                self.non_halt_count.add_non_halt_reason(non_halt_reason);
+                #[cfg(feature = "counter_stats")]
+                self.counter_stats.add_non_halt_cycle(non_halt_reason);
             }
             MachineStatus::Undecided(_, _, _) => {
                 is_decided = false;
                 if self.limit_machines_undecided > 0 {
                     if self.num_undecided < self.limit_machines_undecided as u64 {
                         if let Some(machines) = self.machines_undecided.as_mut() {
-                            machines.push(MachineInfo::from_machine(machine, status));
+                            machines.push(MachineInfo::from_machine_id(machine, status));
                         } else {
                             self.machines_undecided =
-                                Some(vec![MachineInfo::from_machine(machine, status)]);
+                                Some(vec![MachineInfo::from_machine_id(machine, status)]);
                         }
                     } else {
                         self.end_reason =
@@ -324,7 +324,7 @@ impl DeciderResultStats {
         if is_decided && self.limit_machines_decided > 0 {
             if let Some(m_decided) = self.machines_decided.as_mut() {
                 if m_decided.len() < self.limit_machines_decided {
-                    m_decided.push(MachineInfo::from_machine(machine, status));
+                    m_decided.push(MachineInfo::from_machine_id(machine, status));
                 } else {
                     self.end_reason =
                         EndReason::RecordLimitDecidedReached(self.limit_machines_decided);
@@ -358,14 +358,13 @@ impl DeciderResultStats {
         self.num_processed_total += result.num_processed_total;
         self.num_evaluated += result.num_evaluated;
         self.num_halt += result.num_halt;
-        // self.num_endless += result.num_endless;
         self.num_not_max += result.num_not_max;
 
         self.steps_max.add_self(&result.steps_max);
 
         self.pre_decider_count.add_self(&result.pre_decider_count);
         // self.pre_decider_count.num_checked = self.pre_decider_count.total() + self.num_evaluated;
-        self.endless_count.add_self(&result.endless_count);
+        self.non_halt_count.add_self(&result.non_halt_count);
 
         self.num_not_max_not_all_states_used += result.num_not_max_not_all_states_used;
         self.num_not_max_too_many_halt_transitions += result.num_not_max_too_many_halt_transitions;
@@ -385,7 +384,7 @@ impl DeciderResultStats {
         }
 
         // update array stats
-        #[cfg(feature = "bb_counter_stats")]
+        #[cfg(feature = "counter_stats")]
         self.counter_stats.add_result(result);
 
         // add decided machines
@@ -469,8 +468,8 @@ impl DeciderResultStats {
     }
 
     /// Returns the first machine with max steps.
-    pub fn endless_count(&self) -> &EndlessCount {
-        &self.endless_count
+    pub fn non_halt_count(&self) -> &NonHaltCount {
+        &self.non_halt_count
     }
 
     pub fn machine_max_steps(&self) -> Option<MachineInfo> {
@@ -580,8 +579,8 @@ impl DeciderResultStats {
         // self.pre_decider_count.total() + self.num_evaluated
     }
 
-    pub fn num_endless(&self) -> u64 {
-        self.endless_count.num_endless_total()
+    pub fn num_non_halt(&self) -> u64 {
+        self.non_halt_count.num_non_halt_total()
     }
 
     pub fn num_evaluated(&self) -> u64 {
@@ -622,7 +621,7 @@ impl DeciderResultStats {
         self.pre_decider_count
     }
 
-    pub fn steps_max(&self) -> StepTypeBig {
+    pub fn steps_max(&self) -> StepBig {
         self.steps_max.steps_max()
     }
 
@@ -689,9 +688,9 @@ impl Display for DeciderResultStats {
         // s.push_str(format!("  Two+ Halt Trans.: {:>NUM_LEN$}\n", buf.as_str()).as_str());
         // buf.write_formatted(&self.num_not_max_not_all_states_used, &locale);
         // s.push_str(format!("  Not All States used:{:>13}\n", buf.as_str()).as_str());
-        // buf.write_formatted(&self.num_endless, &locale);
-        // s.push_str(format!("  Decided Endless:  {:>NUM_LEN$}\n", buf.as_str()).as_str());
-        s.push_str(format!("{}", self.endless_count).as_str());
+        // buf.write_formatted(&self.num_non_halt, &locale);
+        // s.push_str(format!("  Decided Non-Halt:  {:>NUM_LEN$}\n", buf.as_str()).as_str());
+        s.push_str(format!("{}", self.non_halt_count).as_str());
         s.push_str(format!("{}", self.pre_decider_count).as_str());
         s.push_str(format!("{}", self.steps_max).as_str());
         write!(f, "{s}")?;
@@ -719,7 +718,7 @@ impl Display for DeciderResultStats {
             }
         };
 
-        #[cfg(feature = "bb_counter_stats")]
+        #[cfg(feature = "counter_stats")]
         write!(f, "{}", self.counter_stats)?;
 
         Ok(())
@@ -728,13 +727,13 @@ impl Display for DeciderResultStats {
 
 pub struct ResultBatchInfo {
     pub n_states: usize,
-    pub steps_min: StepTypeBig,
+    pub steps_min: StepBig,
     pub limit_machines_max_steps: usize,
     pub limit_machines_undecided: usize,
 }
 
 #[derive(Debug, Default)]
-pub struct EndlessCount {
+pub struct NonHaltCount {
     pub num_expanding_cycler: u64,
     pub num_expanding_bouncer: u64,
     pub num_only_one_direction: u64,
@@ -745,25 +744,25 @@ pub struct EndlessCount {
     pub num_start_recursive: u64,
     pub num_writes_only_zeros: u64,
     pub num_cycle: u64,
-    pub longest_cycle: StepTypeSmall,
-    pub detect_cycle_step_max: StepTypeSmall,
+    pub longest_cycle: StepSmall,
+    pub detect_cycle_step_max: StepSmall,
 }
 
-impl EndlessCount {
-    pub fn add_endless_reason(&mut self, endless_reason: &NonHaltReason) {
-        match endless_reason {
+impl NonHaltCount {
+    pub fn add_non_halt_reason(&mut self, non_halt_reason: &NonHaltReason) {
+        match non_halt_reason {
             // TODO check if all are needed
-            // EndlessReason::ExpandingCycler => self.num_expanding_cycler += 1,
+            // NonHaltReason::ExpandingCycler => self.num_expanding_cycler += 1,
             NonHaltReason::ExpandingCycler => todo!(),
-            // EndlessReason::OnlyOneDirection => self.num_only_one_direction += 1,
+            // NonHaltReason::OnlyOneDirection => self.num_only_one_direction += 1,
             NonHaltReason::OnlyOneDirection => todo!(),
-            // EndlessReason::NoHaltTransition => self.num_no_halt_transition += 1,
+            // NonHaltReason::NoHaltTransition => self.num_no_halt_transition += 1,
             NonHaltReason::NoHaltTransition => todo!(),
-            // EndlessReason::SimpleStartCycle => self.num_simple_start_cycle += 1,
+            // NonHaltReason::SimpleStartCycle => self.num_simple_start_cycle += 1,
             NonHaltReason::SimpleStartCycle => todo!(),
-            // EndlessReason::StartRecursive => self.num_start_recursive += 1,
+            // NonHaltReason::StartRecursive => self.num_start_recursive += 1,
             NonHaltReason::StartRecursive => todo!(),
-            // EndlessReason::WritesOnlyZero => self.num_writes_only_zeros += 1,
+            // NonHaltReason::WritesOnlyZero => self.num_writes_only_zeros += 1,
             NonHaltReason::WritesOnlyZero => todo!(),
             NonHaltReason::ExpandingBouncer(_) => self.num_expanding_bouncer += 1,
             // TODO steps? differentiate to expanding bouncer
@@ -801,7 +800,7 @@ impl EndlessCount {
         self.detect_cycle_step_max = other.detect_cycle_step_max.max(self.detect_cycle_step_max);
     }
 
-    fn num_endless_total(&self) -> u64 {
+    fn num_non_halt_total(&self) -> u64 {
         self.num_expanding_cycler
             + self.num_expanding_bouncer
             + self.num_only_one_direction
@@ -813,15 +812,15 @@ impl EndlessCount {
     }
 }
 
-impl Display for EndlessCount {
+impl Display for NonHaltCount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let locale = user_locale();
         let mut buf = Buffer::default();
 
-        buf.write_formatted(&self.num_endless_total(), &locale);
+        buf.write_formatted(&self.num_non_halt_total(), &locale);
         writeln!(
             f,
-            "  {LEVEL_1_CHAR} Decided Endless:  {:>NUM_LONG_LEN$}",
+            "  {LEVEL_1_CHAR} Decided Non-Halt:  {:>NUM_LONG_LEN$}",
             buf.as_str()
         )?;
         // buf.write_formatted(&self.num_no_halt_transition, &locale);
@@ -1031,14 +1030,14 @@ pub struct DurationDataProvider {
 
 #[derive(Debug, Default)]
 pub struct StepMaxResult {
-    steps_max: StepTypeBig,
+    steps_max: StepBig,
     // steps_min: StepTypeBig,
     num_machines_steps_max: usize,
     machines_max_steps: Option<Vec<MachineInfo>>,
 }
 
 impl StepMaxResult {
-    pub fn new(steps_min: StepTypeBig) -> Self {
+    pub fn new(steps_min: StepBig) -> Self {
         Self {
             // steps_min,
             steps_max: steps_min,
@@ -1066,7 +1065,7 @@ impl StepMaxResult {
         }
     }
 
-    fn add_steps(&mut self, steps: StepTypeBig, machine: &MachineBinary, status: &MachineStatus) {
+    fn add_steps(&mut self, steps: StepBig, machine: &MachineId, status: &MachineStatus) {
         // Check biggerThan to avoid two ifs on every check as it occurs rarely
         if steps >= self.steps_max {
             if steps == self.steps_max {
@@ -1077,7 +1076,7 @@ impl StepMaxResult {
                 self.machines_max_steps
                     .as_mut()
                     .unwrap()
-                    .push(MachineInfo::from_machine(machine, status));
+                    .push(MachineInfo::from_machine_id(machine, status));
                 // println!("  Added machine for max step {steps}");
                 self.num_machines_steps_max += 1;
             } else {
@@ -1100,7 +1099,7 @@ impl StepMaxResult {
                 self.machines_max_steps
                     .as_mut()
                     .unwrap()
-                    .push(MachineInfo::from_machine(machine, status));
+                    .push(MachineInfo::from_machine_id(machine, status));
                 // #[cfg(all(debug_assertions, feature = "bb_debug"))]
                 // {
                 // println!("  New max steps {}", self.steps_max);
@@ -1176,7 +1175,7 @@ impl StepMaxResult {
     }
 
     /// Returns the recorded steps max. If steps_min is given, steps_max may not halt the correct value.
-    pub fn steps_max(&self) -> StepTypeBig {
+    pub fn steps_max(&self) -> StepBig {
         if self.num_machines_steps_max == 0 {
             0
         } else {
@@ -1231,7 +1230,7 @@ impl Display for StepMaxResult {
 pub struct MachinesStates {
     /// All undecided machines of one batch run. \
     /// Machines can be used directly in next batch run with undecided only.
-    pub machines: Vec<MachineBinary>,
+    pub machines: Vec<MachineId>,
     /// The detailed MachineStatus which halts the UndecidedReason. State corresponds with the machine with the same index.
     pub states: Vec<MachineStatus>,
 }
@@ -1248,7 +1247,7 @@ impl MachinesStates {
     pub fn to_machine_info(&self) -> Vec<MachineInfo> {
         let mut infos = Vec::new();
         for (i, m) in self.machines.iter().enumerate() {
-            infos.push(MachineInfo::new(*m, self.states[i]));
+            infos.push(MachineInfo::new_m_id(*m, self.states[i]));
         }
 
         infos
@@ -1279,9 +1278,7 @@ pub struct BatchResult {
 // TODO reduce pub fields
 #[derive(Debug)]
 pub struct BatchData<'a> {
-    pub machines: &'a [MachineBinary],
-    /// Optional Ids for the machines, using same index
-    pub ids: &'a Option<Vec<u64>>,
+    pub machines: &'a [MachineId],
     pub result_decided: DeciderResultStats,
     pub machines_decided: MachinesStates,
     pub machines_undecided: MachinesStates,
@@ -1309,7 +1306,7 @@ pub struct BatchDataThread<'a> {
     pub config: &'a Config,
 }
 
-pub fn result_max_steps_known(n_states: usize) -> StepTypeBig {
+pub fn result_max_steps_known(n_states: usize) -> StepBig {
     match n_states {
         1 => 1,
         2 => 6,
@@ -1320,39 +1317,39 @@ pub fn result_max_steps_known(n_states: usize) -> StepTypeBig {
     }
 }
 
-#[cfg(feature = "bb_counter_stats")]
+#[cfg(feature = "counter_stats")]
 pub const COUNTER_ARRAY_SIZE: usize = 110;
 
-#[cfg(feature = "bb_counter_stats")]
+#[cfg(feature = "counter_stats")]
 #[derive(Debug)]
 pub struct CounterStats {
     /// Array for the first 100 steps, [0] halts all which are greater
-    pub halt_steps_stats: [StepTypeBig; COUNTER_ARRAY_SIZE],
-    pub cycle_size_stats: [StepTypeBig; COUNTER_ARRAY_SIZE],
-    pub cycle_steps_stats: [StepTypeBig; COUNTER_ARRAY_SIZE],
+    pub halt_steps_stats: [StepBig; COUNTER_ARRAY_SIZE],
+    pub cycle_size_stats: [StepBig; COUNTER_ARRAY_SIZE],
+    pub cycle_steps_stats: [StepBig; COUNTER_ARRAY_SIZE],
     // HashMap for larger
     // pub halt_steps_long: HashMap<StepTypeBig, StepTypeBig>,
 }
 
-#[cfg(feature = "bb_counter_stats")]
+#[cfg(feature = "counter_stats")]
 impl CounterStats {
-    pub fn add_steps(&mut self, steps: StepTypeBig) {
-        if steps < COUNTER_ARRAY_SIZE as StepTypeBig {
+    pub fn add_steps(&mut self, steps: StepBig) {
+        if steps < COUNTER_ARRAY_SIZE as StepBig {
             self.halt_steps_stats[steps as usize] += 1;
         } else {
             self.halt_steps_stats[0] += 1;
         }
     }
 
-    pub fn add_endless_cycle(&mut self, endless_reason: &NonHaltReason) {
-        match endless_reason {
+    pub fn add_non_halt_cycle(&mut self, non_halt_reason: &NonHaltReason) {
+        match non_halt_reason {
             NonHaltReason::Cycler(steps, cycle_size) => {
-                if *cycle_size < COUNTER_ARRAY_SIZE as StepTypeBig {
+                if *cycle_size < COUNTER_ARRAY_SIZE as StepBig {
                     self.cycle_size_stats[*cycle_size as usize] += 1;
                 } else {
                     self.cycle_size_stats[0] += 1;
                 }
-                if *steps < COUNTER_ARRAY_SIZE as StepTypeBig {
+                if *steps < COUNTER_ARRAY_SIZE as StepBig {
                     self.cycle_steps_stats[*steps as usize] += 1;
                 } else {
                     self.cycle_steps_stats[0] += 1;
@@ -1371,7 +1368,7 @@ impl CounterStats {
     }
 }
 
-#[cfg(feature = "bb_counter_stats")]
+#[cfg(feature = "counter_stats")]
 impl Default for CounterStats {
     fn default() -> Self {
         Self {
@@ -1382,11 +1379,11 @@ impl Default for CounterStats {
     }
 }
 
-#[cfg(feature = "bb_counter_stats")]
+#[cfg(feature = "counter_stats")]
 impl Display for CounterStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "\nCounter Statistic:")?;
-        let steps: StepTypeBig = self.halt_steps_stats.iter().sum();
+        let steps: StepBig = self.halt_steps_stats.iter().sum();
         writeln!(
             f,
             "Halt: Steps till {}: total {}\n{}",
@@ -1410,8 +1407,8 @@ impl Display for CounterStats {
     }
 }
 
-#[cfg(feature = "bb_counter_stats")]
-fn fmt_array(arr: &[StepTypeBig]) -> String {
+#[cfg(feature = "counter_stats")]
+fn fmt_array(arr: &[StepBig]) -> String {
     let mut v = Vec::new();
     let mut start = 0;
     while start < arr.len() {
@@ -1419,15 +1416,15 @@ fn fmt_array(arr: &[StepTypeBig]) -> String {
             .iter()
             .take(25)
             .copied()
-            .collect::<Vec<StepTypeBig>>();
+            .collect::<Vec<StepBig>>();
         v.push(format!("{start:>3}: {:?}", a));
         start += 25;
     }
     let locale = user_locale();
-    let first_10 = arr.iter().skip(1).take(10).sum::<StepTypeBig>();
-    let first_25 = arr.iter().skip(1).take(25).sum::<StepTypeBig>();
-    let first_50 = arr.iter().skip(1).take(50).sum::<StepTypeBig>();
-    let total = arr.iter().sum::<StepTypeBig>();
+    let first_10 = arr.iter().skip(1).take(10).sum::<StepBig>();
+    let first_25 = arr.iter().skip(1).take(25).sum::<StepBig>();
+    let first_50 = arr.iter().skip(1).take(50).sum::<StepBig>();
+    let total = arr.iter().sum::<StepBig>();
     let first_10_p = (first_10 as f64 * 1000.0 / total as f64).round() / 10.0;
     let first_25_p = (first_25 as f64 * 1000.0 / total as f64).round() / 10.0;
     let first_50_p = (first_50 as f64 * 1000.0 / total as f64).round() / 10.0;

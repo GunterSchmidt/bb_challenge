@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use crate::{
-    config::{StepTypeSmall, TAPE_SIZE_INIT_CELLS},
+    config::{StepSmall, TAPE_SIZE_INIT_CELLS},
     html,
     transition_binary::TransitionBinary,
 };
@@ -28,8 +28,8 @@ pub const FILTER_HIGH_MIDDLE_BITS_U128: u128 = 0x00000000_FFFFFFFF_00000000_0000
 pub const FILTER_LOW_MIDDLE_BITS_U128: u128 = 0x00000000_00000000_FFFFFFFF_00000000;
 pub const FILTER_LOW_BITS_U128: u128 = 0x00000000_00000000_FFFFFFFF_FFFFFFFF;
 
-pub const TAPE_SIZE_BIT_U64: StepTypeSmall = 64;
-pub const MIDDLE_BIT_U64: StepTypeSmall = TAPE_SIZE_BIT_U64 / 2 - 1;
+pub const TAPE_SIZE_BIT_U64: StepSmall = 64;
+pub const MIDDLE_BIT_U64: StepSmall = TAPE_SIZE_BIT_U64 / 2 - 1;
 pub const POS_HALF_U64: u64 = 1 << MIDDLE_BIT_U64;
 
 pub const TAPE_DISPLAY_RANGE_128: std::ops::Range<usize> =

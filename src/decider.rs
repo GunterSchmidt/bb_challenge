@@ -4,13 +4,14 @@ pub mod decider_bouncer_128;
 pub mod pre_decider;
 // // pub mod decider_bouncer_v1; old decider with different logic, may contain some re-usable code
 pub mod decider_cycler;
+// pub mod decider_data;
 pub mod decider_data_128;
 // pub mod decider_data_apex;
-// pub mod decider_data_compact;
 pub mod decider_data_long;
+pub mod decider_data_macro;
 pub mod decider_engine;
-// pub mod decider_hold_compact;
 pub mod decider_hold_long;
+pub mod decider_hold_macro;
 pub mod decider_result;
 pub mod decider_result_worker;
 pub mod step_record;
@@ -29,7 +30,7 @@ use crate::{
         decider_result_worker::FnResultWorker,
         pre_decider::{run_pre_decider_simple, run_pre_decider_strict, PreDeciderRun},
     },
-    machine_binary::MachineBinary,
+    machine_binary::MachineId,
     machine_info::MachineInfo,
     status::MachineStatus,
 };
@@ -51,6 +52,11 @@ pub const DECIDER_HOLD_ID: DeciderId = DeciderId {
     id: 10,
     name: "Decider Hold",
     sub_dir: "hold",
+};
+pub const DECIDER_HOLD_MACRO_ID: DeciderId = DeciderId {
+    id: 15,
+    name: "Decider Hold Macro",
+    sub_dir: "hold_macro",
 };
 pub const DECIDER_CYCLER_ID: DeciderId = DeciderId {
     id: 20,
@@ -261,12 +267,12 @@ pub trait Decider {
 
     /// Returns the result of this decider for one single machine. \
     /// Each run must clear self variables as the decider is re-used for all machines (in a batch).
-    fn decide_machine(&mut self, machine: &MachineBinary) -> MachineStatus;
+    fn decide_machine(&mut self, machine: &MachineId) -> MachineStatus;
 
     /// Allows to test a single machine. This is just a convenience function, where a decider
     /// is created and one machine is run. This causes more overhead than setting up the decider once
     /// and use it for multiple machines.
-    fn decide_single_machine(machine: &MachineBinary, config: &Config) -> MachineStatus;
+    fn decide_single_machine(machine: &MachineId, config: &Config) -> MachineStatus;
 
     fn decider_run_batch(batch_data: &mut BatchData) -> ResultUnitEndReason;
 }
@@ -305,7 +311,7 @@ pub fn decider_generic_run_batch(
         }
         PreDeciderRun::RunNormalForward => {
             for machine in batch_data.machines.iter() {
-                let mut status = run_pre_decider_simple(machine);
+                let mut status = run_pre_decider_simple(machine.machine());
                 if status == MachineStatus::NoDecision {
                     status = decider.decide_machine(machine);
                 }
@@ -330,7 +336,7 @@ pub fn decider_generic_run_batch(
 
         PreDeciderRun::RunStartBRightOnly => {
             for machine in batch_data.machines.iter() {
-                let mut status = run_pre_decider_strict(machine);
+                let mut status = run_pre_decider_strict(machine.machine());
                 if status == MachineStatus::NoDecision {
                     status = decider.decide_machine(machine);
                 }
@@ -387,7 +393,7 @@ pub fn decider_generic_run_batch(
 #[derive(Default)]
 pub struct ThreadResultDataProvider {
     pub batch_no: usize,
-    pub machines: Vec<MachineBinary>,
+    pub machines: Vec<MachineId>,
     pub pre_decider_count: Option<PreDeciderCount>,
     pub duration: Duration,
 }

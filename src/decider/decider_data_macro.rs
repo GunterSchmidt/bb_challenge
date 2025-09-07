@@ -1,23 +1,16 @@
-//! DeciderData carries all data which is not specific to the decider. \
-//! It holds the tape and the tape movement, the current step_no, the status and
-//! functionality to write a HTML file. \
-//! This allows to switch the tapes easily in the decider and the HTML logic does not need to be repeated.
-
 use std::fmt::Display;
 
-#[cfg(feature = "enable_html_reports")]
-use crate::machine_binary::MachineId;
 use crate::{
     config::{Config, StepBig},
     machine_binary::MachineBinary,
     status::{MachineStatus, UndecidedReason},
-    tape::{tape_long_shifted::TapeLongShifted, Tape, TapeAcceleration},
+    tape::{tape_macro::TapeCompact, tape_utils::TAPE_SIZE_BIT_U128, Tape},
     transition_binary::{TransitionBinary, TRANSITION_BINARY_FIRST},
 };
 
 /// This contains the functionality for a hold decider and can be used to create more elaborate deciders. \
 #[derive(Debug)]
-pub struct DeciderDataLong {
+pub struct DeciderDataMacro {
     // decider_id: &'static DeciderId,
     /// Number of steps or current step no, where first step is 1
     pub step_no: StepBig,
@@ -28,7 +21,7 @@ pub struct DeciderDataLong {
 
     /// The tape_long is a ```Vec<u64>``` which allows to copy half of u128 tape_shifted to
     /// be copied into the long tape when a bound is reached.
-    pub tape: TapeLongShifted,
+    pub tape: TapeCompact,
 
     // machine id, just for debugging
     // machine_id: IdBig,
@@ -45,17 +38,21 @@ pub struct DeciderDataLong {
     pub html_writer: Option<crate::html::HtmlWriter>,
 }
 
-impl DeciderDataLong {
+impl DeciderDataMacro {
     // Sets the defaults and start transition A0.
     pub fn new(config: &Config) -> Self {
         Self {
-            tape: TapeLongShifted::new(config),
+            // decider_id,
+            tape: TapeCompact::new(config),
 
             step_no: 0,
             transition_table: MachineBinary::default(),
             // Initialize transition with A0 as start
             tr: TRANSITION_BINARY_FIRST,
             tr_field: 2,
+            // copy the transition table as this runs faster
+            // machine_id: 0,
+            // transition_table: TransitionTableSymbol2::default(),
             status: MachineStatus::NoDecision,
             step_limit: config.step_limit_decider_halt(),
 
@@ -77,28 +74,24 @@ impl DeciderDataLong {
         self.tr = TRANSITION_BINARY_FIRST;
         self.tr_field = 2;
         self.status = MachineStatus::NoDecision;
+        // self.html_writer.reset_write_html_line_count();
+        // keep step_limit and other config data
     }
 
-    /// Reads the current symbol of the tape. Use with care, as this inspects data in the tape directly, which should generally be avoided.
     #[inline(always)]
     pub fn get_current_symbol(&self) -> usize {
         self.tape.get_current_symbol()
     }
 
-    /// Sets the next transition and updates the step counter. It does not update the tape yet,
-    /// but in the case the execution ended because of halt or limit.
-    /// # Returns
-    /// true if execution ended (is_done)
-    #[must_use]
+    // Returns the next transition and updates the step counter, but does not update the tape yet
     #[inline(always)]
     pub fn next_transition(&mut self) -> bool {
         self.step_no += 1;
         self.tr_field = self.tr.state_x2() + self.tape.get_current_symbol();
         self.tr = self.transition_table.transition(self.tr_field);
-
-        // print tape before change
         // #[cfg(all(debug_assertions, feature = "bb_debug"))]
         // println!("{}", self.step_to_string());
+
         self.is_done()
     }
 
@@ -116,13 +109,11 @@ impl DeciderDataLong {
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
             #[cfg(feature = "enable_html_reports")]
             self.write_step_html();
-
             return true;
         } else if self.step_no >= self.step_limit {
             self.status = self.status_undecided_step_limit();
             #[cfg(feature = "enable_html_reports")]
             self.write_step_html();
-
             return true;
         }
         false
@@ -144,7 +135,7 @@ impl DeciderDataLong {
         MachineStatus::Undecided(
             UndecidedReason::StepLimit,
             self.step_no as StepBig,
-            self.tape.tape_size_cells(),
+            self.tape.tape_size_cells() as u32,
         )
     }
 
@@ -158,7 +149,7 @@ impl DeciderDataLong {
         match self.status {
             MachineStatus::DecidedHalts(steps) => MachineStatus::DecidedHaltsDetail(
                 steps,
-                self.tape.tape_size_cells(),
+                self.tape.tape_size_cells() as u32,
                 self.tape.count_ones(),
             ),
             _ => self.status,
@@ -188,14 +179,18 @@ impl DeciderDataLong {
     //     }
     // }
 
-    pub fn tape_shifted(&self) -> u128 {
-        self.tape.tape_shifted
-    }
+    // pub fn tape_long_positions(&self) -> TapeLongPositions {
+    //     self.tape.tape_long_positions()
+    // }
+
+    // pub fn tape_shifted(&self) -> u128 {
+    //     self.tape.tape_shifted()
+    // }
+
     /// Updates tape_shifted and tape_long.
     /// Also prints and writes step to html if feature is set.
     /// # Returns
     /// False if the tape could not be expanded (tape_size_limit). Then self.status is set to that error.
-    // TODO move into tape
     #[must_use]
     #[inline(always)]
     pub fn update_tape_single_step(&mut self) -> bool {
@@ -204,9 +199,16 @@ impl DeciderDataLong {
             self.status = MachineStatus::Undecided(
                 UndecidedReason::TapeSizeLimit,
                 self.step_no,
-                self.tape.tape_size_cells(),
+                TAPE_SIZE_BIT_U128,
             );
         }
+        // if self.step_no % 1_000_000 == 0 {
+        //     println!(
+        //         "Step: {}, Cells: {}",
+        //         self.step_no,
+        //         self.tape.to_full_string()
+        //     );
+        // }
         #[cfg(all(debug_assertions, feature = "bb_debug"))]
         {
             if self.step_no % 100 == 0 {
@@ -220,43 +222,50 @@ impl DeciderDataLong {
         shift_ok
     }
 
-    /// Updates tape_shifted and tape_long.
-    /// # Returns
-    /// False if the tape could not be expanded (tape_size_limit). Then self.status is set to that error.
-    // TODO some of this logic should be moved to TapeLong
-    #[must_use]
-    #[inline(always)]
-    pub fn update_tape_self_ref_speed_up(&mut self) -> bool {
-        let jump = self
-            .tape
-            .update_tape_self_ref_speed_up(self.tr, self.tr_field);
-        // return value
-        if jump == 0 {
-            self.status = MachineStatus::Undecided(
-                UndecidedReason::TapeSizeLimit,
-                self.step_no,
-                self.tape.tape_size_cells(),
-            );
-            false
-        } else {
-            self.step_no += jump - 1;
-
-            #[cfg(all(debug_assertions, feature = "bb_debug"))]
-            {
-                if self.step_no % 100 == 0 {
-                    println!();
-                }
-                println!("{}", self.step_to_string());
-            }
-            #[cfg(feature = "enable_html_reports")]
-            self.write_step_html();
-            true
-        }
-    }
+    //     /// Updates tape_shifted and tape_long.
+    //     /// # Returns
+    //     /// False if the tape could not be expanded (tape_size_limit). Then self.status is set to that error.
+    //     // TODO some of this logic should be moved to TapeLong
+    //     #[must_use]
+    //     #[inline(always)]
+    //     pub fn update_tape_self_ref_speed_up(&mut self) -> bool {
+    //         // if self.step_no > 1273 {
+    //         //     println!();
+    //         // }
+    //         let jump = self
+    //             .tape
+    //             .update_tape_self_ref_speed_up(self.tr, self.tr_field);
+    //         // return value
+    //         if jump == 0 {
+    //             self.status = MachineStatus::Undecided(
+    //                 UndecidedReason::TapeSizeLimit,
+    //                 self.step_no,
+    //                 self.tape.tape_size_cells(),
+    //             );
+    //             false
+    //         } else {
+    //             self.step_no += jump - 1;
+    //
+    //             #[cfg(all(debug_assertions, feature = "bb_debug"))]
+    //             {
+    //                 if self.step_no % 100 == 0 {
+    //                     println!();
+    //                 }
+    //                 println!("{}", self.step_to_string());
+    //             }
+    //             #[cfg(feature = "enable_html_reports")]
+    //             self.write_step_html();
+    //             true
+    //         }
+    //     }
 
     // Creates
     #[cfg(feature = "enable_html_reports")]
-    pub fn write_html_file_start(&mut self, decider_id: &super::DeciderId, machine: &MachineId) {
+    pub fn write_html_file_start(
+        &mut self,
+        decider_id: &super::DeciderId,
+        machine: &crate::machine_binary::MachineId,
+    ) {
         if let Some(html_writer) = &mut self.html_writer {
             html_writer
                 .create_html_file_start(decider_id, machine)
@@ -297,21 +306,16 @@ impl DeciderDataLong {
     /// Debug info on current step
     pub fn step_to_string(&self) -> String {
         format!(
-            "Step {:3} {} {}: {} P{}-{} Next {}{}",
+            "Step {:3} {} {}: {}",
             self.step_no,
             MachineBinary::array_id_to_field_name(self.tr_field),
             self.tr,
-            crate::tape::tape_utils::U128Ext::to_binary_split_string(&self.tape.tape_shifted),
-            self.tape.pos_middle,
-            self.tape.tl_pos(),
-            // self.get_tape_size(),
-            self.tr.state_to_char(),
-            self.tape.get_current_symbol(),
+            self.tape,
         )
     }
 }
 
-impl Display for DeciderDataLong {
+impl Display for DeciderDataMacro {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO other fields
         write!(f, "{}", self.step_to_string(),)
@@ -319,8 +323,8 @@ impl Display for DeciderDataLong {
 }
 
 #[cfg(feature = "enable_html_reports")]
-impl From<&DeciderDataLong> for crate::html::StepHtml {
-    fn from(data: &DeciderDataLong) -> Self {
+impl From<&DeciderDataMacro> for crate::html::StepHtml {
+    fn from(data: &DeciderDataMacro) -> Self {
         let is_u128_tape = if let Some(html_writer) = &data.html_writer {
             !html_writer.write_html_tape_shifted_64_bit()
         } else {
@@ -338,7 +342,7 @@ impl From<&DeciderDataLong> for crate::html::StepHtml {
             tape_shifted,
             is_u128_tape,
             pos_middle: data.tape.pos_middle_print(),
-            tape_long_positions: data.tape.tape_long_positions(),
+            tape_long_positions: None,
         }
     }
 }

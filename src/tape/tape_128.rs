@@ -5,13 +5,13 @@
 use std::fmt::Display;
 
 use crate::{
-    config::{Config, StepTypeBig},
+    config::{Config, StepBig},
     tape::{
         tape_utils::{
             TapeLongPositions, U128Ext, FILTER_HIGH_BITS_INCLUDING_HEAD_U128, FILTER_LOW_BITS_U128,
             MIDDLE_BIT_U128, POS_HALF_U128, TAPE_SIZE_BIT_U128,
         },
-        Tape, TapeSpeedUp,
+        Tape, TapeAcceleration,
     },
     transition_binary::TransitionBinary,
 };
@@ -118,9 +118,12 @@ impl Tape for Tape128 {
         };
     }
 
-    // fn supports_speed_up(&self) -> bool {
-    //     true
-    // }
+    #[inline(always)]
+    fn write_last_symbol(&mut self, transition: TransitionBinary) {
+        if !transition.is_symbol_undefined() {
+            self.set_current_symbol(transition);
+        }
+    }
 
     fn tape_long_positions(&self) -> Option<TapeLongPositions> {
         None
@@ -162,13 +165,13 @@ impl Tape for Tape128 {
                     self.high_bound = (self.high_bound - zeros)
                         .max(self.pos_middle)
                         .max(MIDDLE_BIT_U128);
-                    #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+                    #[cfg(all(debug_assertions, feature = "debug_tape"))]
                     {
                         println!("High bound extended by {zeros}.");
                         println!("{self}");
                     }
                 } else {
-                    #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+                    #[cfg(all(debug_assertions, feature = "debug_tape"))]
                     {
                         println!("High bound reached: Too many steps to right.");
                         println!("{self}");
@@ -190,7 +193,7 @@ impl Tape for Tape128 {
             }
             self.pos_middle -= 1;
             if self.low_bound == 0 {
-                #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+                #[cfg(all(debug_assertions, feature = "debug_tape"))]
                 {
                     println!("Low bound reached: Too many steps to left.");
                     println!("{self}");
@@ -204,13 +207,13 @@ impl Tape for Tape128 {
                     self.low_bound = (self.low_bound + zeros)
                         .min(self.pos_middle)
                         .min(MIDDLE_BIT_U128);
-                    #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+                    #[cfg(all(debug_assertions, feature = "debug_tape"))]
                     {
                         println!("High bound extended by {zeros}.");
                         println!("{self}");
                     }
                 } else {
-                    #[cfg(all(debug_assertions, feature = "bb_debug_tape"))]
+                    #[cfg(all(debug_assertions, feature = "debug_tape"))]
                     {
                         println!("High bound reached: Too many steps to right.");
                         println!("{self}");
@@ -229,22 +232,11 @@ impl Tape for Tape128 {
 
         true
     }
-
-    fn update_tape_self_ref_speed_up_unused_or_used(
-        &mut self,
-        transition: TransitionBinary,
-    ) -> bool {
-        todo!()
-    }
 }
 
-impl TapeSpeedUp for Tape128 {
+impl TapeAcceleration for Tape128 {
     #[inline(always)]
-    fn update_tape_self_ref_speed_up(
-        &mut self,
-        tr: TransitionBinary,
-        tr_field: usize,
-    ) -> StepTypeBig {
+    fn update_tape_self_ref_speed_up(&mut self, tr: TransitionBinary, tr_field: usize) -> StepBig {
         let jump;
         // Check if self referencing, which speeds up the shift greatly.
         // Self referencing means also that the symbol does not change, ergo no need to update the fields
@@ -263,8 +255,9 @@ impl TapeSpeedUp for Tape128 {
                     println!("  jump right {jump}");
                     return 0;
                 }
+
                 // shift tape
-                // self.set_current_symbol(); not required
+                // self.set_current_symbol(); not required as it does not change
                 self.tape_shifted <<= jump;
                 self.pos_middle += jump;
                 if self.tape_shifted == 0 {
@@ -275,28 +268,8 @@ impl TapeSpeedUp for Tape128 {
                         .max(MIDDLE_BIT_U128);
                 }
                 self.low_bound += jump.min(63);
-
-                // self.step_no += jump as StepTypeBig - 1;
-                // jump -= 1;
-                // #[cfg(feature = "enable_html_reports")]
-                // if self.write_html_step_limit > 0 {
-                //     let tl_pos_min_1 = if self.tl_pos == 0 { 0 } else { self.tl_pos - 1 };
-                //     let s = format!(
-                //         "num_steps: {}, t pos {}, tl: {}, [{},{},{},{}], {}",
-                //         self.num_steps,
-                //         self.tl_pos,
-                //         self.tape_long[tl_pos_min_1],
-                //         self.tape_long[self.tl_pos],
-                //         self.tape_long[self.tl_pos + 1],
-                //         self.tape_long[self.tl_pos + 2],
-                //         self.tape_long[self.tl_pos + 3],
-                //         self.tape_long[self.tl_pos + 4],
-                //     );
-                //     self.write_html_p(&s);
-                // }
             } else {
                 // normal shift LEFT -> tape moves right
-
                 // Check if self referencing, which speeds up the shift greatly.
                 jump = self.count_left(tr_field & 1);
                 #[cfg(all(debug_assertions, feature = "bb_debug"))]
@@ -318,32 +291,10 @@ impl TapeSpeedUp for Tape128 {
                         .max(self.pos_middle);
                 }
                 self.low_bound -= jump;
-
-                // self.set_current_symbol(); not required
-                // shift tape
-                // self.step_no += jump as StepTypeBig - 1;
-                // jump -= 1;
-                // #[cfg(feature = "enable_html_reports")]
-                // if self.write_html_step_limit > 0 && self.num_steps < self.write_html_step_limit
-                // {
-                //     let tl_pos_min_1 = if self.tl_pos == 0 { 0 } else { self.tl_pos - 1 };
-                //     let s = format!(
-                //         "num_steps: {}, t pos {}, tl: {}, [{},{},{},{}], {}",
-                //         self.num_steps,
-                //         self.tl_pos,
-                //         self.tape_long[tl_pos_min_1],
-                //         self.tape_long[self.tl_pos],
-                //         self.tape_long[self.tl_pos + 1],
-                //         self.tape_long[self.tl_pos + 2],
-                //         self.tape_long[self.tl_pos + 3],
-                //         self.tape_long[self.tl_pos + 4],
-                //     );
-                //     self.write_html_p(&s);
-                // }
             };
         } else {
             let r = self.update_tape_single_step(tr);
-            jump = r as StepTypeBig;
+            jump = r as StepBig;
         }
         jump
     }

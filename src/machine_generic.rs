@@ -68,6 +68,7 @@ pub struct MachineDimensions {
 /// The Turing Machine, which is the transition table.
 #[derive(Debug, Clone, Copy)]
 pub struct MachineGeneric {
+    pub id: Option<u64>,
     /// The transitions are stored in a two dimensional array with a dummy line, \
     /// where transition_table\[1\]\[2\] represents the transition for A2 (state A, symbol 2).
     /// This is designed as an array for faster access in case it is used in a loop. Using a
@@ -110,7 +111,10 @@ impl MachineGeneric {
         }
 
         // check if all references are available, e.g. 8LB requires als a table size 8.
-        let t = Self { transitions };
+        let t = Self {
+            id: None,
+            transitions,
+        };
         let dim = t.dimensions();
         if dim.n_symbols != max_symbol as usize + 1 {
             // This is not failsafe, as only line one is checked for completeness.
@@ -337,7 +341,8 @@ impl Display for TransitionGeneric {
 
 /// Some notable machines
 /// Builds certain default machines which may be used for testing.
-/// SA: <https://www.scottaaronson.com/papers/bb.pdf>#[derive(Debug)]
+/// SA: <https://www.scottaaronson.com/papers/bb.pdf>
+#[derive(Debug)]
 pub enum NotableMachine {
     BB2MaxAronson,
     BB3MaxAronson,
@@ -352,7 +357,12 @@ pub enum NotableMachine {
 
 impl NotableMachine {
     pub fn machine(&self) -> MachineGeneric {
-        let transitions_text = match self {
+        let transitions_text = self.to_standard_tm_text_format();
+        MachineGeneric::try_from_standard_tm_text_format(transitions_text).unwrap()
+    }
+
+    pub fn to_standard_tm_text_format(&self) -> &str {
+        match self {
             NotableMachine::BB3Rado => "1LB1RC_1RA1LB_1RB1LZ",
             NotableMachine::BB3Max => "1RB---_1LB0RC_1LC1LA",
             NotableMachine::BB4Max => "1RB1LB_1LA0LC_---1LD_1RD0RA",
@@ -368,9 +378,7 @@ impl NotableMachine {
             // "BB3_TEST" => "1RB0LB_1LC1RB_---1LA",
             NotableMachine::BB5Steps105 => "1RB1LC_0LB1LA_1RD1LB_1RE0RD_0RA---",
             NotableMachine::EndlessSimple => "0RA---",
-        };
-
-        MachineGeneric::try_from_standard_tm_text_format(transitions_text).unwrap()
+        }
     }
 }
 
@@ -389,6 +397,12 @@ impl TryFrom<&str> for NotableMachine {
         };
 
         Ok(nm)
+    }
+}
+
+impl Display for NotableMachine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_standard_tm_text_format())
     }
 }
 

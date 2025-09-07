@@ -1,11 +1,12 @@
 pub mod tape_128;
-// pub mod tape_compact;
+pub mod tape_macro;
 // pub mod tape_long_fixed_apex;
 pub mod tape_long_shifted;
 pub mod tape_utils;
+mod tmp;
 
 use crate::{
-    config::{Config, StepTypeBig},
+    config::{Config, StepBig},
     tape::tape_utils::TapeLongPositions,
     transition_binary::TransitionBinary,
 };
@@ -56,10 +57,8 @@ pub trait Tape: std::fmt::Display {
     #[must_use]
     fn update_tape_single_step(&mut self, transition: TransitionBinary) -> bool;
 
-    fn update_tape_self_ref_speed_up_unused_or_used(
-        &mut self,
-        transition: TransitionBinary,
-    ) -> bool;
+    /// Sets the last symbol which is similar to update tape, only that the move is not necessary.
+    fn write_last_symbol(&mut self, transition: TransitionBinary);
 
     /// Current pos_middle. This is an optional value only to be used for html or debug output.
     #[cfg(feature = "enable_html_reports")]
@@ -70,17 +69,19 @@ pub trait Tape: std::fmt::Display {
     fn tape_shifted_clean(&self) -> u128;
 }
 
-pub trait TapeSpeedUp: Tape {
+pub trait TapeAcceleration: Tape {
     /// Sets the symbol of the transition and moves the tape according to direction of the transition.
-    /// This also checks speed-up options (self-ref) and may move the tape many steps at once.
+    /// This also checks acceleration options (self-ref) and may move the tape many steps at once.
     /// Also prints and writes step to html if feature "enable_html_reports" is set.
     /// # Returns
-    /// False if the tape bounds were reached and/or the tape could not be expanded (tape_size_limit). \
-    /// In case of an error self.status is set to that error.
+    /// Number of steps executed or 0 if the tape bounds were reached and/or the tape could
+    /// not be expanded (tape_size_limit). \
+    /// Step limit is not checked and halt cannot be encountered as this is only called on self-ref transitions.
     #[must_use]
+    // #[inline(always)] put this on the implementations
     fn update_tape_self_ref_speed_up(
         &mut self,
         transition: TransitionBinary,
         tr_field: usize,
-    ) -> StepTypeBig;
+    ) -> StepBig;
 }

@@ -17,11 +17,14 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # criterion2 = "1.1.1"
 
 [features]
-# default = ["bb_counter_stats"]
+# default = ["enable_html_reports"]
+# default = ["enable_html_reports", "debug_tape", "bb_debug"]
+# default = ["counter_stats"]
+# default = ["without_self_ref_acceleration"]
+
 # default = ["bb_debug"]
 # default = ["bb_debug", "bb_debug_cycler", "bb_no_self_ref"]
 # default = ["bb_debug_cycler", "bb_no_self_ref"]
-# default = ["without_self_ref_acceleration"]
 # default = ["bb_enumerator_longest_skip_chain"]
 # default = ["bb_use_result_large"]
 # default = ["bb_print_non_pre_perm"]
@@ -33,20 +36,19 @@ criterion = { version = "0.5", features = ["html_reports"] }
 #     "bb_debug",
 # ]
 # default = ["enable_html_reports", "bb_no_self_ref"]
-# default = ["enable_html_reports", "bb_debug_tape"]
 # default = ["enable_html_reports", "bb_debug"]
-default = ["enable_html_reports"]
+
 bb_debug = []
 bb_debug_cycler = []
-# detailed information on tape changes
-bb_debug_tape = []
-# additional stats for the result
-bb_counter_stats = []
 # immediate write to file instead of buffering, needed for debugging
 bb_enumerator_longest_skip_chain = []
 bb_print_non_pre_perm = []
 # bb_use_result_large = []
 
+# Print detailed information on tape changes into console.
+debug_tape = []
+# additional stats for the result
+counter_stats = []
 # Allow optional output to html files but will have a 10%-30% performance hit even if write_html_file = false.
 enable_html_reports = []
 # The normalized id, see documentation.

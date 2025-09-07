@@ -111,7 +111,8 @@
 // Step  4272 D0 1LA: 00000000000000000000000000000000_000000000000000000000000_00000000*01111100_100100100100100100100100_10010010010010010010010010010010
 use std::fmt::Display;
 
-use crate::{config::Config, machine_binary::MachineBinary, status::MachineStatus};
+use crate::machine_binary::MachineId;
+use crate::{config::Config, status::MachineStatus};
 use crate::{
     decider::{
         self,
@@ -196,11 +197,6 @@ impl DeciderHoldLong {
             };
         }
     }
-
-    // /// Returns the given machine reference
-    // pub fn machine(&self) -> &'a Machine {
-    //     self.machine
-    // }
 }
 
 impl Decider for DeciderHoldLong {
@@ -208,9 +204,9 @@ impl Decider for DeciderHoldLong {
         &DECIDER_HOLD_ID
     }
 
-    fn decide_machine(&mut self, machine: &MachineBinary) -> MachineStatus {
+    fn decide_machine(&mut self, machine: &MachineId) -> MachineStatus {
         self.data.clear();
-        self.data.transition_table = *machine;
+        self.data.transition_table = *machine.machine();
 
         #[cfg(feature = "enable_html_reports")]
         self.data
@@ -236,7 +232,7 @@ impl Decider for DeciderHoldLong {
         result_status
     }
 
-    fn decide_single_machine(machine: &MachineBinary, config: &Config) -> MachineStatus {
+    fn decide_single_machine(machine: &MachineId, config: &Config) -> MachineStatus {
         let mut d = Self::new(config);
         d.decide_machine(machine)
     }
@@ -269,7 +265,7 @@ impl Display for DeciderHoldLong {
 // }
 
 pub fn test_decider_hold(tm_text_format: &str) {
-    let machine = MachineBinary::try_from(tm_text_format).unwrap();
+    let machine = MachineId::try_from(tm_text_format).unwrap();
     // let config = Config::new_default(5);
     let config = Config::builder(machine.n_states())
         .write_html_file(true)
@@ -288,7 +284,7 @@ pub fn test_decider_hold_u128_applies_bb5_max() {
     //     // .step_limit_hold(5_000_000)
     //     .build();
     // BB5 Max
-    let machine = NotableMachineBinary::BB5Max.machine();
+    let machine = NotableMachineBinary::BB5Max.machine_id();
     let start = std::time::Instant::now();
     let check_result = DeciderHoldLong::decide_single_machine(&machine, &config);
     let duration = start.elapsed();
@@ -309,7 +305,7 @@ mod tests {
         let config = Config::builder(4).write_html_file(true).build();
 
         // BB4 Max
-        let machine = NotableMachineBinary::BB4Max.machine();
+        let machine = NotableMachineBinary::BB4Max.machine_id();
         let mut decider = DeciderHoldLong::new(&config);
         let check_result = decider.decide_machine(&machine);
         // println!("{}", check_result);
@@ -322,14 +318,14 @@ mod tests {
     #[test]
     /// This test runs 50 mio steps, so turn off default = ["bb_debug"].
     fn decider_hold_u128_applies_bb5_max() {
-        // let config = Config::new_default(5);
         let config = Config::builder(5)
-            .write_html_file(true)
+            // write html can be turned on if feature without_self_ref_acceleration is off
+            // .write_html_file(true)
             .write_html_line_limit(100_000)
             .step_limit_decider_halt(50_000_000)
             .build();
         // BB5 Max
-        let machine = NotableMachineBinary::BB5Max.machine();
+        let machine = NotableMachineBinary::BB5Max.machine_id();
         let check_result = DeciderHoldLong::decide_single_machine(&machine, &config);
         // println!("{}", check_result);
         assert_eq!(check_result, MachineStatus::DecidedHalts(47_176_870));

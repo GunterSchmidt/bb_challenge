@@ -34,10 +34,8 @@
 
 // TODO cycle validation with 3rd and 4th cycle
 
-#[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
-use crate::tape_utils::U128Ext;
 use crate::{
-    config::{Config, StepTypeBig, StepTypeSmall, MAX_STATES},
+    config::{Config, StepBig, StepSmall, MAX_STATES},
     decider::{
         self,
         decider_data_long::DeciderDataLong,
@@ -45,7 +43,7 @@ use crate::{
         step_record::StepRecordU128,
         Decider, DECIDER_CYCLER_ID,
     },
-    machine_binary::MachineBinary,
+    machine_binary::MachineId,
     status::{MachineStatus, NonHaltReason},
     // step_record::StepRecordU128,
     tape::tape_utils::{MIDDLE_BIT_U128, TAPE_SIZE_BIT_U128},
@@ -112,7 +110,7 @@ impl Decider for DeciderCycler {
         &DECIDER_CYCLER_ID
     }
 
-    fn decide_machine(&mut self, machine: &MachineBinary) -> MachineStatus {
+    fn decide_machine(&mut self, machine: &MachineId) -> MachineStatus {
         #[cfg(feature = "enable_html_reports")]
         self.data
             .write_html_file_start(Self::decider_id(), &machine);
@@ -134,14 +132,13 @@ impl Decider for DeciderCycler {
             // maps: store step id leading to this
             self.maps_1d[self.data.tr_field].push(self.steps.len());
             let mut step = StepRecordU128::new(self.data.tr_field, 0, self.data.tape_shifted());
-            self.data.tr = machine.transition(self.data.tr_field);
+            self.data.tr = machine.machine().transition(self.data.tr_field);
             step.direction = self.data.tr.direction();
             self.steps.push(step);
 
             // check if done
-            if self.data.tr.is_halt() || self.steps.len() as StepTypeSmall >= self.data.step_limit()
-            {
-                self.data.step_no = self.steps.len() as StepTypeBig;
+            if self.data.tr.is_halt() || self.steps.len() as StepSmall >= self.data.step_limit() {
+                self.data.step_no = self.steps.len() as StepBig;
                 if self.data.is_done() {
                     #[cfg(feature = "enable_html_reports")]
                     self.data.write_html_file_end();
@@ -155,7 +152,7 @@ impl Decider for DeciderCycler {
             #[cfg(feature = "enable_html_reports")]
             {
                 // required because num_steps is not updated normally
-                self.data.step_no = self.steps.len() as StepTypeBig;
+                self.data.step_no = self.steps.len() as StepBig;
             }
             if !self.data.update_tape_single_step() {
                 return self.data.status;
@@ -294,14 +291,14 @@ impl Decider for DeciderCycler {
                         {
                             self.data.status =
                                 MachineStatus::DecidedNonHalt(NonHaltReason::Cycler(
-                                    self.steps.len() as StepTypeSmall,
-                                    distance as StepTypeSmall,
+                                    self.steps.len() as StepSmall,
+                                    distance as StepSmall,
                                 ));
                             self.data.write_html_file_end();
                         }
                         return MachineStatus::DecidedNonHalt(NonHaltReason::Cycler(
-                            self.steps.len() as StepTypeSmall,
-                            distance as StepTypeSmall,
+                            self.steps.len() as StepSmall,
+                            distance as StepSmall,
                         ));
                     }
 
@@ -394,14 +391,14 @@ impl Decider for DeciderCycler {
                         {
                             self.data.status =
                                 MachineStatus::DecidedNonHalt(NonHaltReason::Cycler(
-                                    self.steps.len() as StepTypeSmall,
-                                    distance as StepTypeSmall,
+                                    self.steps.len() as StepSmall,
+                                    distance as StepSmall,
                                 ));
                             self.data.write_html_file_end();
                         }
                         return MachineStatus::DecidedNonHalt(NonHaltReason::Cycler(
-                            self.steps.len() as StepTypeSmall,
-                            distance as StepTypeSmall,
+                            self.steps.len() as StepSmall,
+                            distance as StepSmall,
                         ));
                     } else {
                         #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
@@ -415,7 +412,7 @@ impl Decider for DeciderCycler {
     // tape_long_bits in machine?
     // TODO counter: longest cycle
 
-    fn decide_single_machine(machine: &MachineBinary, config: &Config) -> MachineStatus {
+    fn decide_single_machine(machine: &MachineId, config: &Config) -> MachineStatus {
         let mut d = Self::new(config);
         d.decide_machine(machine)
     }
@@ -431,7 +428,7 @@ mod tests {
 
     use super::*;
 
-    fn is_cycler(machine: &MachineBinary) -> bool {
+    fn is_cycler(machine: &MachineId) -> bool {
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .step_limit_decider_cycler(5000)
@@ -452,14 +449,14 @@ mod tests {
     #[test]
     fn decider_cycler_is_cycle_bb4_1166084() {
         let tm = "1RB1LD_1RC---_1LC0RA_0RA0RA";
-        let machine = MachineBinary::try_from(tm).unwrap();
+        let machine = MachineId::try_from(tm).unwrap();
         assert!(is_cycler(&machine));
     }
 
     #[test]
     fn decider_cycler_is_cycle_bb4_43788688() {
         let tm = "1RB---_1LC0RC_0LD1LC_1RA0RA";
-        let machine = MachineBinary::try_from(tm).unwrap();
+        let machine = MachineId::try_from(tm).unwrap();
         assert!(is_cycler(&machine));
     }
 
@@ -472,7 +469,7 @@ mod tests {
         transitions.push(("1RD", "0RA"));
         transitions.push(("0RA", "0RA"));
 
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         let config = Config::builder(machine.n_states())
             .write_html_file(true)
             .step_limit_decider_cycler(5000)
@@ -508,7 +505,7 @@ mod tests {
         transitions.push(("1LD", "1RB"));
         transitions.push(("1RA", "0RA"));
 
-        let machine = MachineBinary::from_string_tuple(&transitions);
+        let machine = MachineId::from_string_tuple(&transitions);
         // let config = Config::new_default(machine.n_states());
         let config = Config::builder(machine.n_states())
             .write_html_file(true)

@@ -1,6 +1,6 @@
 use crate::{
     config::MAX_STATES, data_provider::DataProvider, decider::decider_result::PreDeciderCount,
-    machine_binary::MachineBinary,
+    machine_binary::MachineId,
 };
 
 #[non_exhaustive]
@@ -14,10 +14,10 @@ pub enum EnumeratorStandard {
 // TODO remove what is in DataProvider. Why?
 pub trait Enumerator: DataProvider {
     /// Returns the specific batch of permutations and an info if this is the last batch.
-    fn enumerate_permutation_batch_no(&mut self, batch_no: usize) -> (Vec<MachineBinary>, bool);
+    fn enumerate_permutation_batch_no(&mut self, batch_no: usize) -> (Vec<MachineId>, bool);
 
     /// Returns the next batch of permutations and an info if this is the last batch.
-    fn enumerate_permutation_batch_next(&mut self) -> (Vec<MachineBinary>, bool);
+    fn enumerate_permutation_batch_next(&mut self) -> (Vec<MachineId>, bool);
 
     /// The given limit of machines to enumerate or (if smaller) the maximum number of machines for the number of states.
     fn limit(&self) -> u64;

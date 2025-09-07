@@ -2,8 +2,8 @@
 use std::fmt::Display;
 
 use crate::{
-    config::{Config, StepTypeBig},
-    machine_binary::MachineBinary,
+    config::{Config, StepBig},
+    machine_binary::{MachineBinary, MachineId},
     status::{MachineStatus, UndecidedReason},
     tape::{
         tape_128::Tape128,
@@ -11,7 +11,7 @@ use crate::{
             TapeLongPositions, CLEAR_LOW63_00BITS_U128, HIGH32_SWITCH_U128, LOW32_SWITCH_U128,
             POS_HALF_U128, TAPE_SIZE_BIT_U128, TAPE_SIZE_HALF_128,
         },
-        Tape, TapeSpeedUp,
+        Tape, TapeAcceleration,
     },
     transition_binary::{TransitionBinary, TRANSITION_BINARY_FIRST},
 };
@@ -22,7 +22,7 @@ use crate::{
 pub struct DeciderData128 {
     // decider_id: &'static DeciderId,
     /// Number of steps or current step no, where first step is 1
-    pub step_no: StepTypeBig,
+    pub step_no: StepBig,
     /// Current transition
     pub tr: TransitionBinary,
     /// Field Id of the current transition. This is the table field, e.g. B1 converted to a 1D-map (A0=2, B1=5).
@@ -32,12 +32,10 @@ pub struct DeciderData128 {
     /// be copied into the long tape when a bound is reached.
     pub tape: Tape128,
 
-    // machine id, just for debugging
-    // machine_id: IdBig,
-    pub machine: MachineBinary,
+    pub machine: MachineId,
 
     /// Maximum number of steps, after that Undecided will be returned.
-    pub step_limit: StepTypeBig,
+    pub step_limit: StepBig,
     // /// Tape size limit in number of cells
     // tape_size_limit_u32_blocks: u32,
     /// Final status, only valid once machine has ended, but intended to be used internally.
@@ -54,7 +52,7 @@ impl DeciderData128 {
             tape: Tape128::new(config),
 
             step_no: 0,
-            machine: MachineBinary::default(),
+            machine: MachineId::default(),
             // Initialize transition with A0 as start
             tr: TRANSITION_BINARY_FIRST,
             tr_field: 2,
@@ -94,7 +92,7 @@ impl DeciderData128 {
     pub fn next_transition(&mut self) -> bool {
         self.step_no += 1;
         self.tr_field = self.tr.state_x2() + self.tape.get_current_symbol();
-        self.tr = self.machine.transition(self.tr_field);
+        self.tr = self.machine.machine().transition(self.tr_field);
         // #[cfg(all(debug_assertions, feature = "bb_debug"))]
         // println!("{}", self.step_to_string());
         self.is_done()
@@ -108,9 +106,7 @@ impl DeciderData128 {
     pub fn is_done(&mut self) -> bool {
         if self.tr.is_halt() {
             // write last symbol
-            if !self.tr.is_symbol_undefined() {
-                self.tape.set_current_symbol(self.tr);
-            }
+            self.tape.write_last_symbol(self.tr);
             // println!("{}", self.tl.tape_shifted.to_binary_split_string());
             self.status = MachineStatus::DecidedHalts(self.step_no);
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
@@ -143,7 +139,7 @@ impl DeciderData128 {
     fn status_undecided_step_limit(&self) -> MachineStatus {
         MachineStatus::Undecided(
             UndecidedReason::StepLimit,
-            self.step_no as StepTypeBig,
+            self.step_no as StepBig,
             self.tape.tape_size_cells(),
         )
     }
@@ -174,7 +170,7 @@ impl DeciderData128 {
     //     )
     // }
 
-    pub fn step_limit(&self) -> StepTypeBig {
+    pub fn step_limit(&self) -> StepBig {
         self.step_limit
     }
 
@@ -231,9 +227,6 @@ impl DeciderData128 {
     #[must_use]
     #[inline(always)]
     pub fn update_tape_self_ref_speed_up(&mut self) -> bool {
-        // if self.step_no > 1273 {
-        //     println!();
-        // }
         let jump = self
             .tape
             .update_tape_self_ref_speed_up(self.tr, self.tr_field);
@@ -266,7 +259,7 @@ impl DeciderData128 {
     pub fn write_html_file_start(
         &mut self,
         decider_id: &crate::decider::DeciderId,
-        machine: &MachineBinary,
+        machine: &MachineId,
     ) {
         if let Some(html_writer) = &mut self.html_writer {
             html_writer

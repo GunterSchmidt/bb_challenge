@@ -3,8 +3,8 @@ use std::{cmp::Ordering, fmt::Display};
 use num_format::ToFormattedString;
 
 use crate::{
-    config::{user_locale, StepTypeBig},
-    machine_binary::MachineBinary,
+    config::{user_locale, StepBig},
+    machine_binary::{MachineBinary, MachineId},
     status::MachineStatus,
 };
 
@@ -27,10 +27,10 @@ impl MachineInfo {
         }
     }
 
-    pub fn new_id(id: u64, machine: MachineBinary, status: MachineStatus) -> MachineInfo {
+    pub fn new_m_id(machine: MachineId, status: MachineStatus) -> MachineInfo {
         Self {
-            id: Some(id),
-            machine,
+            id: machine.id_as_option(),
+            machine: *machine.machine(),
             status,
         }
     }
@@ -43,14 +43,13 @@ impl MachineInfo {
         }
     }
 
-    // #[deprecated]
-    // pub fn from_machine_deprecated(machine: &MachineId, status: &MachineStatus) -> MachineInfo {
-    //     Self {
-    //         id: None,
-    //         machine: *machine.transition_table(),
-    //         status: *status,
-    //     }
-    // }
+    pub fn from_machine_id(machine: &MachineId, status: &MachineStatus) -> MachineInfo {
+        Self {
+            id: machine.id_as_option(),
+            machine: *machine.machine(),
+            status: *status,
+        }
+    }
 
     pub fn has_id(&self) -> bool {
         self.id.is_some()
@@ -82,26 +81,6 @@ impl MachineInfo {
         self.machine.calc_normalized_id()
     }
 
-    pub fn file_name(&self) -> String {
-        match self.id {
-            Some(id) => {
-                format!(
-                    "BB{}_ID_{}_{}",
-                    self.n_states(),
-                    id,
-                    self.to_standard_tm_text_format()
-                )
-            }
-            None => {
-                format!(
-                    "BB{}_{}",
-                    self.n_states(),
-                    self.to_standard_tm_text_format()
-                )
-            }
-        }
-    }
-
     /// Returns true if at least one self-referencing transition exists (D1 1LD). \
     /// Slightly slower then [has_self_referencing_transition_store_result] if called repeatedly.
     pub fn has_self_referencing_transition(&self) -> bool {
@@ -118,7 +97,7 @@ impl MachineInfo {
         self.machine.n_states()
     }
 
-    pub fn steps(&self) -> StepTypeBig {
+    pub fn steps(&self) -> StepBig {
         match self.status {
             MachineStatus::DecidedHalts(steps) => steps,
             _ => 0,
