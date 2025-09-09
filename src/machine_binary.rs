@@ -12,7 +12,8 @@ use std::{fmt::Display, u64};
 use num_format::ToFormattedString;
 
 use crate::{
-    config::{IdNormalized, MAX_STATES, NUM_FIELDS},
+    config::{IdNormalized, MAX_STATES},
+    data_provider::enumerator::NUM_FIELDS,
     machine_generic::{MachineGeneric, NotableMachine, StateType, SymbolType},
     machine_info::MachineInfo,
     transition_binary::{TransitionBinary, TransitionType, TRANSITION_BINARY_UNUSED},
@@ -29,14 +30,10 @@ use crate::{
 /// e.g. C1 is field 3*2+1 = 7.
 /// For performance reasons, this is an Array instead of a Vec.
 pub type TransitionTableBinaryArray1D = [TransitionBinary; NUM_FIELDS];
-pub const TRANSITION_TABLE_BINARY_DEFAULT: TransitionTableBinaryArray1D = [TransitionBinary {
-    transition: TRANSITION_BINARY_UNUSED,
-    #[cfg(debug_assertions)]
-    text: ['_', '_', '_'],
-}; NUM_FIELDS];
+pub const TRANSITION_TABLE_BINARY_DEFAULT: TransitionTableBinaryArray1D =
+    [TRANSITION_BINARY_UNUSED; NUM_FIELDS];
 const FILTER_TABLE_N_STATES: TransitionType = 0b0000_1111;
 const FILTER_TABLE_SELF_REF: TransitionType = 0b1100_0000;
-// const FILTER_SELF_REF: TransitionType = 0b0000_0001_0000_0000;
 const SELF_REF_NOT_CHECKED: TransitionType = 0b0000_0000;
 const SELF_REF_SET_TRUE: TransitionType = 0b1000_0000;
 const SELF_REF_SET_FALSE: TransitionType = 0b0100_0000;
@@ -268,7 +265,7 @@ impl MachineBinary {
     // other than --- can be skipped. Is this better for enumeration?
     // Rotating backward all machines can be skipped if the first entry is --- or once the last entry is reached.
     // Need to think about it.
-    pub fn calc_normalized_id(&self) -> IdNormalized {
+    pub fn normalized_id_calc(&self) -> IdNormalized {
         let n_states = self.n_states();
         let tr_permutations = TransitionBinary::create_all_transition_permutations(n_states);
         #[cfg(not(feature = "normalized_id_reversed"))]
@@ -538,9 +535,18 @@ impl MachineId {
         Self::from(&m)
     }
 
-    /// Unused: u64::MAX
+    /// Returns the id, instead of Option, the unused case is: u64::MAX
     pub fn id(&self) -> u64 {
         self.id
+    }
+
+    /// Returns the id, instead of Option, the unused case is: u64::MAX
+    pub fn id_or_normalized_id(&self) -> IdNormalized {
+        if self.has_id() {
+            self.id as IdNormalized
+        } else {
+            self.machine.normalized_id_calc()
+        }
     }
 
     pub fn id_as_option(&self) -> Option<u64> {

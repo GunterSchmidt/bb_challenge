@@ -1,7 +1,10 @@
 use crate::{
     config::MAX_STATES, data_provider::DataProvider, decider::decider_result::PreDeciderCount,
-    machine_binary::MachineId,
+    machine_binary::MachineId, transition_binary::TRANSITION_BINARY_HALT,
 };
+
+/// Number of fields used in the transition table (Turing machine).
+pub const NUM_FIELDS: usize = MAX_STATES * 2 + 2;
 
 #[non_exhaustive]
 #[derive(Debug)]
@@ -90,4 +93,20 @@ pub fn num_turing_machine_permutations_u64(n_states: usize) -> u64 {
 pub fn num_turing_machine_permutations(n_states: usize) -> u128 {
     assert!(n_states <= 10, "Limit for u128 is a maximum of 10 states.");
     ((4 * n_states + 1) as u128).pow(2 * n_states as u32)
+}
+
+/// In some enumerators, no machines are created as field A0 usually starts with 0RB or 1RB. Therefore fake the result.
+pub fn machines_for_n_states_1() -> Vec<MachineId> {
+    let mut tr_permutations =
+        crate::transition_binary::TransitionBinary::create_all_transition_permutations(1);
+    tr_permutations[4] = TRANSITION_BINARY_HALT;
+    let mut transition_table = crate::machine_binary::MachineBinary::new_default(1);
+    transition_table.transitions[2] = crate::transition_binary::TRANSITION_BINARY_HALT;
+    let mut machines = Vec::new();
+    for tr in tr_permutations {
+        transition_table.transitions[3] = tr;
+        machines.push(MachineId::new_no_id(transition_table));
+    }
+
+    machines
 }

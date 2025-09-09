@@ -3,6 +3,7 @@ pub mod bb_file_reader;
 pub mod bb_file_shrink;
 pub mod enumerator;
 pub mod enumerator_binary;
+pub mod enumerator_tnf;
 // pub mod enumerator_binary_reverse;
 
 use std::fmt::Display;

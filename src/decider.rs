@@ -4,14 +4,15 @@ pub mod decider_bouncer_128;
 pub mod pre_decider;
 // // pub mod decider_bouncer_v1; old decider with different logic, may contain some re-usable code
 pub mod decider_cycler;
+pub mod decider_cycler_small;
 // pub mod decider_data;
 pub mod decider_data_128;
 // pub mod decider_data_apex;
 pub mod decider_data_long;
 pub mod decider_data_macro;
 pub mod decider_engine;
-pub mod decider_hold_long;
-pub mod decider_hold_macro;
+pub mod decider_halt_long;
+pub mod decider_halt_macro;
 pub mod decider_result;
 pub mod decider_result_worker;
 pub mod step_record;
@@ -23,7 +24,7 @@ use crate::{
     decider::{
         decider_bouncer_128::DeciderBouncer128,
         decider_cycler::DeciderCycler,
-        decider_hold_long::DeciderHoldLong,
+        decider_halt_long::DeciderHaltLong,
         decider_result::{
             BatchData, DeciderResultStats, EndReason, PreDeciderCount, ResultUnitEndReason,
         },
@@ -38,7 +39,7 @@ use crate::{
 //     decider::{
 //         decider_bouncer_128::DeciderBouncer128,
 //         decider_cycler::DeciderCycler,
-//         decider_hold_long_v3::DeciderHoldLong,
+//         decider_halt_long_v3::DeciderHoldLong,
 //         decider_result::{
 //             BatchData, DeciderResultStats, EndReason, PreDeciderCount, ResultUnitEndReason,
 //         },
@@ -48,15 +49,15 @@ use crate::{
 // };
 
 // Deciders in this library
-pub const DECIDER_HOLD_ID: DeciderId = DeciderId {
+pub const DECIDER_HALT_ID: DeciderId = DeciderId {
     id: 10,
-    name: "Decider Hold",
-    sub_dir: "hold",
+    name: "Decider Halt",
+    sub_dir: "halt",
 };
-pub const DECIDER_HOLD_MACRO_ID: DeciderId = DeciderId {
+pub const DECIDER_HALT_MACRO_ID: DeciderId = DeciderId {
     id: 15,
-    name: "Decider Hold Macro",
-    sub_dir: "hold_macro",
+    name: "Decider Halt Macro",
+    sub_dir: "halt_macro",
 };
 pub const DECIDER_CYCLER_ID: DeciderId = DeciderId {
     id: 20,
@@ -85,14 +86,14 @@ pub type FnDeciderRunBatchV2 = fn(&mut BatchData) -> ResultUnitEndReason;
 // pub(crate) enum DeciderEnum {
 //     PreDecider(Box<crate::pre_decider::PreDecider>),
 //     LoopV4(Box<crate::decider_cycler_v4::DeciderCyclerV4>),
-//     HoldLong(Box<crate::decider_hold_u128_long::DeciderHoldU128Long>),
+//     HoldLong(Box<crate::decider_halt_u128_long::DeciderHoldU128Long>),
 // }
 //
 // pub(crate) enum DeciderEnumV2<'a> {
 //     PreDecider(&'a mut PreDecider),
 //     LoopV4(&'a mut DeciderCyclerV4),
 //     // LoopV4(Box<crate::decider_loop_v4::DeciderLoopV4>),
-//     // HoldLong(Box<crate::decider_hold_u128_long::DeciderHoldU128Long>),
+//     // HoldLong(Box<crate::decider_halt_u128_long::DeciderHoldU128Long>),
 // }
 
 /// These are the provided deciders. This library should enable you to write your own decider.
@@ -116,7 +117,7 @@ impl DeciderStandard {
                 DeciderCaller::new(&DECIDER_CYCLER_ID, DeciderCycler::decider_run_batch)
             }
             DeciderStandard::Hold => {
-                DeciderCaller::new(&DECIDER_HOLD_ID, DeciderHoldLong::decider_run_batch)
+                DeciderCaller::new(&DECIDER_HALT_ID, DeciderHaltLong::decider_run_batch)
             }
         }
     }
@@ -137,7 +138,7 @@ impl DeciderStandard {
                 DeciderConfig::new(&DECIDER_CYCLER_ID, DeciderCycler::decider_run_batch, config)
             }
             DeciderStandard::Hold => {
-                DeciderConfig::new(&DECIDER_HOLD_ID, DeciderHoldLong::decider_run_batch, config)
+                DeciderConfig::new(&DECIDER_HALT_ID, DeciderHaltLong::decider_run_batch, config)
             }
         }
     }
@@ -167,7 +168,7 @@ impl<'a> DeciderCaller<'a> {
     }
 }
 
-/// This struct is used to chain the deciders, e.g. cycler low step count, bouncer, then cycler higher step count, then hold.
+/// This struct is used to chain the deciders, e.g. cycler low step count, bouncer, then cycler higher step count, then halt.
 #[derive(Debug, Clone)]
 pub struct DeciderConfig<'a> {
     decider_id: &'a DeciderId,
@@ -235,6 +236,45 @@ impl<'a> DeciderConfig<'a> {
 
     pub fn decider_id(&self) -> &DeciderId {
         self.decider_id
+    }
+
+    pub fn standard_config_builder(config: &Config) -> (Config, Config) {
+        let config_1 = Config::builder_from_config(config)
+            // relying on Config defaults
+            // 10_000_000_000 for BB4
+            // .machine_limit(100_000_000_000)
+            // .step_limit_cycler(1500)
+            // .step_limit_bouncer(5000)
+            // .step_limit_hold(1_000_000)
+            .build();
+        let config_2 = Config::builder_from_config(config)
+            // .machine_limit(100_000_000_000)
+            .step_limit_decider_cycler(110_000)
+            // .step_limit_bouncer(5_000)
+            // .limit_machines_undecided(100)
+            // .step_limit_cycler(50_000)
+            // .step_limit_bouncer(200_000)
+            // .limit_machines_decided(100)
+            // .limit_machines_undecided(100)
+            // .write_html_file(true)
+            .build();
+
+        (config_1, config_2)
+    }
+
+    pub fn standard_decider(
+        config: &'a Config,
+        config_cycler_2: &'a Config,
+    ) -> Vec<DeciderConfig<'a>> {
+        // Decider
+        let dc_cycler_1 = DeciderStandard::Cycler.decider_config(config);
+        let dc_bouncer_1 = DeciderStandard::Bouncer128.decider_config(config);
+        let dc_cycler_2 = DeciderStandard::Cycler.decider_config(&config_cycler_2);
+        let dc_hold = DeciderStandard::Hold.decider_config(config);
+
+        let decider_config = vec![dc_cycler_1, dc_bouncer_1, dc_cycler_2, dc_hold];
+
+        decider_config
     }
 }
 

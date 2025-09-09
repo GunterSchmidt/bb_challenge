@@ -44,51 +44,56 @@ use crate::machine_generic::TransitionGeneric;
 pub type TransitionType = i16;
 /// Number format for direction which is either -1 or 1. Can be any iXX type, i16 seems fastest.
 pub type DirectionType = i16;
-pub const TRANSITION_SYM2_UNUSED: TransitionBinary = TransitionBinary {
-    transition: TRANSITION_BINARY_UNUSED,
+pub const TRANSITION_BINARY_UNUSED: TransitionBinary = TransitionBinary {
+    transition: TR_BINARY_UNUSED,
     #[cfg(debug_assertions)]
     text: ['_', '_', '_'],
 };
-// This is the undefined halt ('---'), where no last symbol is written.
-pub const TRANSITION_BINARY_HALT: TransitionBinary = TransitionBinary {
-    transition: TRANSITION_UNDEFINED,
+// This is the undefined ('---'), where the machine halts.
+pub const TRANSITION_BINARY_UNDEFINED: TransitionBinary = TransitionBinary {
+    transition: TR_BINARY_UNDEFINED,
     #[cfg(debug_assertions)]
     text: ['-', '-', '-'],
 };
+pub const TRANSITION_BINARY_HALT: TransitionBinary = TransitionBinary {
+    transition: TR_BINARY_1RZ_HALT,
+    #[cfg(debug_assertions)]
+    text: ['1', 'R', 'Z'],
+};
 /// Initialize transition with A0 as start
 pub const TRANSITION_BINARY_FIRST: TransitionBinary = TransitionBinary {
-    transition: TRANSITION_0RA,
+    transition: TR_BINARY_0RA,
     #[cfg(debug_assertions)]
     text: ['0', 'R', 'A'],
 };
-pub const TRANSITIONS_FOR_A0: [TransitionBinary; 2] = [
-    TransitionBinary {
-        transition: 196,
-        #[cfg(debug_assertions)]
-        text: ['0', 'R', 'B'],
-    },
-    TransitionBinary {
-        transition: 197,
-        #[cfg(debug_assertions)]
-        text: ['1', 'R', 'B'],
-    },
-];
+pub const TRANSITION_0RB: TransitionBinary = TransitionBinary {
+    transition: TR_BINARY_0RB,
+    #[cfg(debug_assertions)]
+    text: ['0', 'R', 'B'],
+};
+pub const TRANSITION_1RB: TransitionBinary = TransitionBinary {
+    transition: TR_BINARY_1RB,
+    #[cfg(debug_assertions)]
+    text: ['1', 'R', 'B'],
+};
+pub const TRANSITIONS_FOR_A0: [TransitionBinary; 2] = [TRANSITION_0RB, TRANSITION_1RB];
 
-// const FILTER_SYMBOL: TransitionType = 0b0010_0001;
-const FILTER_SYMBOL_0_1: TransitionType = 0b0000_0001;
-// const FILTER_SYMBOL_UNDEFINED: TransitionType = 0b0010_0000;
+const FILTER_SYMBOL: TransitionType = 0b0000_0001;
 const FILTER_DIR: TransitionType = 0b1100_0000;
 pub const FILTER_STATE: TransitionType = 0b0001_1110;
 const FILTER_ARRAY_ID: TransitionType = 0b0001_1111;
-pub const TRANSITION_UNDEFINED: TransitionType = DIRECTION_UNDEFINED;
-pub const TRANSITION_BINARY_UNUSED: TransitionType = 0b0000_0000; // 0b1010_0001;
-pub const TRANSITION_0RA: TransitionType = 0b1100_0010;
+pub const TR_BINARY_UNDEFINED: TransitionType = DIRECTION_UNDEFINED;
+pub const TR_BINARY_UNUSED: TransitionType = 0b0000_0000; // 0b1010_0001;
+pub const TR_BINARY_0RA: TransitionType = 0b1100_0010;
+pub const TR_BINARY_0RB: TransitionType = 0b1100_0100;
+pub const TR_BINARY_1RB: TransitionType = 0b1100_0101;
+pub const TR_BINARY_1RZ_HALT: TransitionType = 0b1100_0001;
 const SYMBOL_ZERO: TransitionType = 0b0000_0000;
 const SYMBOL_ONE: TransitionType = 0b0000_0001;
 const DIRECTION_UNDEFINED: TransitionType = 0b1000_0000;
 const TO_RIGHT: TransitionType = 0b1100_0000;
 const TO_LEFT: TransitionType = 0b0100_0000;
-pub const STATE_HALT_SYM2: TransitionType = 0;
+pub const STATE_HALT_BINARY: TransitionType = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionBinary {
@@ -126,18 +131,21 @@ impl TransitionBinary {
     pub fn try_new(transition_text: [u8; 3]) -> Result<Self, TransitionError> {
         // let symbol_char = transition_text[0];
         // let direction_char = transition_text[1];
-        let state_char = transition_text[2];
         // let mut is_undefined = false;
 
+        if transition_text == [0, 0, 0] {
+            return Ok(TRANSITION_BINARY_UNDEFINED);
+        }
         // Symbol
         let mut transition_bits = match transition_text[0] {
             b'0' | 0 => 0,
             b'1' | 1 => SYMBOL_ONE,
             // No undefined here
-            b'-' => return Ok(TRANSITION_BINARY_HALT), // SYMBOL_UNDEFINED,
+            b'-' => return Ok(TRANSITION_BINARY_UNDEFINED), // SYMBOL_UNDEFINED,
             _ => return Err(TransitionError::InvalidSymbol(transition_text[0])),
         };
 
+        let state_char = transition_text[2];
         match state_char {
             // Numeric 0 or char Z means Halt State
             // This does nothing, because it would be 0 which it already is.
@@ -259,7 +267,7 @@ impl TransitionBinary {
 
     /// returns only 0 or 1, not undefined
     pub fn symbol(&self) -> TransitionType {
-        self.transition & FILTER_SYMBOL_0_1
+        self.transition & FILTER_SYMBOL
     }
 
     // /// returns 0, 1, or undefined
@@ -269,7 +277,7 @@ impl TransitionBinary {
 
     /// returns only 0 or 1, not undefined
     pub fn symbol_usize(&self) -> usize {
-        (self.transition & FILTER_SYMBOL_0_1) as usize
+        (self.transition & FILTER_SYMBOL) as usize
     }
 
     pub fn has_next_state_a(&self) -> bool {
@@ -277,7 +285,7 @@ impl TransitionBinary {
     }
 
     pub fn is_halt(&self) -> bool {
-        self.transition & FILTER_STATE == STATE_HALT_SYM2
+        self.transition & FILTER_STATE == STATE_HALT_BINARY
     }
 
     // pub fn is_self_ref(&self) -> bool {
@@ -285,11 +293,11 @@ impl TransitionBinary {
     // }
 
     pub fn is_symbol_one(&self) -> bool {
-        self.transition & FILTER_SYMBOL_0_1 != 0
+        self.transition & FILTER_SYMBOL != 0
     }
 
     pub fn is_symbol_zero(&self) -> bool {
-        self.transition & FILTER_SYMBOL_0_1 == 0
+        self.transition & FILTER_SYMBOL == 0
     }
 
     pub fn is_symbol_undefined(&self) -> bool {
@@ -298,7 +306,7 @@ impl TransitionBinary {
     }
 
     pub fn is_unused(&self) -> bool {
-        self.transition == TRANSITION_BINARY_UNUSED
+        self.transition == TR_BINARY_UNUSED
     }
 
     // pub fn set_as_self_ref(&mut self) {
@@ -319,7 +327,7 @@ impl TransitionBinary {
     /// This creates all transition permutations for one field, e.g. \
     /// 0RA, 1RA, 0LA, 1LA, --- for BB1 \
     /// The number can be calculated by (4 * n_states + 1), e.g. 21 for BB5. \
-    /// Keep this order as 0RB is expected on pos 3.
+    /// Keep this order as 0RB is expected to be on pos 3.
     pub fn create_all_transition_permutations(n_states: usize) -> Vec<TransitionBinary> {
         let mut transitions = Vec::new();
         let mut tr: [u8; 3];
@@ -343,7 +351,7 @@ impl TransitionBinary {
             transitions.push(TransitionBinary::try_new(tr).unwrap());
         }
         // halt as last transition
-        transitions.push(TRANSITION_BINARY_HALT);
+        transitions.push(TRANSITION_BINARY_UNDEFINED);
 
         transitions
     }
@@ -351,7 +359,7 @@ impl TransitionBinary {
 
 impl Default for TransitionBinary {
     fn default() -> Self {
-        TRANSITION_SYM2_UNUSED
+        TRANSITION_BINARY_UNUSED
     }
 }
 
@@ -374,7 +382,7 @@ impl From<&TransitionGeneric> for TransitionBinary {
     fn from(tg: &TransitionGeneric) -> Self {
         // quick check if undefined halt
         if tg.direction == 0 {
-            return TRANSITION_BINARY_HALT;
+            return TRANSITION_BINARY_UNDEFINED;
         }
 
         // symbol
@@ -421,10 +429,10 @@ impl From<&TransitionGeneric> for TransitionBinary {
 impl std::fmt::Display for TransitionBinary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.transition {
-            TRANSITION_UNDEFINED => write!(f, "---"),
-            TRANSITION_BINARY_UNUSED => write!(f, "   "),
+            TR_BINARY_UNDEFINED => write!(f, "---"),
+            TR_BINARY_UNUSED => write!(f, "   "),
             _ => {
-                let write_symbol = match self.transition & FILTER_SYMBOL_0_1 {
+                let write_symbol = match self.transition & FILTER_SYMBOL {
                     0 => '0',
                     SYMBOL_ONE => '1',
                     _ => '-',

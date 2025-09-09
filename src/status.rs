@@ -66,10 +66,12 @@ pub enum MachineStatus {
     #[default]
     NoDecision,
     DecidedNonHalt(NonHaltReason),
-    /// Halt for fast evaluation
-    DecidedHalts(StepBig),
+    /// Halt with num steps for fast evaluation
+    DecidedHalt(StepBig),
+    /// Halt with num steps and stop field index for fast evaluation
+    DecidedHaltField(StepBig, usize),
     /// Halts after steps, tape size, ones on tape
-    DecidedHaltsDetail(StepBig, u32, u32),
+    DecidedHaltDetail(StepBig, u32, u32),
     DecidedNotMaxTooManyHaltTransitions,
     DecidedNotMaxNotAllStatesUsed,
     EliminatedPreDecider(PreDeciderReason),
@@ -101,9 +103,16 @@ impl Display for MachineStatus {
         let locale = user_locale();
         let mut s = String::new();
         match self {
-            MachineStatus::DecidedHalts(steps) => s.push_str(
+            MachineStatus::DecidedHalt(steps) => s.push_str(
                 format!(
                     "Decided: Halts after {} steps",
+                    steps.to_formatted_string(&locale)
+                )
+                .as_str(),
+            ),
+            MachineStatus::DecidedHaltField(steps, field_index) => s.push_str(
+                format!(
+                    "Decided: Halts after {} steps at field index {field_index}",
                     steps.to_formatted_string(&locale)
                 )
                 .as_str(),
@@ -119,7 +128,7 @@ impl Display for MachineStatus {
             MachineStatus::DecidedNotMaxNotAllStatesUsed => {
                 s.push_str("Decided: Not max as not all states are used.")
             }
-            MachineStatus::DecidedHaltsDetail(steps, tape_size, ones) => s.push_str(
+            MachineStatus::DecidedHaltDetail(steps, tape_size, ones) => s.push_str(
                 format!(
                     "Decided: Halts after {} steps, {ones} ones written, tape_size (approx): {tape_size}",
                     steps.to_formatted_string(&locale)
