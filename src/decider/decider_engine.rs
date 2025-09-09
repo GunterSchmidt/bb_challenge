@@ -13,6 +13,7 @@ use crate::{
     data_provider::{
         // bb_file_reader::BBFileDataProviderBuilder,
         enumerator_binary::{EnumeratorBinary, EnumeratorType},
+        enumerator_tnf::EnumeratorTNF,
         DataProvider,
         DataProviderThreaded,
     },
@@ -64,22 +65,41 @@ pub fn run_decider_gen(
 /// General function to call a decider chain.
 pub fn run_decider_chain_gen(
     decider_config: &[DeciderConfig],
-    generator_std: EnumeratorType,
+    enumerator_std: EnumeratorType,
     multi_core: CoreUsage,
 ) -> DeciderResultStats {
     let first_config = decider_config.first().expect("No decider given").config();
-    let generator = EnumeratorBinary::new(generator_std, first_config);
-    // let generator = GeneratorReducedForward::new(first_config);
-    match multi_core {
-        CoreUsage::SingleCore => {
-            batch_run_decider_chain_data_provider_single_thread(decider_config, generator)
+    if enumerator_std == EnumeratorType::EnumeratorTNF {
+        let enumerator = EnumeratorTNF::new(first_config);
+        match multi_core {
+            CoreUsage::SingleCore => {
+                batch_run_decider_chain_data_provider_single_thread(decider_config, enumerator)
+            }
+            CoreUsage::SingleCoreEnumeratorMultiCoreDecider => {
+                batch_run_decider_chain_threaded_data_provider_single_thread(
+                    decider_config,
+                    enumerator,
+                )
+            }
+            CoreUsage::MultiCore => panic!("MultiCore not supported"),
         }
-        CoreUsage::SingleCoreEnumeratorMultiCoreDecider => {
-            batch_run_decider_chain_threaded_data_provider_single_thread(decider_config, generator)
+    } else {
+        let enumerator = EnumeratorBinary::new(enumerator_std, first_config);
+        match multi_core {
+            CoreUsage::SingleCore => {
+                batch_run_decider_chain_data_provider_single_thread(decider_config, enumerator)
+            }
+            CoreUsage::SingleCoreEnumeratorMultiCoreDecider => {
+                batch_run_decider_chain_threaded_data_provider_single_thread(
+                    decider_config,
+                    enumerator,
+                )
+            }
+            CoreUsage::MultiCore => batch_run_decider_chain_threaded_data_provider_multi_thread(
+                decider_config,
+                enumerator,
+            ), // _ => panic!("use 0: single, 1: multi with single generator, 2: multi"),
         }
-        CoreUsage::MultiCore => {
-            batch_run_decider_chain_threaded_data_provider_multi_thread(decider_config, generator)
-        } // _ => panic!("use 0: single, 1: multi with single generator, 2: multi"),
     }
 }
 

@@ -78,7 +78,7 @@ impl MachineInfo {
 
     /// Calculates the id for forward rotating or backward rotating transitions.
     pub fn calc_normalized_id(&self) -> u64 {
-        self.machine.calc_normalized_id()
+        self.machine.normalized_id_calc()
     }
 
     /// Returns true if at least one self-referencing transition exists (D1 1LD). \
@@ -99,7 +99,7 @@ impl MachineInfo {
 
     pub fn steps(&self) -> StepBig {
         match self.status {
-            MachineStatus::DecidedHalts(steps) => steps,
+            MachineStatus::DecidedHalt(steps) => steps,
             _ => 0,
         }
     }

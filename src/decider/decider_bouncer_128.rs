@@ -154,21 +154,8 @@ impl DeciderBouncer128 {
         let mut decider = Self {
             data: DeciderData128::new(config),
             steps: Vec::with_capacity(cap),
-            // maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
         };
         decider.data.step_limit = config.step_limit_decider_bouncer();
-
-        #[cfg(feature = "enable_html_reports")]
-        {
-            if config.write_html_file() {
-                decider
-                    .data
-                    .html_writer
-                    .as_mut()
-                    .unwrap()
-                    .init_sub_dir(Self::decider_id().sub_dir);
-            }
-        }
 
         decider
     }
@@ -197,7 +184,7 @@ impl Decider for DeciderBouncer128 {
         // initialize decider
         self.clear();
 
-        self.data.machine = *machine;
+        self.data.transition_table = *machine.machine();
         let mut last_left_empty_step_no = 0;
         let mut last_right_empty_step_no = 0;
         let mut is_bouncing_right = false;
@@ -232,6 +219,7 @@ impl Decider for DeciderBouncer128 {
                 {
                     let text = format!("  Step {}: tape LEFT empty: comparing", self.data.step_no);
                     println!("{text}");
+                    #[cfg(all(debug_assertions, feature = "enable_html_reports"))]
                     self.data.write_html_p(&text);
                 }
                 // compare and check if same expanding bits for three consecutive steps
@@ -251,6 +239,7 @@ impl Decider for DeciderBouncer128 {
                             "  Not Bouncing right!"
                         };
                         println!("{text}");
+                        #[cfg(all(debug_assertions, feature = "enable_html_reports"))]
                         self.data.write_html_p(&text);
                     }
                     // compare and check if same expanding bits for three steps but leaving one out each time
@@ -275,6 +264,7 @@ impl Decider for DeciderBouncer128 {
                                 "  Not Bouncing right double"
                             };
                             println!("{text}");
+                            #[cfg(all(debug_assertions, feature = "enable_html_reports"))]
                             self.data.write_html_p(&text);
                         }
                     }
@@ -299,6 +289,7 @@ impl Decider for DeciderBouncer128 {
                 {
                     let text = format!("  Step {}: tape RIGHT empty: comparing", self.data.step_no);
                     println!("{text}");
+                    #[cfg(all(debug_assertions, feature = "enable_html_reports"))]
                     self.data.write_html_p(&text);
                 }
                 // compare and check if same expanding bits for both sides
@@ -318,6 +309,7 @@ impl Decider for DeciderBouncer128 {
                                 "  Not Bouncing right!"
                             };
                             println!("{text}");
+                            #[cfg(all(debug_assertions, feature = "enable_html_reports"))]
                             self.data.write_html_p(&text);
                         }
                         self.data.status = MachineStatus::DecidedNonHalt(NonHaltReason::Bouncer(
@@ -346,6 +338,7 @@ impl Decider for DeciderBouncer128 {
                                     "  Not a bouncer double."
                                 };
                                 println!("{text}");
+                                #[cfg(all(debug_assertions, feature = "enable_html_reports"))]
                                 self.data.write_html_p(&text);
                             }
                             self.data.status = MachineStatus::DecidedNonHalt(
@@ -920,7 +913,7 @@ mod tests {
             .write_html_file(true)
             .build();
         let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
-        assert_eq!(check_result, MachineStatus::DecidedHalts(21));
+        assert_eq!(check_result, MachineStatus::DecidedHalt(21));
     }
 
     #[test]
@@ -937,7 +930,7 @@ mod tests {
             .write_html_file(true)
             .build();
         let check_result = DeciderBouncer128::decide_single_machine(&machine, &config);
-        assert_eq!(check_result, MachineStatus::DecidedHalts(107));
+        assert_eq!(check_result, MachineStatus::DecidedHalt(107));
     }
 
     #[test]

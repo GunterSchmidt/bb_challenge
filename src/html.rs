@@ -1,7 +1,7 @@
 //! # Functionality
 //! Output the machine steps while in progress into an HTML file. \
 //! The output is limited to the 128-Bit tape_shifted, so not the full tape is seen, but this is usually enough to analyze. \
-//! The step line looks like this (here only 64 bits are shown): \
+//! The step line looks like this (only 64 bits are shown): \
 //! Step     1 A0 1RC: 000000000000000000000000_0000000**1**\*00000000_000000000000000000000000 \
 //! where the Head is always directly after the '\*'.
 //! So here the first step is from table field A0 having transition 1RC, so it writes a 1 on the tape and shifts the head right.
@@ -41,7 +41,7 @@ use std::{
 
 use crate::{
     config::{self, Config, StepBig},
-    decider::{decider_hold_long::DeciderHoldLong, Decider},
+    decider::{decider_halt_long::DeciderHaltLong, Decider},
     machine_binary::{MachineBinary, MachineId},
     machine_info::MachineInfo,
     status::MachineStatus,
@@ -77,7 +77,7 @@ th,
 td {
     border: 1px solid black;
     border-collapse: collapse;
-    padding: 3px;
+    padding: 6px;
     margin-left: 10px;
 }";
 const CSS_TABLE_DARK: &str = "table,
@@ -85,7 +85,7 @@ th,
 td {
     border: 1px solid white;
     border-collapse: collapse;
-    padding: 3px;
+    padding: 6px;
     margin-left: 10px;
 }";
 
@@ -135,7 +135,7 @@ impl HtmlWriter {
     /// Sets the sub directory. This is mandatory.
     /// # Panics
     /// If the sub directory could not be created.
-    pub fn init_sub_dir(&mut self, sub_dir: &str) {
+    fn init_sub_dir(&mut self, sub_dir: &str) {
         let path = format!(
             "{}{MAIN_SEPARATOR_STR}{sub_dir}_bb{}",
             self.html_out_path, self.n_states
@@ -160,10 +160,10 @@ impl HtmlWriter {
             && self.write_html_line_count < self.write_html_line_limit
     }
 
-    /// Checks if config.write_html_file was set to true and if the path is set
-    pub fn is_write_html_file(&self) -> bool {
-        self.write_html_file && self.path.is_some()
-    }
+    // /// Checks if config.write_html_file was set to true and if the path is set
+    // pub fn is_write_html_file(&self) -> bool {
+    //     self.write_html_file && self.path.is_some()
+    // }
 
     pub fn path(&self) -> Option<&String> {
         self.path.as_ref()
@@ -175,7 +175,7 @@ impl HtmlWriter {
     }
 
     /// Writes to html header and the start of the body to the file. \
-    /// Sets file_name in self.
+    /// Sets path and file_name in self.
     /// # Arguments
     /// - decider_id: For file name and description
     /// - machine to write, uses tm_standard_name for file name
@@ -186,9 +186,10 @@ impl HtmlWriter {
         decider_id: &DeciderId,
         machine: &MachineId,
     ) -> io::Result<()> {
-        if !self.is_write_html_file() {
+        if !self.write_html_file {
             return Ok(());
         }
+        self.init_sub_dir(decider_id.sub_dir);
         match &self.path {
             Some(path) => {
                 if !std::fs::exists(path)? {
@@ -317,7 +318,8 @@ impl HtmlWriter {
 
     /// Write a single step to the html file.
     /// # Panics
-    /// If file cannot be written. Unlikely as the file is already open for write.
+    /// If file cannot be written. Unlikely as the file is already open for write. \
+    /// If it panics, then init_sub_dir() was not called.
     pub fn write_step_html(&mut self, step_data: &StepHtml) {
         if self.is_write_html_in_limit(step_data.step_no) {
             step_data.write_step_html(self.buf_writer.as_mut().unwrap());
@@ -404,7 +406,7 @@ pub fn rename_file_to_status(file_path: &str, file_name: &str, machine_status: &
             let f_name_new = "undecided_".to_string() + file_name;
             Some(format!("{}{}{}", file_path, MAIN_SEPARATOR_STR, f_name_new))
         }
-        MachineStatus::DecidedHalts(steps) => {
+        MachineStatus::DecidedHalt(steps) => {
             // rename file
             let f_name_new = format!("decided_halt_{steps}_{}", file_name);
             Some(format!("{}{}{}", file_path, MAIN_SEPARATOR_STR, f_name_new))
@@ -576,23 +578,28 @@ pub fn write_machines_to_html(
     let config = Config::builder_from_config(config)
         .write_html_file(true)
         .write_html_tape_shifted_64_bit(as_64_bit)
-        // .step_limit_cycler(100_000)
-        // .step_limit_bouncer(100_000)
-        // .step_limit_hold(100_000)
-        // .write_html_line_limit(25_000)
         .build();
     if config.write_html_file() {
         let mut last_progress_info = Instant::now();
         for (i, m_info) in machine_infos.iter().take(limit_num_files).enumerate() {
             let machine = MachineId::from(m_info);
-            // write hold (because self ref)
-            DeciderHoldLong::decide_single_machine(&machine, &config);
-            // write bouncer (because single step)
-            crate::decider::decider_bouncer_128::DeciderBouncer128::decide_single_machine(
+            // write cycler (because single step)
+            let mut res = crate::decider::decider_cycler::DeciderCycler::decide_single_machine(
                 &machine, &config,
             );
-            // write cycler (because single step)
-            crate::decider::decider_cycler::DeciderCycler::decide_single_machine(&machine, &config);
+            if let MachineStatus::Undecided(_, _, _) = res {
+                // write bouncer (because single step)
+                res = crate::decider::decider_bouncer_128::DeciderBouncer128::decide_single_machine(
+                    &machine, &config,
+                );
+            }
+            if let MachineStatus::Undecided(_, _, _) = res {
+                // write hold (because self ref)
+                DeciderHaltLong::decide_single_machine(&machine, &config);
+            }
+            // TODO write hold_macro as fixed tape?
+
+            // progress info
             let dur = Instant::now() - last_progress_info;
             if dur.as_millis() > 5000 {
                 println!("progress: {} / {}", i + 1, machine_infos.len());

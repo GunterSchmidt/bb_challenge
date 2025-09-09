@@ -1,12 +1,12 @@
-//! This decider just runs all steps until either a hold or limit is encountered. \
+//! This decider just runs all steps until either a halt or limit is encountered. \
 //! In case of the self-ref speed-up not all steps are executed, as the self-referencing transition repetitions are omitted.  
 //! For BB5_MAX only 91,021 of 47,176,870 steps = 0.02 % are actually executed. The missing steps are calculated. This makes the
-//! execution of the hold decider really fast, with just about 2 ms instead of 150 ms for BB5_MAX. \
+//! execution of the halt decider really fast, with just about 2 ms instead of 150 ms for BB5_MAX. \
 //! # Example:
 //! Here one can see 1LD and 1RB are repeated multiple time. 1LD does not change the status,
 //! as it is the transition for D1, as such is self-referencing. \
 //! Also the tape does not change, so the symbols do not need to be written.
-//! If only the search for Hold is relevant, then these steps can be skipped. \
+//! If only the search for Halt is relevant, then these steps can be skipped. \
 //! Step   184 B0 1RC: 000000000000000001111111_11111111\*01001001_001100000000000000000000 \
 //! Step   185 C0 1RD: 000000000000000011111111_11111111\*10010010_011000000000000000000000 \
 //! Step   186 D1 1LD: 000000000000000001111111_11111111\*11001001_001100000000000000000000 \
@@ -118,7 +118,7 @@ use crate::{
         self,
         decider_data_long::DeciderDataLong,
         decider_result::{BatchData, ResultUnitEndReason},
-        Decider, DECIDER_HOLD_ID,
+        Decider, DECIDER_HALT_ID,
     },
     machine_binary::NotableMachineBinary,
 };
@@ -140,31 +140,16 @@ use crate::{
 // - D0 1LE -> E1 0LD: check 63 1 and 64 0 and left repeat 01 (01010*1) 011101010101010101010101_01010101→00101010
 // BB5_MAX:
 // - A1 1LC -> C1 0LE -> E1 0LA: check 63 1, 64 1 and 65 1 and left repeat 1 (1111*1) 00000000000000001111111111111111_111111111111111111111111_11111111→10010010
-// This is the same as decider_hold_u128_long_v2 only with split and moved functionality to DeciderData128. May have an insignificant performance loss.
-pub struct DeciderHoldLong {
+// This is the same as decider_halt_u128_long_v2 only with split and moved functionality to DeciderData128. May have an insignificant performance loss.
+pub struct DeciderHaltLong {
     data: DeciderDataLong,
 }
 
-impl DeciderHoldLong {
+impl DeciderHaltLong {
     pub fn new(config: &Config) -> Self {
-        #[allow(unused_mut)]
-        let mut decider = Self {
+        Self {
             data: DeciderDataLong::new(config),
-        };
-
-        #[cfg(feature = "enable_html_reports")]
-        {
-            if config.write_html_file() {
-                decider
-                    .data
-                    .html_writer
-                    .as_mut()
-                    .unwrap()
-                    .init_sub_dir(Self::decider_id().sub_dir);
-            }
         }
-
-        decider
     }
 
     fn decide_machine_with_self_referencing_transition(&mut self) -> MachineStatus {
@@ -181,7 +166,7 @@ impl DeciderHoldLong {
         }
     }
 
-    /// Returns the MachineStatus:Hold with steps if steps were found within limits of tape and max steps. \
+    /// Returns the [MachineStatus:DecidedHalt] with steps if steps were found within limits of tape and max steps. \
     /// This version has a long tape, so it is not restricted to the 128 bit range.
     /// This is not using the self reference speed-up and should only be used if those would mess up the tests.
     fn decide_machine_without_self_referencing_transitions(&mut self) -> MachineStatus {
@@ -199,9 +184,9 @@ impl DeciderHoldLong {
     }
 }
 
-impl Decider for DeciderHoldLong {
+impl Decider for DeciderHaltLong {
     fn decider_id() -> &'static decider::DeciderId {
-        &DECIDER_HOLD_ID
+        &DECIDER_HALT_ID
     }
 
     fn decide_machine(&mut self, machine: &MachineId) -> MachineStatus {
@@ -243,7 +228,7 @@ impl Decider for DeciderHoldLong {
     }
 }
 
-impl Display for DeciderHoldLong {
+impl Display for DeciderHaltLong {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // let s = String::new();
         // println!("State: Undecided: Too many steps to left.");
@@ -252,45 +237,33 @@ impl Display for DeciderHoldLong {
     }
 }
 
-// pub fn test_decider_hold_u128_applies_bb4_max() {
-//     let config = Config::new_default(4);
-//     // BB4 Max
-//     let machine_bb4_max = Machine::build_machine("BB4_MAX").unwrap();
-//
-//     let mut decider: DeciderU128Long<SubDeciderDummy> = DeciderU128Long::new(config);
-//     let check_result = decider.decide_machine(&machine_bb4_max);
-//     // println!("{}", check_result);
-//
-//     assert_eq!(check_result, MachineStatus::DecidedHolds(107));
-// }
-
-pub fn test_decider_hold(tm_text_format: &str) {
+pub fn test_decider_halt(tm_text_format: &str) {
     let machine = MachineId::try_from(tm_text_format).unwrap();
     // let config = Config::new_default(5);
     let config = Config::builder(machine.n_states())
         .write_html_file(true)
         .step_limit_decider_halt(50_000_000)
         .build();
-    let check_result = DeciderHoldLong::decide_single_machine(&machine, &config);
+    let check_result = DeciderHaltLong::decide_single_machine(&machine, &config);
     println!("{}", check_result);
-    // assert_eq!(check_result, MachineStatus::DecidedHolds(47176870));
+    // assert_eq!(check_result, MachineStatus::DecidedHalt(47176870));
 }
 
-pub fn test_decider_hold_u128_applies_bb5_max() {
+pub fn test_decider_halt_applies_bb5_max() {
     let config = Config::new_default(5);
     // let config = Config::builder(5)
     //     .write_html_file(true)
     //     .write_html_step_limit(50_000_000)
-    //     // .step_limit_hold(5_000_000)
+    //     // .step_limit_halt(5_000_000)
     //     .build();
     // BB5 Max
     let machine = NotableMachineBinary::BB5Max.machine_id();
     let start = std::time::Instant::now();
-    let check_result = DeciderHoldLong::decide_single_machine(&machine, &config);
+    let check_result = DeciderHaltLong::decide_single_machine(&machine, &config);
     let duration = start.elapsed();
     println!("Duration: {duration:?}");
     println!("{}", check_result);
-    assert_eq!(check_result, MachineStatus::DecidedHalts(47176870));
+    assert_eq!(check_result, MachineStatus::DecidedHalt(47176870));
 }
 
 /// One test runs 50 mio steps, so turn off default = ["bb_debug"].
@@ -300,34 +273,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decider_hold_u128_applies_bb4_max() {
+    fn decider_halt_long_applies_bb4_max() {
         // let config = Config::new_default(4);
         let config = Config::builder(4).write_html_file(true).build();
 
         // BB4 Max
         let machine = NotableMachineBinary::BB4Max.machine_id();
-        let mut decider = DeciderHoldLong::new(&config);
+        let mut decider = DeciderHaltLong::new(&config);
         let check_result = decider.decide_machine(&machine);
         // println!("{}", check_result);
-        assert_eq!(check_result, MachineStatus::DecidedHalts(107));
+        assert_eq!(check_result, MachineStatus::DecidedHalt(107));
         let full = decider.data.status_full();
         println!("{}", full);
-        assert_eq!(full, MachineStatus::DecidedHaltsDetail(107, 128, 12));
+        assert_eq!(full, MachineStatus::DecidedHaltDetail(107, 128, 12));
     }
 
     #[test]
     /// This test runs 50 mio steps, so turn off default = ["bb_debug"].
-    fn decider_hold_u128_applies_bb5_max() {
+    fn decider_halt_long_applies_bb5_max() {
         let config = Config::builder(5)
-            // write html can be turned on if feature without_self_ref_acceleration is off
-            // .write_html_file(true)
+            // write html can be turned on since html lines are limited
+            .write_html_file(true)
             .write_html_line_limit(100_000)
             .step_limit_decider_halt(50_000_000)
             .build();
         // BB5 Max
         let machine = NotableMachineBinary::BB5Max.machine_id();
-        let check_result = DeciderHoldLong::decide_single_machine(&machine, &config);
+        let check_result = DeciderHaltLong::decide_single_machine(&machine, &config);
         // println!("{}", check_result);
-        assert_eq!(check_result, MachineStatus::DecidedHalts(47_176_870));
+        assert_eq!(check_result, MachineStatus::DecidedHalt(47_176_870));
     }
 }

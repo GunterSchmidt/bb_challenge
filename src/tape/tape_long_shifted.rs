@@ -13,7 +13,7 @@
 //! This requires delicate logic to keep the data in sync, which will be explained here.
 //!
 //! To give a real life example, the bb_challenge file machine Id: 30605 1RB0RZ_0RC0RA_1RD0LE_0LC1RC_1LC0RA is used,
-//! which can be created with [crate::examples::bb_challenge_id_30605_cycler_to_html].
+//! which can be created with [crate::examples::cycler_undecided::bb_challenge_cycler_undecided_to_html].
 //!
 //! Unfortunately the html doc is not wide enough, but for this example requires the full 128_bit. \
 //! The tape will bounce around a bit: \
@@ -728,13 +728,6 @@ impl Tape for TapeLongShifted {
         };
     }
 
-    #[inline(always)]
-    fn write_last_symbol(&mut self, transition: TransitionBinary) {
-        if !transition.is_symbol_undefined() {
-            self.set_current_symbol(transition);
-        }
-    }
-
     fn tape_long_positions(&self) -> Option<TapeLongPositions> {
         Some(TapeLongPositions {
             tl_pos: self.tl_pos,
@@ -770,6 +763,13 @@ impl Tape for TapeLongShifted {
             self.tape_shifted >>= 1;
             self.pos_middle -= 1;
             self.shift_tape_long_head_dir_left()
+        }
+    }
+
+    #[inline(always)]
+    fn write_last_symbol(&mut self, transition: TransitionBinary) {
+        if !transition.is_symbol_undefined() {
+            self.set_current_symbol(transition);
         }
     }
 }

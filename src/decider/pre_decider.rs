@@ -9,7 +9,7 @@ use crate::{
     config::MAX_STATES,
     machine_binary::MachineBinary,
     status::{MachineStatus, PreDeciderReason},
-    transition_binary::{TransitionBinary, TransitionType, STATE_HALT_SYM2, TRANSITIONS_FOR_A0},
+    transition_binary::{TransitionBinary, TransitionType, STATE_HALT_BINARY, TRANSITIONS_FOR_A0},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -27,6 +27,10 @@ pub struct PreDecider;
 // TODO Hypothesis: Longest contains self referencing element, e.g. BB5 MAX B1, D1
 // TODO pre decider states: state B: only 1 of the two can have a state higher than C. In case one points to state A or B, then max C is allowed.
 // TODO For state C: only 1 of the two can have a state higher than D. In case one points to state A, B or C, then max D is allowed for the other.
+// TODO https://turbotm.de/~heiner/BB/mabu90.html#Enumeration:
+// If there are two states which are (syntactically) equivalent, these two can be identified (Sigma(N+1) > Sigma(N)). Example: (x,0)->(x,0,R), (x,1)->(z,0,L), (y,0)->(y,0,R) and (y,1)->(z,0,L) imply that states x and y are equivalent.
+// If a sequence of three transitions is guaranteed to have the same effect as a single transition, only one of both constructions need be inspected. Example: Let x,y,z and s be states with x!=y, a, b, and c arbitrary symbols, and D from {L,R}, then (x,0)->(y,0,L), (x,1)->(y,1,L), and (y,b)->(z,c,D) implies that (s,a)->(x,b,R) and (s,a)->(z,c,D) have the same effect.
+
 /// Runs quick deciders, which only check the transition table without a step-by-step execution. \
 /// Example: Is there exactly one hold condition? If no hold condition exists, it runs endlessly. If more than one hold
 /// condition exist, then this machine may hold sometime, but will not be the max machine for this many n_states.
@@ -41,7 +45,7 @@ pub struct PreDecider;
 pub fn run_pre_decider_strict(machine: &MachineBinary) -> MachineStatus {
     // check if first element is hold
     if machine.transition_start().is_halt() {
-        return MachineStatus::DecidedHalts(1);
+        return MachineStatus::DecidedHalt(1);
     }
 
     // check like EnumeratorReduced: State Start can only be 0RB or 1RB, otherwise
@@ -86,7 +90,7 @@ pub fn run_pre_decider_strict(machine: &MachineBinary) -> MachineStatus {
 pub fn run_pre_decider_simple(machine: &MachineBinary) -> MachineStatus {
     // check if first element is hold
     if machine.transition_start().is_halt() {
-        return MachineStatus::DecidedHalts(1);
+        return MachineStatus::DecidedHalt(1);
     }
 
     if check_start_transition_is_recursive(machine) {
@@ -252,14 +256,14 @@ pub fn check_not_all_states_used(table: &MachineBinary, n_states: usize) -> bool
     let mut state_stack_size = 0;
     // follow state from A0 and look where it is going
     let second_state_next_symbol_0 = table.transition(a0_state_next * 2).state() as usize;
-    if second_state_next_symbol_0 == STATE_HALT_SYM2 as usize {
+    if second_state_next_symbol_0 == STATE_HALT_BINARY as usize {
         return true;
     }
     // in this example mark C0 as used, but it is possible C is never visited again
     // example goes back to A, but from now on it is unclear if symbol on tape is 0 or 1
     // TODO (unless both have been writing 0)
     let s0 = table.transition(second_state_next_symbol_0 * 2).state() as usize;
-    if s0 == STATE_HALT_SYM2 as usize {
+    if s0 == STATE_HALT_BINARY as usize {
         return true;
     }
     // mark both fields as used
@@ -273,7 +277,7 @@ pub fn check_not_all_states_used(table: &MachineBinary, n_states: usize) -> bool
     state_stack[state_stack_size] = s0;
     state_stack_size += 1;
     let s1 = table.transition(second_state_next_symbol_0 * 2 + 1).state() as usize;
-    if s0 != s1 && s1 != STATE_HALT_SYM2 as usize {
+    if s0 != s1 && s1 != STATE_HALT_BINARY as usize {
         state_stack[state_stack_size] =
             table.transition(second_state_next_symbol_0 * 2 + 1).state() as usize;
         state_stack_size += 1;
@@ -284,7 +288,7 @@ pub fn check_not_all_states_used(table: &MachineBinary, n_states: usize) -> bool
         state_stack_size -= 1;
         if !states_used[state].0 {
             let s = table.transition(state * 2).state() as usize;
-            if s != STATE_HALT_SYM2 as usize && s != state {
+            if s != STATE_HALT_BINARY as usize && s != state {
                 state_stack[state_stack_size] = s;
                 state_stack_size += 1;
             }
@@ -293,7 +297,7 @@ pub fn check_not_all_states_used(table: &MachineBinary, n_states: usize) -> bool
         }
         if !states_used[state].1 {
             let s = table.transition(state * 2 + 1).state() as usize;
-            if s != STATE_HALT_SYM2 as usize && s != state {
+            if s != STATE_HALT_BINARY as usize && s != state {
                 state_stack[state_stack_size] = s;
                 state_stack_size += 1;
             }

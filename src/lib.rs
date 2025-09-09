@@ -24,4 +24,5 @@ pub mod machine_generic;
 pub mod tape;
 pub mod toml;
 pub mod transition_binary;
+pub mod unused;
 pub mod utils;

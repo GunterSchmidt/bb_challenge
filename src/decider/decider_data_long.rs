@@ -2,6 +2,9 @@
 //! It holds the tape and the tape movement, the current step_no, the status and
 //! functionality to write a HTML file. \
 //! This allows to switch the tapes easily in the decider and the HTML logic does not need to be repeated.
+//!
+//! This version uses [TapeLongShifted] which is a very fast tape with the ability to hold long data. It
+//! is also the most tested tape. Use this for deciders.
 
 use std::fmt::Display;
 
@@ -112,7 +115,7 @@ impl DeciderDataLong {
             // write last symbol
             self.tape.write_last_symbol(self.tr);
             // println!("{}", self.tl.tape_shifted.to_binary_split_string());
-            self.status = MachineStatus::DecidedHalts(self.step_no);
+            self.status = MachineStatus::DecidedHaltField(self.step_no, self.tr_field);
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
             #[cfg(feature = "enable_html_reports")]
             self.write_step_html();
@@ -156,7 +159,7 @@ impl DeciderDataLong {
     /// Returns the status of the decider and additionally written Ones on tape and Tape Size
     pub fn status_full(&self) -> MachineStatus {
         match self.status {
-            MachineStatus::DecidedHalts(steps) => MachineStatus::DecidedHaltsDetail(
+            MachineStatus::DecidedHalt(steps) => MachineStatus::DecidedHaltDetail(
                 steps,
                 self.tape.tape_size_cells(),
                 self.tape.count_ones(),
@@ -262,7 +265,7 @@ impl DeciderDataLong {
                 .create_html_file_start(decider_id, machine)
                 .expect("Html file could not be written");
             self.write_html_p(
-                "Note: Here only the 128 Bit Tape is shown, the underlying long tape holds more data.",
+                "Note: Only the 128 Bit Tape is shown, the underlying long tape holds more data.",
             );
         }
     }

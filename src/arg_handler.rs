@@ -41,7 +41,14 @@ pub fn standard_args(args: &[String]) -> ArgValue {
             return ArgValue::Done;
         }
 
-        _ => {}
+        // accept machine in standard tm format (without -m parameter)
+        _ => {
+            let mg = MachineGeneric::try_from_standard_tm_text_format(&args[1]);
+            if let Ok(machine) = mg {
+                return ArgValue::Machine(Box::new(machine));
+            }
+            // else fallthrough
+        }
     }
 
     #[allow(clippy::single_match)]

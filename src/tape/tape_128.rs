@@ -1,6 +1,7 @@
 //! Tape128 is a tape which only uses a 128-Bit tape_shifted and as such has a limited tape size. \
-//! It has a small memory footprint and only uses stack memory, which makes it a bit faster.
-// TODO self ref
+//! It tries to maximize tape usage by checking if the used tape is actually written with ones. This makes it a
+//! bit slower than [TapeLongShifted]. Its use is limited to cases where checks on the tape are only performed
+//! on the short tape (bouncer).
 
 use std::fmt::Display;
 

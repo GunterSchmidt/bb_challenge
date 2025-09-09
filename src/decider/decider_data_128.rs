@@ -32,7 +32,7 @@ pub struct DeciderData128 {
     /// be copied into the long tape when a bound is reached.
     pub tape: Tape128,
 
-    pub machine: MachineId,
+    pub transition_table: MachineBinary,
 
     /// Maximum number of steps, after that Undecided will be returned.
     pub step_limit: StepBig,
@@ -52,12 +52,13 @@ impl DeciderData128 {
             tape: Tape128::new(config),
 
             step_no: 0,
-            machine: MachineId::default(),
+            transition_table: MachineBinary::default(),
             // Initialize transition with A0 as start
             tr: TRANSITION_BINARY_FIRST,
             tr_field: 2,
             status: MachineStatus::NoDecision,
             step_limit: config.step_limit_decider_halt(),
+
             #[cfg(feature = "enable_html_reports")]
             html_writer: if config.write_html_file() {
                 Some(crate::html::HtmlWriter::new(config))
@@ -92,7 +93,7 @@ impl DeciderData128 {
     pub fn next_transition(&mut self) -> bool {
         self.step_no += 1;
         self.tr_field = self.tr.state_x2() + self.tape.get_current_symbol();
-        self.tr = self.machine.machine().transition(self.tr_field);
+        self.tr = self.transition_table.transition(self.tr_field);
         // #[cfg(all(debug_assertions, feature = "bb_debug"))]
         // println!("{}", self.step_to_string());
         self.is_done()
@@ -108,7 +109,7 @@ impl DeciderData128 {
             // write last symbol
             self.tape.write_last_symbol(self.tr);
             // println!("{}", self.tl.tape_shifted.to_binary_split_string());
-            self.status = MachineStatus::DecidedHalts(self.step_no);
+            self.status = MachineStatus::DecidedHalt(self.step_no);
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
             #[cfg(feature = "enable_html_reports")]
             self.write_step_html();
@@ -152,7 +153,7 @@ impl DeciderData128 {
     /// Returns the status of the decider and additionally written Ones on tape and Tape Size
     pub fn status_full(&self) -> MachineStatus {
         match self.status {
-            MachineStatus::DecidedHalts(steps) => MachineStatus::DecidedHaltsDetail(
+            MachineStatus::DecidedHalt(steps) => MachineStatus::DecidedHaltDetail(
                 steps,
                 self.tape.tape_size_cells(),
                 self.tape.count_ones(),

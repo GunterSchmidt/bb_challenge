@@ -32,7 +32,11 @@
 //! If this is the case then also the tape will be compared. It needs to match for the \
 //! relevant part, meaning all cells touched in this cycle will be compared.
 
+// TODO bug shift with machine 1RB1RD_1LC1RB_1RA0LB_0RA1LE_---0RB
 // TODO cycle validation with 3rd and 4th cycle
+// TODO Fast detection when tape is identical (only shifted) and transition is identical, then it will become a loop,
+// no need to run the 2nd cycle, e.g. 1RB---_0RC0LE_1LD0LA_1LB1RB_1LC1RC
+// but seems to work on 1RB---_1LB1LC_0RD0RC_1LE1RE_1LA0LE (not shifted)
 
 use crate::{
     config::{Config, StepBig, StepSmall, MAX_STATES},
@@ -44,7 +48,7 @@ use crate::{
         Decider, DECIDER_CYCLER_ID,
     },
     machine_binary::MachineId,
-    status::{MachineStatus, NonHaltReason},
+    status::{MachineStatus, NonHaltReason, UndecidedReason},
     // step_record::StepRecordU128,
     tape::tape_utils::{MIDDLE_BIT_U128, TAPE_SIZE_BIT_U128},
 };
@@ -79,18 +83,6 @@ impl DeciderCycler {
             maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
         };
         decider.data.step_limit = config.step_limit_decider_cycler();
-
-        #[cfg(feature = "enable_html_reports")]
-        {
-            if config.write_html_file() {
-                decider
-                    .data
-                    .html_writer
-                    .as_mut()
-                    .unwrap()
-                    .init_sub_dir(Self::decider_id().sub_dir);
-            }
-        }
 
         decider
     }
@@ -332,7 +324,26 @@ impl Decider for DeciderCycler {
                     //    (1 << 10) gives 0b10000000000 (1 followed by 10 zeros)
                     //    Subtracting 1 gives 0b01111111111 (10 ones) -> 0x3FF in hex
                     if num_bits > 127 {
-                        println!("{machine}");
+                        // relevant tape part does not fit in 128 bit
+                        // println!("{machine}");
+                        #[cfg(feature = "enable_html_reports")]
+                        {
+                            self.data.status = MachineStatus::Undecided(
+                                UndecidedReason::TapeSizeLimit,
+                                self.data.step_no as StepBig,
+                                128,
+                            );
+                            let text =
+                                format!("Tape moved more than 127 bits in loop since step no {}. Bits {num_bits}.", step_id+1);
+                            self.data.write_html_p(&text);
+                            self.data.write_html_file_end();
+                        }
+
+                        return MachineStatus::Undecided(
+                            UndecidedReason::TapeSizeLimit,
+                            self.data.step_no as StepBig,
+                            128,
+                        );
                     }
                     let mask: u128 = ((1 << num_bits) - 1) << start_bit;
                     // #[cfg(feature = "bb_debug_cycler")]
@@ -475,7 +486,7 @@ mod tests {
             .step_limit_decider_cycler(5000)
             .build();
         let res = DeciderCycler::decide_single_machine(&machine, &config);
-        assert_eq!(res, MachineStatus::DecidedHalts(107));
+        assert_eq!(res, MachineStatus::DecidedHalt(107));
     }
 
     //     #[test]

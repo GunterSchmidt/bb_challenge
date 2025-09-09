@@ -230,7 +230,7 @@ impl DeciderResultStats {
         let mut is_decided = true;
         self.num_evaluated += 1;
         match status {
-            MachineStatus::DecidedHalts(steps) => {
+            MachineStatus::DecidedHalt(steps) | MachineStatus::DecidedHaltField(steps, _) => {
                 self.num_halt += 1;
                 self.steps_max.add_steps(*steps, machine, status);
 
@@ -274,7 +274,7 @@ impl DeciderResultStats {
                     self.pre_decider_count.num_writes_only_zero += 1
                 }
             },
-            MachineStatus::DecidedHaltsDetail(_, _, _) => todo!(),
+            MachineStatus::DecidedHaltDetail(_, _, _) => todo!(),
             // MachineStatus::DecidedHaltsOld(steps, _) => {
             //     self.num_halt += 1;
             //     #[cfg(feature = "counter_stats")]
