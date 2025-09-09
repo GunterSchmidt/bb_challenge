@@ -54,7 +54,6 @@ pub type IdNormalized = u64;
 /// This is used for array definitions. Higher numbers require more memory and slow down execution.
 // TODO change u64 type to UBB to allow max 10.
 pub const MAX_STATES: usize = 5;
-pub const NUM_FIELDS: usize = MAX_STATES * 2 + 2;
 /// Number of states the TransitionGeneral should be able to handle.
 /// TODO test and describe limits
 pub(crate) const MAX_STATES_GENERIC: usize = 10;
@@ -135,6 +134,7 @@ pub struct Config {
     /// Steps 0-1000 are always written.
     write_html_step_start: StepBig,
     /// Limits the actually written steps. If set to 0 no html output is done.
+    // TODO move default to config.toml
     write_html_line_limit: u32,
     /// reduces 128 bit tape_shifted to 64 bits, which can be printed on a landscape page
     write_html_tape_shifted_64_bit: bool,
@@ -158,7 +158,6 @@ impl Config {
         let step_limit = Self::step_limit_decider_halt_default(n_states);
         Self {
             n_states,
-            batch_size: BATCH_SIZE_FILE,
             step_limit_decider_halt: step_limit,
             steps_min: if n_states == 1 { 0 } else { 2 },
             // TODO depending on n_states
@@ -169,6 +168,7 @@ impl Config {
             enumerator_reduced_batch_size_request:
                 Self::enumerator_reduced_batch_size_request_recommendation(n_states),
             file_id_range: None,
+            batch_size: BATCH_SIZE_FILE,
             limit_machines_decided: 0,
             limit_machines_undecided: 0,
             cpu_utilization_percent: CPU_UTILIZATION_DEFAULT,
@@ -198,16 +198,17 @@ impl Config {
     }
 
     /// Step limit defaults for actual runs of deciders of type bouncer.
-    pub fn step_limit_bouncer_default(n_states: usize) -> StepSmall {
-        // TODO fine tune
-        match n_states {
-            1 => 1_000,
-            2 => 1_000,
-            3 => 1_000,
-            4 => 2_000,
-            5 => 2_000,
-            _ => panic!("Cannot handle this step limit!"),
-        }
+    pub fn step_limit_bouncer_default(_n_states: usize) -> StepSmall {
+        // TODO fine tune, currently restricted by 128 bit tape anyhow
+        200000
+        // match n_states {
+        //     1 => 1_000,
+        //     2 => 1_000,
+        //     3 => 1_000,
+        //     4 => 2_000,
+        //     5 => 2_000,
+        //     _ => panic!("Cannot handle this step limit!"),
+        // }
     }
 
     /// Step limit defaults for actual runs of deciders of type cycler.
@@ -551,17 +552,29 @@ impl ConfigBuilder {
             enumerator_reduced_batch_size_request: self
                 .enumerator_batch_size_request_reduced
                 .unwrap_or(self.config.enumerator_reduced_batch_size_request()),
-            file_id_range: self.file_id_range,
-            limit_machines_decided: self.limit_machines_decided.unwrap_or(0),
-            limit_machines_undecided: self.limit_machines_undecided.unwrap_or(0),
+            file_id_range: if self.config.file_id_range.is_some() {
+                self.config.file_id_range
+            } else {
+                self.file_id_range
+            },
+            limit_machines_decided: self
+                .limit_machines_decided
+                .unwrap_or(self.config.limit_machines_decided),
+            limit_machines_undecided: self
+                .limit_machines_undecided
+                .unwrap_or(self.config.limit_machines_undecided),
             cpu_utilization_percent: self
                 .cpu_utilization_percent
                 .unwrap_or(self.config.cpu_utilization_percent),
-            config_key_value_pair: self.config_key_value_pair.unwrap_or_default(),
+            config_key_value_pair: self
+                .config_key_value_pair
+                .unwrap_or(self.config.config_key_value_pair),
             creation_time: SystemTime::now(),
             use_local_time: self.use_local_time.unwrap_or(self.config.use_local_time),
             write_html_file: self.write_html_file.unwrap_or(self.config.write_html_file),
-            write_html_step_start: self.write_html_step_start.unwrap_or(0),
+            write_html_step_start: self
+                .write_html_step_start
+                .unwrap_or(self.config.write_html_step_start),
             write_html_line_limit: self
                 .write_html_line_limit
                 .unwrap_or(self.config.write_html_line_limit),
