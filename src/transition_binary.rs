@@ -76,6 +76,16 @@ pub const TRANSITION_1RB: TransitionBinary = TransitionBinary {
     #[cfg(debug_assertions)]
     text: ['1', 'R', 'B'],
 };
+pub const TRANSITION_0LA: TransitionBinary = TransitionBinary {
+    transition: TR_BINARY_0LA,
+    #[cfg(debug_assertions)]
+    text: ['0', 'L', 'A'],
+};
+pub const TRANSITION_0LB: TransitionBinary = TransitionBinary {
+    transition: TR_BINARY_0LB,
+    #[cfg(debug_assertions)]
+    text: ['0', 'L', 'B'],
+};
 pub const TRANSITIONS_FOR_A0: [TransitionBinary; 2] = [TRANSITION_0RB, TRANSITION_1RB];
 
 const FILTER_SYMBOL: TransitionType = 0b0000_0001;
@@ -84,6 +94,8 @@ pub const FILTER_STATE: TransitionType = 0b0001_1110;
 const FILTER_ARRAY_ID: TransitionType = 0b0001_1111;
 pub const TR_BINARY_UNDEFINED: TransitionType = DIRECTION_UNDEFINED;
 pub const TR_BINARY_UNUSED: TransitionType = 0b0000_0000; // 0b1010_0001;
+pub const TR_BINARY_0LA: TransitionType = 0b0100_0010;
+pub const TR_BINARY_0LB: TransitionType = 0b0100_0100;
 pub const TR_BINARY_0RA: TransitionType = 0b1100_0010;
 pub const TR_BINARY_0RB: TransitionType = 0b1100_0100;
 pub const TR_BINARY_1RB: TransitionType = 0b1100_0101;
@@ -128,24 +140,24 @@ impl TransitionBinary {
     /// L,R or undefined is irrelevant in last transition, in any other step it must be defined. \
     /// Third car is next state, it can be denoted as number 1-9, or letter A-Y. 0 or Z represent halt. \
     /// This is the main halt condition. Numbers are used for the downloadable seeds.
-    pub fn try_new(transition_text: [u8; 3]) -> Result<Self, TransitionError> {
+    pub fn try_new(tr_array: [u8; 3]) -> Result<Self, TransitionError> {
         // let symbol_char = transition_text[0];
         // let direction_char = transition_text[1];
         // let mut is_undefined = false;
 
-        if transition_text == [0, 0, 0] {
+        if tr_array == [0, 0, 0] {
             return Ok(TRANSITION_BINARY_UNDEFINED);
         }
         // Symbol
-        let mut transition_bits = match transition_text[0] {
+        let mut transition_bits = match tr_array[0] {
             b'0' | 0 => 0,
             b'1' | 1 => SYMBOL_ONE,
             // No undefined here
             b'-' => return Ok(TRANSITION_BINARY_UNDEFINED), // SYMBOL_UNDEFINED,
-            _ => return Err(TransitionError::InvalidSymbol(transition_text[0])),
+            _ => return Err(TransitionError::InvalidSymbol(tr_array[0])),
         };
 
-        let state_char = transition_text[2];
+        let state_char = tr_array[2];
         match state_char {
             // Numeric 0 or char Z means Halt State
             // This does nothing, because it would be 0 which it already is.
@@ -186,12 +198,12 @@ impl TransitionBinary {
         }
 
         // direction
-        match transition_text[1] {
+        match tr_array[1] {
             b'L' | 1 => transition_bits |= TO_LEFT,
             b'R' | 0 => transition_bits |= TO_RIGHT,
             // b'-' => transition_bits |= DIRECTION_UNDEFINED, // Undefined direction for non-halt transitions
             // '-' is an error as it cannot be undefined if symbol is not undefined also.
-            _ => return Err(TransitionError::InvalidDirection(transition_text[1])),
+            _ => return Err(TransitionError::InvalidDirection(tr_array[1])),
         };
 
         #[cfg(debug_assertions)]
@@ -284,6 +296,7 @@ impl TransitionBinary {
         (self.transition & FILTER_STATE) == 0b0000_0000_0000_0010
     }
 
+    /// This applies to undefined (---) and halt (1RZ).
     pub fn is_halt(&self) -> bool {
         self.transition & FILTER_STATE == STATE_HALT_BINARY
     }
@@ -300,8 +313,8 @@ impl TransitionBinary {
         self.transition & FILTER_SYMBOL == 0
     }
 
-    pub fn is_symbol_undefined(&self) -> bool {
-        // Filter on direction is correct, as direction and symbol are always together defined or undefined.
+    pub fn is_undefined(&self) -> bool {
+        // Filter on direction is correct, as direction is always set if not undefined.
         self.transition & FILTER_DIR == DIRECTION_UNDEFINED
     }
 

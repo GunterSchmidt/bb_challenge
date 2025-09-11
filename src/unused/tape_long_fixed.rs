@@ -346,7 +346,7 @@ impl Tape for TapeLongFixed {
 
     #[inline(always)]
     fn write_last_symbol(&mut self, transition: crate::transition_binary::TransitionBinary) {
-        if !transition.is_symbol_undefined() {
+        if !transition.is_undefined() {
             self.set_current_symbol(transition);
         }
     }

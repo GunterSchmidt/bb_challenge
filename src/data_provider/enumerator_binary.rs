@@ -25,11 +25,9 @@
 // TODO enumerationReducedReverse is broken
 
 use crate::{
-    config::{Config, MAX_STATES},
+    config::{Config, NUM_FIELDS},
     data_provider::{
-        enumerator::{
-            machines_for_n_states_1, num_turing_machine_permutations, Enumerator, NUM_FIELDS,
-        },
+        enumerator::{machines_for_n_states_1, num_turing_machine_permutations, Enumerator},
         DataProvider, DataProviderBatch, DataProviderThreaded, ResultDataProvider,
     },
     decider::{
@@ -934,7 +932,7 @@ impl DataProviderThreaded for EnumeratorBinary {
             tr_permutations_field: self.tr_permutations_field.clone(),
             machine: transition_table,
             n_fields: self.n_fields,
-            fields: [0; (MAX_STATES + 1) * 2],
+            fields: [0; NUM_FIELDS],
             field_no: match self.gen_type {
                 EnumeratorType::EnumeratorFullForward
                 | EnumeratorType::EnumeratorReducedForward => 4,

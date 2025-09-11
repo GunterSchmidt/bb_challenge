@@ -72,6 +72,8 @@ pub struct DeciderCyclerSmall {
     /// (basically e.g. all steps for e.g. field 'B0' steps: 1 if A0 points to B, as step 1 then has state B and head symbol 0.)
     // TODO performance: extra differentiation for 0/1 at head position? The idea is, that the field cannot be identical if head read is different
     maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)],
+    #[cfg(feature = "enable_html_reports")]
+    machine_id: Option<u64>,
 }
 
 impl DeciderCyclerSmall {
@@ -81,6 +83,8 @@ impl DeciderCyclerSmall {
             data: DeciderDataLong::new(config),
             steps: Vec::with_capacity(cap),
             maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
+            #[cfg(feature = "enable_html_reports")]
+            machine_id: None,
         };
         decider.data.step_limit = config.step_limit_decider_cycler();
 
@@ -94,12 +98,19 @@ impl DeciderCyclerSmall {
         for map in self.maps_1d.iter_mut() {
             map.clear();
         }
+        #[cfg(feature = "enable_html_reports")]
+        {
+            self.machine_id = None
+        }
     }
 
-    fn decide_machine_binary(&mut self, machine: &MachineBinary) -> MachineStatus {
+    // Machine is copied to assure L1 cache usage
+    fn decide_machine_binary(&mut self, machine: MachineBinary) -> MachineStatus {
         #[cfg(feature = "enable_html_reports")]
-        self.data
-            .write_html_file_start(Self::decider_id(), &MachineId::new_no_id(*machine));
+        self.data.write_html_file_start(
+            Self::decider_id(),
+            &MachineId::new_option_id(self.machine_id, machine),
+        );
 
         // initialize decider
         self.clear();
@@ -148,7 +159,7 @@ impl DeciderCyclerSmall {
             read_symbol_next = self.data.get_current_symbol();
 
             // print steps
-            #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+            #[cfg(all(debug_assertions, feature = "debug_cycler"))]
             println!(
                 "Step {:3}: {} {} Tape shifted after: {:032b} {:032b}, next {}{} {}",
                 self.steps.len() - 1,
@@ -180,7 +191,7 @@ impl DeciderCyclerSmall {
                     // check if we have two repeated cycles
                     if distance > step_id {
                         // This case is not interesting
-                        // #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                        // #[cfg(all(debug_assertions, feature = "debug_cycler"))]
                         // {
                         //     let s = format!("  * Fail {step_id}: Min Distance");
                         //     println!("{s}");
@@ -192,7 +203,7 @@ impl DeciderCyclerSmall {
                         break;
                     }
 
-                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                    #[cfg(all(debug_assertions, feature = "debug_cycler"))]
                     {
                         let s = format!(
                             "  {} Endless cycle check: Step {step_id} with distance {distance}",
@@ -212,7 +223,7 @@ impl DeciderCyclerSmall {
                     // check cycle steps are identical
                     for (i, step) in self.steps.iter().enumerate().skip(step_id) {
                         if step.for_field_id != self.steps[i - distance].for_field_id {
-                            #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                            #[cfg(all(debug_assertions, feature = "debug_cycler"))]
                             {
                                 let s = "  * Fail: Cycle steps different";
                                 println!("{s}");
@@ -226,7 +237,7 @@ impl DeciderCyclerSmall {
                     }
 
                     // Same, we found a cycle candidate!
-                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                    #[cfg(all(debug_assertions, feature = "debug_cycler"))]
                     {
                         println!(
                             "  *** Cycle candidate found: First step {}, distance {distance}!",
@@ -243,7 +254,7 @@ impl DeciderCyclerSmall {
 
                     let step_tape_before = self.steps[step_id].tape_before;
 
-                    // #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                    // #[cfg(all(debug_assertions, feature = "debug_cycler"))]
                     // {
                     //     println!("Step Tape     : {}", step_tape.to_binary_split_string());
                     //     println!("Tape shifted  : {}", tape_shifted.to_binary_split_string());
@@ -253,7 +264,7 @@ impl DeciderCyclerSmall {
                     // TODO requires comparison of long_tape
                     if step_tape_before == self.data.tape_shifted() {
                         // Same, we found a cycle!
-                        #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                        #[cfg(all(debug_assertions, feature = "debug_cycler"))]
                         println!("*** Found Cycle (tape identical)!");
                         #[cfg(feature = "enable_html_reports")]
                         if self.data.is_write_html_in_limit() {
@@ -317,12 +328,14 @@ impl DeciderCyclerSmall {
                     // Create the mask for the lowest 'num_bits' bits.
                     //    (1 << 10) gives 0b10000000000 (1 followed by 10 zeros)
                     //    Subtracting 1 gives 0b01111111111 (10 ones) -> 0x3FF in hex
+                    // TODO remove
                     if num_bits > 127 {
                         println!("{machine}");
+                        todo!()
                     }
                     let mask: u128 = ((1 << num_bits) - 1) << start_bit;
-                    // #[cfg(feature = "bb_debug_cycler")]
-                    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                    // #[cfg(feature = "debug_cycler")]
+                    #[cfg(all(debug_assertions, feature = "debug_cycler"))]
                     {
                         // for (i, step) in self.steps.iter().enumerate().skip(step_id) {
                         //     let t = machine.transition(step.for_field_id);
@@ -356,7 +369,7 @@ impl DeciderCyclerSmall {
                     // check if full tape is identical (this is not necessary, only relevant bytes)
                     if step_tape_before & mask == self.data.tape_shifted() & mask {
                         // Same, we found a cycle!
-                        #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                        #[cfg(all(debug_assertions, feature = "debug_cycler"))]
                         println!("  *** Found Cycle with mask!");
                         #[cfg(feature = "enable_html_reports")]
                         if self.data.is_write_html_in_limit() {
@@ -387,7 +400,7 @@ impl DeciderCyclerSmall {
                             distance as StepSmall,
                         ));
                     } else {
-                        #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+                        #[cfg(all(debug_assertions, feature = "debug_cycler"))]
                         println!("  * Fail: Mask");
                     }
                 }
@@ -402,7 +415,11 @@ impl Decider for DeciderCyclerSmall {
     }
 
     fn decide_machine(&mut self, machine: &MachineId) -> MachineStatus {
-        todo!()
+        #[cfg(feature = "enable_html_reports")]
+        {
+            self.machine_id = machine.id_as_option();
+        }
+        self.decide_machine_binary(*machine.machine())
     }
 
     // tape_long_bits in machine?

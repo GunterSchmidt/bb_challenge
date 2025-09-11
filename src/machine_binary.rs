@@ -12,8 +12,7 @@ use std::{fmt::Display, u64};
 use num_format::ToFormattedString;
 
 use crate::{
-    config::{IdNormalized, MAX_STATES},
-    data_provider::enumerator::NUM_FIELDS,
+    config::{IdNormalized, MAX_STATES, NUM_FIELDS},
     machine_generic::{MachineGeneric, NotableMachine, StateType, SymbolType},
     machine_info::MachineInfo,
     transition_binary::{TransitionBinary, TransitionType, TRANSITION_BINARY_UNUSED},
@@ -206,20 +205,49 @@ impl MachineBinary {
         self.n_states() * 2 + 1
     }
 
-    /// Returns a new transition table with the order of the elements reversed,
-    /// like the transitions would have been build starting from last field.
-    /// For BB5 A0 is swapped with E1, A1 with E0 etc.
-    pub fn reversed(&self) -> Self {
-        let mut rev = *self;
-        // add plus two to adjust for empty fields
-        let n = self.n_states();
-        let last = n * 2 + 3;
-        // loop over half of the elements
-        for i in 2..2 + n {
-            rev.transitions.swap(i, last - i);
-        }
+    //     /// Returns a new transition table with the order of the elements reversed,
+    //     /// like the transitions would have been build starting from last field.
+    //     /// For BB5 A0 is swapped with E1, A1 with E0 etc.
+    //     pub fn reversed(&self) -> Self {
+    //         let mut rev = *self;
+    //         // add plus two to adjust for empty fields
+    //         let n = self.n_states();
+    //         let last = n * 2 + 3;
+    //         // loop over half of the elements
+    //         for i in 2..2 + n {
+    //             rev.transitions.swap(i, last - i);
+    //         }
+    //
+    //         rev
+    //     }
 
-        rev
+    /// Function to find the highest state used (for enumerator TNF).
+    /// Requires last_field_no (exclusive) of array for performance reasons.
+    #[inline(always)]
+    pub fn has_at_least_two_undefined(&self, last_field_id: usize) -> bool {
+        let mut c = 0;
+        for tr in self.transitions[2..last_field_id].iter() {
+            if tr.is_undefined() {
+                c += 1;
+                if c == 2 {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Function to find the highest state used (for enumerator TNF).
+    /// Requires last_field_no (exclusive) of array for performance reasons.
+    #[inline(always)]
+    pub fn max_state_used(&self, last_field_id: usize) -> usize {
+        let mut max_state = 2;
+        for tr in self.transitions[2..last_field_id].iter() {
+            if tr.state_x2() > max_state {
+                max_state = tr.state_x2()
+            }
+        }
+        max_state / 2
     }
 
     /// Returns the transition for the array id, which is state * 2 + symbol. A0 = 2.
@@ -518,6 +546,16 @@ pub struct MachineId {
 impl MachineId {
     pub fn new(id: u64, machine: MachineBinary) -> Self {
         Self { id, machine }
+    }
+
+    pub fn new_option_id(id: Option<u64>, machine: MachineBinary) -> Self {
+        Self {
+            id: match id {
+                Some(id) => id,
+                None => u64::MAX,
+            },
+            machine,
+        }
     }
 
     pub fn new_no_id(machine: MachineBinary) -> Self {

@@ -406,6 +406,56 @@ pub fn check_states_can_be_switched(
     false
 }
 
+/// Function to find the highest state used (for enumerator TNF).
+/// Requires last_field_no (exclusive) of array for performance reasons.
+#[inline(always)]
+pub fn has_at_least_two_undefined(tr_used: &[TransitionBinary]) -> bool {
+    let mut c = 0;
+    for tr in tr_used.iter() {
+        if tr.is_undefined() {
+            c += 1;
+            if c == 2 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Check if all entries in the first column write a 0. Halt returns false
+#[inline(always)]
+pub fn has_only_zero_writes(tr_used: &[TransitionBinary]) -> bool {
+    tr_used
+        .iter()
+        .step_by(2)
+        .all(|tr| tr.is_symbol_zero() && !tr.is_halt())
+}
+
+/// Function to find the highest state used (for enumerator TNF).
+/// Requires last_field_no (exclusive) of array for performance reasons.
+#[inline(always)]
+pub fn max_state_used(tr_used: &[TransitionBinary]) -> usize {
+    let mut max_state = 2;
+    for tr in tr_used.iter() {
+        if tr.state_x2() > max_state {
+            max_state = tr.state_x2()
+        }
+    }
+    max_state / 2
+}
+
+/// Check if all transitions go into the same direction, they will encounter 0 only. \
+/// Since only 0 is encountered on the tape if moved in same direction, column 1 is irrelevant. \
+/// The machine is endless if no hold is in column 0. \
+/// First field A0 is not checked, it is expected to be 0RB or 1RB.
+/// Halt is not checked, expecting to have undefined for halt.
+#[inline]
+pub fn moves_only_right(tr_used: &[TransitionBinary]) -> bool {
+    // all going right
+    // skip 0 as A0 is always going right
+    tr_used[2..].iter().step_by(2).all(|t| t.is_dir_right())
+}
+
 #[cfg(test)]
 mod tests {
 

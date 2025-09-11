@@ -13,10 +13,10 @@
 //!
 //! This is still in the alpha development phase:
 //! * No self-ref acceleration implemented yet.
-//! * No macros stored. Tape should recognize macros. 
+//! * No macros stored. Tape should recognize macros.
 //! * It seems inefficient to run this tape for the first steps,
 //! instead it could be after x steps.
-//! 
+//!
 //! # Example
 //! Taken from BB5 Max with its 47,176,870 steps.
 //! Step: 47000000, Cells: 12250 x 1 then 110010010010010010011 \
@@ -1059,7 +1059,7 @@ impl Tape for TapeCompact {
     }
 
     fn write_last_symbol(&mut self, transition: TransitionBinary) {
-        if !transition.is_symbol_undefined() && self.curr_symbol != transition.symbol_usize() {
+        if !transition.is_undefined() && self.curr_symbol != transition.symbol_usize() {
             self.set_current_symbol_and_move(transition);
         }
     }

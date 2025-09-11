@@ -17,7 +17,8 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # criterion2 = "1.1.1"
 
 [features]
-# default = ["enable_html_reports"]
+default = ["enable_html_reports"]
+# default = ["enable_html_reports", "enable_csv_for_tnf", "debug_enumerator"]
 # default = ["enable_html_reports", "debug_tape", "bb_debug"]
 # default = ["counter_stats"]
 # default = ["without_self_ref_acceleration"]
@@ -39,18 +40,21 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # default = ["enable_html_reports", "bb_debug"]
 
 bb_debug = []
-bb_debug_cycler = []
 # immediate write to file instead of buffering, needed for debugging
 bb_enumerator_longest_skip_chain = []
 bb_print_non_pre_perm = []
 # bb_use_result_large = []
 
+# Print detailed information for cycler into console.
+debug_cycler = []
+debug_enumerator = []
 # Print detailed information on tape changes into console.
 debug_tape = []
 # additional stats for the result
 counter_stats = []
 # Allow optional output to html files but will have a 10%-30% performance hit even if write_html_file = false.
 enable_html_reports = []
+enable_csv_for_tnf = []
 # The normalized id, see documentation.
 normalized_id_reversed = []
 # Some deciders have a speed up when the transition is self-referencing, this turns the speed-up off.

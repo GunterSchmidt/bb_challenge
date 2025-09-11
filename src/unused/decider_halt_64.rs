@@ -121,7 +121,7 @@ impl DeciderHalt64 {
         // check if done
         if self.tr.is_halt() {
             // write last symbol
-            if !self.tr.is_symbol_undefined() {
+            if !self.tr.is_undefined() {
                 self.update_tape_symbol();
             }
             // println!("Check Loop: ID {}: Steps till halt: {}", m_info.id, steps);
@@ -196,7 +196,7 @@ impl DeciderHalt64 {
         // check if done
         if self.tr.is_halt() {
             // write last symbol
-            if !self.tr.is_symbol_undefined() {
+            if !self.tr.is_undefined() {
                 self.update_tape_symbol();
             }
             // println!("Check Loop: ID {}: Steps till halt: {}", m_info.id, steps);

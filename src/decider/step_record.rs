@@ -10,7 +10,7 @@ pub struct StepRecordU128 {
     pub direction: DirectionType,
     /// tape before the current transition was executed
     pub tape_before: u128,
-    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+    #[cfg(all(debug_assertions, feature = "debug_cycler"))]
     #[allow(dead_code)]
     text: [char; 3],
 }
@@ -22,27 +22,27 @@ impl StepRecordU128 {
             for_field_id,
             direction,
             tape_before,
-            #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+            #[cfg(all(debug_assertions, feature = "debug_cycler"))]
             text: Self::to_chars(for_field_id, direction),
         }
     }
 
-    //     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+    //     #[cfg(all(debug_assertions, feature = "debug_cycler"))]
     //     pub fn for_state(&self) -> i16 {
     //         (self.for_state_symbol & Self::FILTER_STATE) >> 1
     //     }
     //
-    //     #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+    //     #[cfg(all(debug_assertions, feature = "debug_cycler"))]
     //     pub fn for_symbol(&self) -> i16 {
     //         self.for_state_symbol & Self::FILTER_SYMBOL_PURE
     //     }
 
-    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+    #[cfg(all(debug_assertions, feature = "debug_cycler"))]
     pub fn field_id_to_string(&self) -> String {
         TransitionSymbol2::field_id_to_string(self.for_field_id)
     }
 
-    #[cfg(all(debug_assertions, feature = "bb_debug_cycler"))]
+    #[cfg(all(debug_assertions, feature = "debug_cycler"))]
     fn to_chars(for_field_id: usize, direction: i16) -> [char; 3] {
         let dir = match direction {
             -1 => 'L',

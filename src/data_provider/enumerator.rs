@@ -3,9 +3,6 @@ use crate::{
     machine_binary::MachineId, transition_binary::TRANSITION_BINARY_HALT,
 };
 
-/// Number of fields used in the transition table (Turing machine).
-pub const NUM_FIELDS: usize = MAX_STATES * 2 + 2;
-
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum EnumeratorStandard {

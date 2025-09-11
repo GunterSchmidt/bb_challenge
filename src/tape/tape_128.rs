@@ -121,7 +121,7 @@ impl Tape for Tape128 {
 
     #[inline(always)]
     fn write_last_symbol(&mut self, transition: TransitionBinary) {
-        if !transition.is_symbol_undefined() {
+        if !transition.is_undefined() {
             self.set_current_symbol(transition);
         }
     }

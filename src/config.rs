@@ -54,6 +54,8 @@ pub type IdNormalized = u64;
 /// This is used for array definitions. Higher numbers require more memory and slow down execution.
 // TODO change u64 type to UBB to allow max 10.
 pub const MAX_STATES: usize = 5;
+/// Number of fields used in the transition table (Turing machine). One dummy line added.
+pub const NUM_FIELDS: usize = (MAX_STATES + 1) * 2;
 /// Number of states the TransitionGeneral should be able to handle.
 /// TODO test and describe limits
 pub(crate) const MAX_STATES_GENERIC: usize = 10;
