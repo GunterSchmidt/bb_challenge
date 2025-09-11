@@ -132,6 +132,9 @@ pub struct Config {
     use_local_time: bool,
     /// Outputs decider steps into an html file
     write_html_file: bool,
+    /// Outputs decider steps into an html file only for undecided machines
+    // TODO implement
+    write_html_file_undecided: bool,
     /// First step No for output, allows basically e.g. [782_000_000..] and is ended by write_html_line_limit. \
     /// Steps 0-1000 are always written.
     write_html_step_start: StepBig,
@@ -180,6 +183,7 @@ impl Config {
             step_limit_decider_bouncer: Self::step_limit_bouncer_default(n_states),
             step_limit_decider_cycler: Self::step_limit_cycler_default(n_states),
             write_html_file: false,
+            write_html_file_undecided: false,
             write_html_step_start: 0,
             write_html_line_limit: WRITE_HTML_LINE_LIMIT,
             write_html_tape_shifted_64_bit: false,
@@ -361,6 +365,10 @@ impl Config {
         self.write_html_file
     }
 
+    pub fn write_html_file_undecided(&self) -> bool {
+        self.write_html_file_undecided
+    }
+
     pub fn write_html_line_limit(&self) -> u32 {
         self.write_html_line_limit
     }
@@ -415,6 +423,7 @@ pub struct ConfigBuilder {
     config_key_value_pair: Option<HashMap<String, String>>,
     use_local_time: Option<bool>,
     write_html_file: Option<bool>,
+    write_html_file_undecided: Option<bool>,
     write_html_step_start: Option<StepBig>,
     write_html_line_limit: Option<u32>,
     write_html_tape_shifted_64_bit: Option<bool>,
@@ -511,6 +520,11 @@ impl ConfigBuilder {
         self
     }
 
+    pub fn write_html_file_undecided(mut self, value: bool) -> Self {
+        self.write_html_file_undecided = Some(value);
+        self
+    }
+
     pub fn write_html_step_start(mut self, value: StepBig) -> Self {
         self.write_html_step_start = Some(value);
         self
@@ -574,6 +588,9 @@ impl ConfigBuilder {
             creation_time: SystemTime::now(),
             use_local_time: self.use_local_time.unwrap_or(self.config.use_local_time),
             write_html_file: self.write_html_file.unwrap_or(self.config.write_html_file),
+            write_html_file_undecided: self
+                .write_html_file
+                .unwrap_or(self.config.write_html_file_undecided),
             write_html_step_start: self
                 .write_html_step_start
                 .unwrap_or(self.config.write_html_step_start),
