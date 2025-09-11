@@ -61,10 +61,15 @@ pub const TRANSITION_BINARY_HALT: TransitionBinary = TransitionBinary {
     text: ['1', 'R', 'Z'],
 };
 /// Initialize transition with A0 as start
-pub const TRANSITION_BINARY_FIRST: TransitionBinary = TransitionBinary {
+pub const TRANSITION_0RA_BINARY_FIRST: TransitionBinary = TransitionBinary {
     transition: TR_BINARY_0RA,
     #[cfg(debug_assertions)]
     text: ['0', 'R', 'A'],
+};
+pub const TRANSITION_1RA: TransitionBinary = TransitionBinary {
+    transition: TR_BINARY_1RA,
+    #[cfg(debug_assertions)]
+    text: ['0', 'R', 'B'],
 };
 pub const TRANSITION_0RB: TransitionBinary = TransitionBinary {
     transition: TR_BINARY_0RB,
@@ -97,6 +102,7 @@ pub const TR_BINARY_UNUSED: TransitionType = 0b0000_0000; // 0b1010_0001;
 pub const TR_BINARY_0LA: TransitionType = 0b0100_0010;
 pub const TR_BINARY_0LB: TransitionType = 0b0100_0100;
 pub const TR_BINARY_0RA: TransitionType = 0b1100_0010;
+pub const TR_BINARY_1RA: TransitionType = 0b1100_0011;
 pub const TR_BINARY_0RB: TransitionType = 0b1100_0100;
 pub const TR_BINARY_1RB: TransitionType = 0b1100_0101;
 pub const TR_BINARY_1RZ_HALT: TransitionType = 0b1100_0001;

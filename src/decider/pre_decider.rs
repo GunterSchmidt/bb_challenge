@@ -6,7 +6,7 @@
 //! run_pre_decider(&machine) for this.
 
 use crate::{
-    config::MAX_STATES,
+    config::{StepBig, MAX_STATES},
     machine_binary::MachineBinary,
     status::{MachineStatus, PreDeciderReason},
     transition_binary::{TransitionBinary, TransitionType, STATE_HALT_BINARY, TRANSITIONS_FOR_A0},
@@ -32,18 +32,18 @@ pub struct PreDecider;
 // If a sequence of three transitions is guaranteed to have the same effect as a single transition, only one of both constructions need be inspected. Example: Let x,y,z and s be states with x!=y, a, b, and c arbitrary symbols, and D from {L,R}, then (x,0)->(y,0,L), (x,1)->(y,1,L), and (y,b)->(z,c,D) implies that (s,a)->(x,b,R) and (s,a)->(z,c,D) have the same effect.
 
 /// Runs quick deciders, which only check the transition table without a step-by-step execution. \
-/// Example: Is there exactly one hold condition? If no hold condition exists, it runs endlessly. If more than one hold
-/// condition exist, then this machine may hold sometime, but will not be the max machine for this many n_states.
-/// Only the machines which have a hold condition in A0 will return status hold with 1 step, all others will return
+/// Example: Is there exactly one halt condition? If no halt condition exists, it runs endlessly. If more than one halt
+/// condition exist, then this machine may halt sometime, but will not be the max machine for this many n_states.
+/// Only the machines which have a halt condition in A0 will return status halt with 1 step, all others will return
 /// an elimination description. \
 /// The returned count on the description is not complete. That is because multiple deciders may apply
 /// and only the first one gets counted. For instance, a transition table may write only zeros, go only to right
-/// and have too many hold conditions. The deciders are ordered in a reasonable way depending on statistical relevance
+/// and have too many halt conditions. The deciders are ordered in a reasonable way depending on statistical relevance
 /// (the most likely check first, as this will make the check on the other deciders obsolete) and complexity (execution time).
 /// Returns MachineStatus::NoDecision if no special case could be identified.
 #[inline(always)]
 pub fn run_pre_decider_strict(machine: &MachineBinary) -> MachineStatus {
-    // check if first element is hold
+    // check if first element is halt
     if machine.transition_start().is_halt() {
         return MachineStatus::DecidedHalt(1);
     }
@@ -60,7 +60,7 @@ pub fn run_pre_decider_strict(machine: &MachineBinary) -> MachineStatus {
 
     let n_states = machine.n_states();
     let tr_used = machine.transitions_used(n_states);
-    if count_hold_transitions(tr_used) != 1 {
+    if count_halt_transitions(tr_used) != 1 {
         return MachineStatus::EliminatedPreDecider(PreDeciderReason::NotExactlyOneHaltCondition);
     }
 
@@ -88,7 +88,7 @@ pub fn run_pre_decider_strict(machine: &MachineBinary) -> MachineStatus {
 
 #[inline(always)]
 pub fn run_pre_decider_simple(machine: &MachineBinary) -> MachineStatus {
-    // check if first element is hold
+    // check if first element is halt
     if machine.transition_start().is_halt() {
         return MachineStatus::DecidedHalt(1);
     }
@@ -100,7 +100,7 @@ pub fn run_pre_decider_simple(machine: &MachineBinary) -> MachineStatus {
 
     let n_states = machine.n_states();
     let tr_used = machine.transitions_used(n_states);
-    if count_hold_transitions(tr_used) != 1 {
+    if count_halt_transitions(tr_used) != 1 {
         return MachineStatus::EliminatedPreDecider(PreDeciderReason::NotExactlyOneHaltCondition);
     }
 
@@ -137,7 +137,7 @@ pub fn check_start_transition_is_recursive(table: &MachineBinary) -> bool {
 }
 
 /// Elimination Rule 7: Only zero written
-/// Check if any entry in the first column writes a 1 or holds. Otherwise
+/// Check if any entry in the first column writes a 1 or halts. Otherwise
 /// it will run endless.
 /// TODO check: Even if the start transition A0 writes a 1, it will run endless.
 #[inline]
@@ -147,9 +147,9 @@ pub fn check_only_zero_writes(tr_used: &[TransitionBinary]) -> bool {
 
 /// Elimination Rule 8: Only one direction
 /// Check if all transitions go into the same direction, they will encounter 0 only.  
-/// Also required: No hold for 0 column.  
+/// Also required: No halt for 0 column.  
 /// Since only 0 is encountered on the tape if moved in same direction, 2nd column is irrelevant
-/// The machine can be endless (if no hold is in column 0) or may hold very quickly (not max).
+/// The machine can be endless (if no halt is in column 0) or may halt very quickly (not max).
 #[inline]
 pub fn check_only_one_direction(tr_used: &[TransitionBinary]) -> bool {
     // all going right
@@ -163,18 +163,18 @@ pub fn check_only_one_direction(tr_used: &[TransitionBinary]) -> bool {
              .step_by(2)
             .all(|t| t.is_dir_left() || t.is_halt())
     // add parenthesis if and is re-enabled
-    // or state hold encountered. This is usually not necessary if direction == 0 in case of hold state.
+    // or state halt encountered. This is usually not necessary if direction == 0 in case of halt state.
     // && tr_used
     //     .iter()
     //      .step_by(2)
-    //     .all(|t| !t.is_hold() )
+    //     .all(|t| !t.is_halt() )
 }
 
 /// Elimination Rule 8: Only one direction
 /// Check if all transitions go into the same direction, they will encounter 0 only.  
-/// Also required: No hold for 0 column.  
+/// Also required: No halt for 0 column.  
 /// Since only 0 is encountered on the tape if moved in same direction, column 1 is irrelevant
-/// The machine can be endless (if no hold is in column 0) or may hold very quickly (not max).
+/// The machine can be endless (if no halt is in column 0) or may halt very quickly (not max).
 #[inline]
 pub fn check_only_right_direction(tr_used: &[TransitionBinary]) -> bool {
     // all going right
@@ -185,15 +185,17 @@ pub fn check_only_right_direction(tr_used: &[TransitionBinary]) -> bool {
         .all(|t| t.is_dir_right() || t.is_halt())
 }
 
-/// Checks if no hold transition exists at all.
+/// Checks if no halt transition exists at all.
+/// # Returns
+/// false if a halt condition is found
 #[inline]
-pub fn check_no_hold_transition(tr_used: &[TransitionBinary]) -> bool {
+pub fn check_no_halt_transition(tr_used: &[TransitionBinary]) -> bool {
     !tr_used.iter().any(|t| t.is_halt())
 }
 
-/// Elimination Rule 5: Not exactly one hold condition.
+/// Elimination Rule 5: Not exactly one halt condition.
 #[inline]
-pub fn count_hold_transitions(tr_used: &[TransitionBinary]) -> usize {
+pub fn count_halt_transitions(tr_used: &[TransitionBinary]) -> usize {
     tr_used.iter().filter(|t| t.is_halt()).count()
 }
 
@@ -238,7 +240,7 @@ pub fn check_simple_start_cycle(table: &MachineBinary) -> bool {
 }
 
 /// This check will validate the actually used states by following the used states starting from A0.  
-/// It requires that A0 is not hold and A0 is not recursive (previous checks will ensure this).
+/// It requires that A0 is not halt and A0 is not recursive (previous checks will ensure this).
 /// The pre-decider [check_only_one_direction] needs to be run before this.
 #[inline]
 pub fn check_not_all_states_used(table: &MachineBinary, n_states: usize) -> bool {
@@ -319,7 +321,7 @@ pub fn check_not_all_states_used(table: &MachineBinary, n_states: usize) -> bool
 }
 
 /// This pre-decider eliminates machines which use a direct path through the
-/// transitions and either hold or run endless because of recursion.
+/// transitions and either halt or run endless because of recursion.
 /// Example 1RB0RA_0RB1LC_1LC---: A0 goes to B0, B0 referenced on itself -> endless.
 /// Example 1RB0RB_1RC0RC_---0LC:
 #[inline]
@@ -328,11 +330,11 @@ pub fn check_straight_to_end(table: &MachineBinary, n_states: usize) -> bool {
     // let a0_state_next = table.transition_start().state() as usize;
     // // follow state from A0 and look where it is going
     // let second_state_next_symbol_0 = table.transition(a0_state_next * 2).state() as usize;
-    // if second_state_next_symbol_0 == STATE_HOLD_SYM2 as usize {
+    // if second_state_next_symbol_0 == STATE_HALT_SYM2 as usize {
     //     return true;
     // }
     // let s0 = table.transition(second_state_next_symbol_0 * 2).state() as usize;
-    // if s0 == STATE_HOLD_SYM2 as usize {
+    // if s0 == STATE_HALT_SYM2 as usize {
     //     return true;
     // }
     // println!("Test Straight: {}", table.to_standard_tm_text_format());
@@ -431,6 +433,28 @@ pub fn has_only_zero_writes(tr_used: &[TransitionBinary]) -> bool {
         .all(|tr| tr.is_symbol_zero() && !tr.is_halt())
 }
 
+/// Check if all entries in the first column write a 0 or halt.
+/// The caller needs to check A0 != 1RB otherwise this would be to expensive in this default case.
+#[inline(always)]
+pub fn has_only_zero_writes_status(tr_used: &[TransitionBinary]) -> MachineStatus {
+    let mut steps = 2usize;
+    for tr in tr_used[2..].iter().step_by(2) {
+        if tr.is_symbol_one() {
+            return MachineStatus::NoDecision;
+        }
+        if tr.is_halt() {
+            return MachineStatus::DecidedHaltField(steps as StepBig, steps * 2);
+        }
+        // According to the build rules, the state must also be in order.
+        // If the state is lower or same, then it runs endless, e.g. 0RB->0RA. State D not allowed.
+        if tr.state() as usize <= steps {
+            return MachineStatus::DecidedNonHalt(crate::status::NonHaltReason::SimpleStartCycle);
+        }
+        steps += 1;
+    }
+    MachineStatus::DecidedNonHalt(crate::status::NonHaltReason::OnlyOneDirection)
+}
+
 /// Function to find the highest state used (for enumerator TNF).
 /// Requires last_field_no (exclusive) of array for performance reasons.
 #[inline(always)]
@@ -446,7 +470,7 @@ pub fn max_state_used(tr_used: &[TransitionBinary]) -> usize {
 
 /// Check if all transitions go into the same direction, they will encounter 0 only. \
 /// Since only 0 is encountered on the tape if moved in same direction, column 1 is irrelevant. \
-/// The machine is endless if no hold is in column 0. \
+/// The machine is endless if no halt is in column 0. \
 /// First field A0 is not checked, it is expected to be 0RB or 1RB.
 /// Halt is not checked, expecting to have undefined for halt.
 #[inline]
@@ -454,6 +478,33 @@ pub fn moves_only_right(tr_used: &[TransitionBinary]) -> bool {
     // all going right
     // skip 0 as A0 is always going right
     tr_used[2..].iter().step_by(2).all(|t| t.is_dir_right())
+}
+
+/// Check if all transitions move right or halt. \
+/// Since only 0 is encountered on the tape if moved in same direction, column 1 is irrelevant. \
+/// The machine is endless if no halt is in column 0. \
+/// First field A0 is not checked, it is expected to be 0RB or 1RB.
+#[inline]
+pub fn moves_only_right_status(tr_used: &[TransitionBinary]) -> MachineStatus {
+    // all going right
+    // skip 0 as A0 is always going right
+    let mut steps = 2usize;
+    for tr in tr_used[2..].iter().step_by(2) {
+        if tr.is_dir_left() {
+            return MachineStatus::NoDecision;
+        }
+        if tr.is_halt() {
+            return MachineStatus::DecidedHaltField(steps as StepBig, steps * 2);
+        }
+        // here must be going right
+        // According to the build rules, the state must also be in order.
+        // If the state is lower or same, then it runs endless, e.g. 1RB->1RA. State D not allowed.
+        if tr.state() as usize <= steps {
+            return MachineStatus::DecidedNonHalt(crate::status::NonHaltReason::SimpleStartCycle);
+        }
+        steps += 1;
+    }
+    MachineStatus::DecidedNonHalt(crate::status::NonHaltReason::OnlyOneDirection)
 }
 
 #[cfg(test)]
@@ -497,7 +548,7 @@ mod tests {
         // C 0RC ---
         // Step 1: A0 goes to B: But A is not used yet, unless it comes back to A. Otherwise it is just one more step to BB2.
         // Step 2: B0 goes to C: Since now symbols have been written, both C are possible, but only C0 goes further, to C.
-        // Step 3: Either hold or C. So neither A nor B are visited again; thus not max.
+        // Step 3: Either halt or C. So neither A nor B are visited again; thus not max.
         let tm = "0RB1RA_1LC0RA_0RC---";
         let table = MachineBinary::try_from_standard_tm_text_format(&tm).unwrap();
         // println!("{}", tc.to_standard_tm_text_format());
@@ -572,7 +623,7 @@ mod tests {
         // C 0RC ---
         // Step 1: A0 goes to B: But A is not used yet, unless it comes back to A. Otherwise it is just one more step to BB2.
         // Step 2: B0 goes to C: Since now symbols have been written, both C are possible, but only C0 goes further, to C.
-        // Step 3: Either hold or C. So neither A nor B are visited again; thus not max.
+        // Step 3: Either halt or C. So neither A nor B are visited again; thus not max.
         let tm = "0RB1RA_1LC0RA_0RC---";
         let table = MachineBinary::try_from_standard_tm_text_format(&tm).unwrap();
         let check_result = check_not_all_states_used(&table, table.n_states());
@@ -648,7 +699,7 @@ mod tests {
 
     //     // #[test]
     //     // fn check_loop() {
-    //     //     // Holds after 14 steps
+    //     //     // Halts after 14 steps
     //     //     let mut transitions: Vec<(&str, &str)> = Vec::new();
     //     //     transitions.push(("0LB", "1LB"));
     //     //     transitions.push(("1RC", "---"));
@@ -676,12 +727,12 @@ mod tests {
     //     //         MachineStatus::NotRun => todo!(),
     //     //         MachineStatus::Running => todo!(),
     //     //         MachineStatus::DecidedEndless(_) => todo!(),
-    //     //         MachineStatus::DecidedHolds(_, _) => true,
+    //     //         MachineStatus::DecidedHalts(_, _) => true,
     //     //         MachineStatus::Undecided(_, _) => false,
     //     //     };
     //     //     assert_eq!(r, true);
     //
-    //     //     // Hold found
+    //     //     // Halt found
     //     //     let mut transitions: Vec<(&str, &str)> = Vec::new();
     //     //     transitions.push(("1RB", "1RB"));
     //     //     transitions.push(("---", "---"));
@@ -692,7 +743,7 @@ mod tests {
     //     //         MachineStatus::NotRun => todo!(),
     //     //         MachineStatus::Running => todo!(),
     //     //         MachineStatus::DecidedEndless(_) => todo!(),
-    //     //         MachineStatus::DecidedHolds(_, _) => true,
+    //     //         MachineStatus::DecidedHalts(_, _) => true,
     //     //         MachineStatus::Undecided(_, _) => false,
     //     //     };
     //     //     assert_eq!(r, true);
@@ -700,7 +751,7 @@ mod tests {
 
     #[test]
     fn check_pre_decider_only_one_direction() {
-        // only right or hold in column 0
+        // only right or halt in column 0
         let tm = "1RB0RB_1RC0RC_---0LC";
         let table = MachineBinary::try_from(tm).unwrap();
         let check_result = check_only_one_direction(&table.transitions_used_eval());
@@ -720,14 +771,14 @@ mod tests {
     }
 
     #[test]
-    fn check_pre_decider_no_hold_condition() {
+    fn check_pre_decider_no_halt_condition() {
         // check does not apply
         let mut transitions: Vec<(&str, &str)> = Vec::new();
         transitions.push(("1RB", "1RB"));
         transitions.push(("1LA", "---"));
 
         let tc = MachineBinary::from_string_tuple(&transitions);
-        let check_result = check_no_hold_transition(&tc.transitions_used_eval());
+        let check_result = check_no_halt_transition(&tc.transitions_used_eval());
         assert_eq!(check_result, false);
 
         // check applies
@@ -736,7 +787,7 @@ mod tests {
         transitions.push(("1LA", "1LA"));
 
         let tc = MachineBinary::from_string_tuple(&transitions);
-        let check_result = check_no_hold_transition(&tc.transitions_used_eval());
+        let check_result = check_no_halt_transition(&tc.transitions_used_eval());
         assert_eq!(check_result, true);
     }
 

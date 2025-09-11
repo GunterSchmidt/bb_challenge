@@ -201,8 +201,10 @@ impl MachineBinary {
         s
     }
 
-    pub fn last_used_field_id_in_array(&self) -> usize {
-        self.n_states() * 2 + 1
+    /// Returns the max field id, e.g. n_states = 3 = (3 states + 1 dummy row) * 2 fields= (n_states + 1) * 2
+    #[inline]
+    pub fn last_used_field_id_in_transition_array_exclusive(n_states: usize) -> usize {
+        n_states * 2 + 2
     }
 
     //     /// Returns a new transition table with the order of the elements reversed,
@@ -238,9 +240,10 @@ impl MachineBinary {
     }
 
     /// Function to find the highest state used (for enumerator TNF).
-    /// Requires last_field_no (exclusive) of array for performance reasons.
+    /// Requires last_field_no (exclusive) of array for performance reasons. Does not work for n = 1.
     #[inline(always)]
     pub fn max_state_used(&self, last_field_id: usize) -> usize {
+        // set max_state to B as minimum
         let mut max_state = 2;
         for tr in self.transitions[2..last_field_id].iter() {
             if tr.state_x2() > max_state {

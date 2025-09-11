@@ -7,8 +7,6 @@ use std::{
     io::{BufWriter, Write},
 };
 
-#[cfg(feature = "enable_csv_for_tnf")]
-use crate::status::NonHaltReason;
 use crate::{
     config::{Config, CoreUsage, StepBig, MAX_STATES, NUM_FIELDS},
     data_provider::{
@@ -17,11 +15,12 @@ use crate::{
         DataProvider, DataProviderBatch, ResultDataProvider,
     },
     decider::{
+        decider_bouncer_128::DeciderBouncer128,
         decider_cycler_small::DeciderCyclerSmall,
         decider_engine,
         decider_result::{EndReason, PreDeciderCount},
-        pre_decider::{has_only_zero_writes, moves_only_right, PreDeciderRun},
-        Decider, DeciderStandard,
+        pre_decider::{check_no_halt_transition, moves_only_right_status, PreDeciderRun},
+        Decider, DeciderConfig, DeciderStandard,
     },
     machine_binary::{MachineBinary, MachineId},
     machine_info::MachineInfo,
@@ -30,6 +29,9 @@ use crate::{
 };
 
 const NUM_TR_PERMUTATIONS: usize = MAX_STATES * 4 + 1;
+const PRE_CHECK: &str = "Pre-Check";
+const BOUNCER_MAX_STEPS: StepBig = 300;
+const CYCLER_MAX_STEPS: StepBig = 100;
 
 #[derive(Debug)]
 pub struct MachineForStack {
@@ -38,6 +40,8 @@ pub struct MachineForStack {
     // max_state: usize,
 }
 
+// TODO If max one halt condition, then use pre-decider before using cycler. quicker decision
+// Could also be interesting for cases that result in Non-Halt with the given data, e.g. only 0 or only R.
 #[derive(Debug)]
 pub struct EnumeratorTNF {
     /// The number of states used for this enumerator.
@@ -60,6 +64,7 @@ pub struct EnumeratorTNF {
     fields: [usize; NUM_FIELDS],
     fields_max_state: [usize; NUM_FIELDS],
     field_no: usize,
+    last_field_id: usize,
 
     /// Batch no, increased for every call, starting with 0.
     batch_no: usize,
@@ -74,10 +79,17 @@ pub struct EnumeratorTNF {
     /// list of machines having max_steps
     // TODO return value
     machines_max_steps: Vec<MachineInfo>,
-    decider_cycler: DeciderCyclerSmall,
+    undecided_count: usize,
+    undecided_multiple_halts_count: usize,
+    undecided_machines_multiple_halts: Vec<MachineBinary>,
+    tnf_machines_count: u64,
 
+    decider_cycler: DeciderCyclerSmall,
+    decider_bouncer: DeciderBouncer128,
     #[cfg(feature = "enable_csv_for_tnf")]
     csv: CsvWriter,
+    #[cfg(feature = "debug_enumerator")]
+    max_for_stack: usize,
 }
 
 impl EnumeratorTNF {
@@ -93,10 +105,33 @@ impl EnumeratorTNF {
         let mut machine = MachineBinary::new_default(n_states);
         // set all in set to the first variant
         machine.transitions[2..n_fields].fill(TRANSITION_BINARY_UNDEFINED);
-        let machine_stack = vec![machine];
+        let mut machine_stack = Vec::new();
+        // Fill machines for field 2
+        for i in 6..9 {
+            if tr_permutations[i].is_dir_right() {
+                machine.transitions[2] = tr_permutations[i];
+                machine_stack.push(machine);
+            }
+        }
 
         #[cfg(feature = "enable_csv_for_tnf")]
-        let csv = CsvWriter::try_new(config).expect("File Error");
+        let mut csv = CsvWriter::try_new(config).expect("File Error");
+        #[cfg(feature = "enable_csv_for_tnf")]
+        {
+            use crate::transition_binary::{TRANSITION_0RA_BINARY_FIRST, TRANSITION_1RA};
+
+            machine.transitions[2] = TRANSITION_BINARY_UNDEFINED;
+            csv.write_machine(&machine, &MachineStatus::DecidedHaltField(1, 2), PRE_CHECK);
+            machine.transitions[2] = TRANSITION_0RA_BINARY_FIRST;
+            csv.write_machine(&machine, &MachineStatus::DecidedHaltField(1, 2), PRE_CHECK);
+            machine.transitions[2] = TRANSITION_1RA;
+            csv.write_machine(&machine, &MachineStatus::DecidedHaltField(1, 2), PRE_CHECK);
+        }
+
+        let config = Config::builder_from_config(config)
+            .step_limit_decider_cycler(CYCLER_MAX_STEPS)
+            .step_limit_decider_bouncer(BOUNCER_MAX_STEPS)
+            .build();
 
         Self {
             n_states,
@@ -110,6 +145,9 @@ impl EnumeratorTNF {
             fields: [0; NUM_FIELDS],
             fields_max_state: [0; NUM_FIELDS],
             field_no: 4,
+            last_field_id: MachineBinary::last_used_field_id_in_transition_array_exclusive(
+                n_states,
+            ),
             batch_no: 0,
             batch_last: 0,
             // TODO batch size
@@ -117,10 +155,17 @@ impl EnumeratorTNF {
             // avoid to much useless storing of machines in the beginning
             max_steps: if n_states < 4 { 6 } else { 100 },
             machines_max_steps: Vec::new(),
-            decider_cycler: DeciderCyclerSmall::new(config),
+            undecided_count: 0,
+            undecided_multiple_halts_count: 0,
+            undecided_machines_multiple_halts: Vec::new(),
+            tnf_machines_count: 3,
+            decider_cycler: DeciderCyclerSmall::new(&config),
+            decider_bouncer: DeciderBouncer128::new(&config),
 
             #[cfg(feature = "enable_csv_for_tnf")]
             csv,
+            #[cfg(feature = "debug_enumerator")]
+            max_for_stack: 0,
         }
     }
 
@@ -155,6 +200,8 @@ impl EnumeratorTNF {
 
         transitions
     }
+
+    fn moves_only_right() {}
 }
 
 impl Enumerator for EnumeratorTNF {
@@ -174,66 +221,31 @@ impl Enumerator for EnumeratorTNF {
             self.batch_no = 1;
             self.machine.transitions[2] = TRANSITION_BINARY_HALT;
             let m = MachineId::new_no_id(self.machine);
+            self.machines_max_steps.push(MachineInfo::from_machine(
+                self.machine,
+                MachineStatus::DecidedHalt(1),
+            ));
             permutations.push(m);
             return (permutations, true);
         }
-        let last_field_id = self.n_states * 2 + 2;
 
-        // let num_tr_permutations = self.n_states * 4;
-
-        let mut count_m = 0;
-        let mut max_for_stack = 0;
-
-        // let check = MachineBinary::try_from("0RB---_1LA0RC_1LB---").unwrap();
+        // let check = MachineBinary::try_from("1RB0LC_1LC0RC_1LA0LC_------").unwrap();
 
         loop {
             // After this if self.machine must be filled with the correct machine
             if self.machine_stack.is_empty() {
                 match self.machines_for_stack.pop_front() {
                     Some(mfs) => {
-                        // create machines for this field
-                        //                         if mfs.field_no == 2 {
-                        //                             // max_state_used = 2;
-                        //                             self.machine = mfs.machine;
-                        //                             #[cfg(feature = "enable_csv_for_tnf")]
-                        //                             {
-                        //                                 self.machine.transitions[2] =
-                        //                                     TransitionBinary::try_new([0, b'R', b'A']).unwrap();
-                        //                                 self.machine_stack.push(self.machine);
-                        //                                 self.machine.transitions[2] =
-                        //                                     TransitionBinary::try_new([1, b'R', b'A']).unwrap();
-                        //                                 self.machine_stack.push(self.machine);
-                        //                             }
-                        //                             self.machine.transitions[2] = TRANSITION_0RB;
-                        //                             self.machine_stack.push(self.machine);
-                        //                             self.machine.transitions[2] = TRANSITION_1RB;
-                        //                             self.machine_stack.push(self.machine);
-                        //
-                        //                             self.machine = self.machine_stack.remove(0);
-                        //                         } else {
-                        // TODO pre-check here, no need to store Non-Halt first
                         // put first machine in self.machine
                         self.machine = mfs.machine;
-                        let max_state =
-                            (self.machine.max_state_used(last_field_id) + 1).min(self.n_states);
+                        let max_state = (self.machine.max_state_used(self.last_field_id) + 1)
+                            .min(self.n_states);
                         let last_perm = max_state * 4 + 1;
-                        // In the first round this fills 0LA. For performance this is kept.
-                        if mfs.field_no == 2 {
-                            for i in 2..last_perm {
-                                if self.tr_permutations[i].is_dir_right() {
-                                    self.machine.transitions[mfs.field_no] =
-                                        self.tr_permutations[i];
-                                    self.machine_stack.push(self.machine);
-                                }
-                            }
-                        } else {
-                            for i in 2..last_perm {
-                                self.machine.transitions[mfs.field_no] = self.tr_permutations[i];
-                                self.machine_stack.push(self.machine);
-                            }
+                        for i in 2..last_perm {
+                            self.machine.transitions[mfs.field_no] = self.tr_permutations[i];
+                            self.machine_stack.push(self.machine);
                         }
                         self.machine.transitions[mfs.field_no] = self.tr_permutations[1];
-                        // }
                     }
                     // all machines created
                     None => break,
@@ -242,117 +254,144 @@ impl Enumerator for EnumeratorTNF {
                 self.machine = self.machine_stack.remove(0);
             }
 
-            // TODO what is with undecided machines, they could halt later and then need to create more machines.
-            // Only if at least 2 undefined and all states are used.
-            // TODO If only one halt condition, then use pre-decider before using cycler. quicker decision
-            // Could also be interesting for cases that result in Non-Halt with the given data, e.g. only 0 or only R.
-            count_m += 1;
-
-            let tr_used = &self.machine.transitions[2..last_field_id];
-            if moves_only_right(tr_used) {
-                #[cfg(feature = "enable_csv_for_tnf")]
-                {
-                    self.csv.write_machine(
-                        &self.machine,
-                        &MachineStatus::DecidedNonHalt(NonHaltReason::OnlyOneDirection),
-                        "Pre-Check",
+            // check machine
+            self.tnf_machines_count += 1;
+            let tr_used = &self.machine.transitions[2..self.last_field_id];
+            let mut status = moves_only_right_status(tr_used);
+            #[cfg(not(feature = "enumerator_1RB_only"))]
+            if status == MachineStatus::NoDecision && self.machine.transitions[2].is_symbol_zero() {
+                status = crate::decider::pre_decider::has_only_zero_writes_status(tr_used);
+            }
+            // check has halt in case not all states are used
+            // if self.machine == check {
+            //     println!();
+            // }
+            let max_state = self.machine.max_state_used(self.last_field_id);
+            if max_state < self.n_states {
+                let tr_used = &self.machine.transitions[2..max_state * 2 + 2];
+                if check_no_halt_transition(tr_used) {
+                    status = MachineStatus::DecidedNonHalt(
+                        crate::status::NonHaltReason::NoHaltTransition,
                     );
                 }
-                #[cfg(all(debug_assertions, feature = "debug_enumerator"))]
-                println!(
-                    "{count_m:>3} {}: {}, Pre-Check",
-                    self.machine,
-                    MachineStatus::DecidedNonHalt(NonHaltReason::OnlyOneDirection)
-                );
-            } else if has_only_zero_writes(tr_used) {
-                #[cfg(feature = "enable_csv_for_tnf")]
-                {
-                    self.csv.write_machine(
-                        &self.machine,
-                        &MachineStatus::DecidedNonHalt(NonHaltReason::WritesOnlyZero),
-                        "Pre-Check",
-                    );
-                }
-                #[cfg(all(debug_assertions, feature = "debug_enumerator"))]
-                println!(
-                    "{count_m:>3} {}: {}, Pre-Check",
-                    self.machine,
-                    MachineStatus::DecidedNonHalt(NonHaltReason::WritesOnlyZero)
-                );
-            } else {
-                let has_two_undefined = self.machine.has_at_least_two_undefined(last_field_id);
+            }
+            if status == MachineStatus::NoDecision {
+                // use Check_Cycler_Small
+                let has_two_undefined = self.machine.has_at_least_two_undefined(self.last_field_id);
                 if !has_two_undefined {
                     // only one undefined (halt), use pre-decider checks for Non-Halt identification
                 }
 
                 // TODO faster if working with MachineBinary for small cycler
-                let status = self
-                    .decider_cycler
-                    .decide_machine(&MachineId::new_no_id(self.machine));
+                let m_id = MachineId::new_no_id(self.machine);
+                status = self.decider_cycler.decide_machine(&m_id);
 
                 // debug output
                 #[cfg(all(debug_assertions, feature = "debug_enumerator"))]
-                println!("{count_m:>3} {}: {status}, Cycler ", self.machine);
-                #[cfg(feature = "enable_csv_for_tnf")]
-                self.csv.write_machine(
-                    &self.machine,
-                    &status,
-                    DeciderCyclerSmall::decider_id().name,
+                println!(
+                    "{:>3} {}: {status}, Cycler ",
+                    self.tnf_machines_count, self.machine
                 );
-                #[cfg(all(debug_assertions, feature = "debug_enumerator"))]
-                if count_m % 512 == 0 {
-                    println!();
-                }
-                // if self.machine == check {
-                //     println!();
-                // }
 
-                match status {
-                    MachineStatus::DecidedHaltField(steps, field_no) => {
-                        // println!("Result Cycler {count_m}: {} {status}", self.machine);
-                        if steps >= self.max_steps {
-                            if steps > self.max_steps {
-                                self.max_steps = steps;
-                                self.machines_max_steps.clear();
-                            }
+                if let MachineStatus::Undecided(_, _, _) = status {
+                    status = self.decider_bouncer.decide_machine(&m_id);
+                    #[cfg(all(debug_assertions, feature = "debug_enumerator"))]
+                    println!(
+                        "{:>3} {}: {status}, Bouncer ",
+                        self.tnf_machines_count, self.machine
+                    );
+                    #[cfg(feature = "enable_csv_for_tnf")]
+                    self.csv.write_machine(
+                        &self.machine,
+                        &status,
+                        DeciderBouncer128::decider_id().name,
+                    );
+                } else {
+                    #[cfg(feature = "enable_csv_for_tnf")]
+                    self.csv.write_machine(
+                        &self.machine,
+                        &status,
+                        DeciderCyclerSmall::decider_id().name,
+                    );
+                }
+            } else {
+                // debug output
+                #[cfg(feature = "enable_csv_for_tnf")]
+                {
+                    self.csv.write_machine(&self.machine, &status, PRE_CHECK);
+                }
+                #[cfg(all(debug_assertions, feature = "debug_enumerator"))]
+                println!(
+                    "{:>3} {}: {}, {PRE_CHECK}",
+                    self.tnf_machines_count, self.machine, status
+                );
+            }
+
+            #[cfg(all(debug_assertions, feature = "debug_enumerator"))]
+            if self.tnf_machines_count % 512 == 0 {
+                println!();
+            }
+
+            match status {
+                // Halts, machine is put on the stack and later expanded on the stop field with all permutations of that field.
+                MachineStatus::DecidedHaltField(steps, field_no) => {
+                    // println!("Result Cycler {count_m}: {} {status}", self.machine);
+                    if steps >= self.max_steps {
+                        if steps > self.max_steps {
+                            self.max_steps = steps;
+                            self.machines_max_steps.clear();
+                        }
+                        let mut m = self.machine;
+                        m.transitions[field_no] = TRANSITION_BINARY_HALT;
+                        self.machines_max_steps.push(MachineInfo::new(m, status));
+                    }
+                    // If only one undefined is left, then that one must be the halt condition.
+                    // Iterating would result in machines without halt condition.
+                    if self.machine.has_at_least_two_undefined(self.last_field_id) {
+                        #[cfg(all(debug_assertions, feature = "debug_enumerator"))]
+                        {
                             let mut m = self.machine;
                             m.transitions[field_no] = TRANSITION_BINARY_HALT;
-                            self.machines_max_steps.push(MachineInfo::new(m, status));
+                            println!("to stack {}: {m}", self.machines_for_stack.len());
                         }
-                        // If only one undefined is left, then that one must be the halt condition.
-                        // Iterating would result in machines without halt condition.
-                        if self.machine.has_at_least_two_undefined(last_field_id) {
-                            self.machines_for_stack.push_back(MachineForStack {
-                                machine: self.machine,
-                                field_no,
-                            });
-                            #[cfg(all(
-                                feature = "debug_enumerator",
-                                feature = "enable_csv_for_tnf"
-                            ))]
-                            {
-                                if max_for_stack < self.machines_for_stack.len() {
-                                    max_for_stack = self.machines_for_stack.len();
-                                    self.csv.writeln(&format!("Max stack = {max_for_stack}"));
-                                }
+                        self.machines_for_stack.push_back(MachineForStack {
+                            machine: self.machine,
+                            field_no,
+                        });
+                        #[cfg(all(feature = "debug_enumerator", feature = "enable_csv_for_tnf"))]
+                        {
+                            if self.max_for_stack < self.machines_for_stack.len() {
+                                self.max_for_stack = self.machines_for_stack.len();
+                                self.csv
+                                    .writeln(&format!("Max stack = {}", self.max_for_stack));
                             }
                         }
                     }
+                }
 
-                    // Non-Halt: In this case the machine is just irrelevant and the tree is cut here as it is not further pursued.
-                    MachineStatus::DecidedNonHalt(_) => {}
+                // Non-Halt: In this case the machine is just irrelevant and the tree is cut here as it is not further pursued.
+                MachineStatus::DecidedNonHalt(_) => {}
 
-                    MachineStatus::Undecided(_, _, _) => {
-                        if self.machine.has_at_least_two_undefined(last_field_id) {
+                MachineStatus::Undecided(_, _, _) => {
+                    self.undecided_count += 1;
+                    if self.machine.has_at_least_two_undefined(
+                        MachineBinary::last_used_field_id_in_transition_array_exclusive(max_state),
+                    ) {
+                        self.undecided_multiple_halts_count += 1;
+                        if self.undecided_machines_multiple_halts.len() < 10 {
+                            self.undecided_machines_multiple_halts.push(self.machine);
+                        }
+                        #[cfg(all(debug_assertions, feature = "debug_enumerator"))]
+                        {
                             println!("Machine Undecided: {}", self.machine);
                             println!("This is an erroneous situation, as the halt is not reached but could potentially, requiring more machines to create.");
-                            todo!();
+                            // todo!("Undecided with more than one halt condition.");
                         }
-                        // println!("Result Cycler {count_m}: {} {status}", self.machine);
-                        permutations.push(MachineId::new_no_id(self.machine))
                     }
-                    _ => todo!(),
+                    // println!("Result Cycler {count_m}: {} {status}", self.machine);
+                    permutations.push(MachineId::new_no_id(self.machine))
                 }
+                _ => todo!(),
             }
         }
 
@@ -419,6 +458,8 @@ impl DataProvider for EnumeratorTNF {
 impl Display for EnumeratorTNF {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "n_states: {}", self.n_states)?;
+        writeln!(f, "machines total: {}", self.n_machines)?;
+        writeln!(f, "machines in TNF tree: {}", self.tnf_machines_count)?;
         writeln!(f, "limit: {}", self.limit)?;
         let mut t = Vec::new();
         for i in 0..self.n_states * 4 {
@@ -429,12 +470,23 @@ impl Display for EnumeratorTNF {
         for m in self.machines_max_steps.iter() {
             writeln!(f, "Max Machine: {m}")?;
         }
+        writeln!(f, "Undecided machines: {}", self.undecided_count)?;
+        writeln!(
+            f,
+            "Undecided machines which could stop and need more sub-machines: {}",
+            self.undecided_multiple_halts_count
+        )?;
+        for m in self.undecided_machines_multiple_halts.iter() {
+            writeln!(f, "check: {m}")?;
+        }
+
         Ok(())
     }
 }
 
 const CSV_HEADER: &str = "machine,status,decider";
 #[derive(Debug)]
+
 pub struct CsvWriter {
     n_states: usize,
     /// Main path without sub directory
@@ -477,10 +529,6 @@ impl CsvWriter {
         status: &MachineStatus,
         decider_name: &str,
     ) {
-        // do not write 0LA
-        if machine.transition(2).is_dir_left() {
-            return;
-        }
         self.count_line += 1;
         if self.count_line % 1024 * 128 == 0 {
             println!("CSV file writing: line {}", self.count_line);
@@ -504,23 +552,26 @@ pub fn test_enumerator_tnf_simple() {
 }
 
 pub fn test_enumerator_tnf() {
-    let n_states = 4;
+    let n_states = 3;
     let config_1 = Config::builder(n_states)
         // 10_000_000_000 for BB4
         .machine_limit(1000_000_000_000)
-        // .limit_machines_undecided(200)
-        .write_html_file(true)
+        .limit_machines_undecided(200)
+        .write_html_file_undecided(true)
         .build();
 
-    let decider_last = 1;
-    let dc_cycler_1 = DeciderStandard::Cycler.decider_config(&config_1);
-    let decider_config = vec![
-        dc_cycler_1,
-        // dc_bouncer_1,
-        // dc_cycler_2,
-        // dc_hold,
-    ];
+    // let dc_cycler_1 = DeciderStandard::Cycler.decider_config(&config_1);
+    // let decider_config = vec![
+    //     dc_cycler_1,
+    //     // dc_bouncer_1,
+    //     // dc_cycler_2,
+    //     // dc_hold,
+    // ];
 
+    let (config, config_cycler_2) = DeciderConfig::standard_config(&config_1);
+    let decider_config = DeciderStandard::standard_decider_for_config(&config, &config_cycler_2);
+
+    let decider_last = 4;
     let result = decider_engine::run_decider_chain_gen(
         &decider_config[0..decider_last],
         EnumeratorType::EnumeratorTNF,
@@ -528,4 +579,9 @@ pub fn test_enumerator_tnf() {
     );
 
     println!("\n{}", result.to_string_with_duration());
+    // if let Some(m_undecided) = result.machines_undecided_sorted() {
+    //     for m in m_undecided.iter().take(10) {
+    //         println!("Undecided {}", m);
+    //     }
+    // }
 }
