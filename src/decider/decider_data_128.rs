@@ -13,7 +13,7 @@ use crate::{
         },
         Tape, TapeAcceleration,
     },
-    transition_binary::{TransitionBinary, TRANSITION_BINARY_FIRST},
+    transition_binary::{TransitionBinary, TRANSITION_0RA_BINARY_FIRST},
 };
 
 // TODO this could be merged as decider_data with traits
@@ -54,7 +54,7 @@ impl DeciderData128 {
             step_no: 0,
             transition_table: MachineBinary::default(),
             // Initialize transition with A0 as start
-            tr: TRANSITION_BINARY_FIRST,
+            tr: TRANSITION_0RA_BINARY_FIRST,
             tr_field: 2,
             status: MachineStatus::NoDecision,
             step_limit: config.step_limit_decider_halt(),
@@ -74,7 +74,7 @@ impl DeciderData128 {
         self.tape.clear();
 
         self.step_no = 0;
-        self.tr = TRANSITION_BINARY_FIRST;
+        self.tr = TRANSITION_0RA_BINARY_FIRST;
         self.tr_field = 2;
         self.status = MachineStatus::NoDecision;
     }

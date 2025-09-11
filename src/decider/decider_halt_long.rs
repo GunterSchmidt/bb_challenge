@@ -129,6 +129,7 @@ use crate::{
 /// - Set step_limit and tape_size_limit in [Config]
 /// - Single machine: run [Self::decide_single_machine], see the tests for this.
 /// - Batch:  run [Self::decider_run_batch]
+// TODO machine 1RB---_1LC0RB_0LC1RB holds after 25 steps, why?
 // TODO Longer jump if multiple u32 in tape_long are FFFF
 // TODO Multiple repeating steps, e.g 3 on 001
 // TODO version with output tape, visualize

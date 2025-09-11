@@ -34,7 +34,7 @@ use crate::{
         decider_result::{EndReason, PreDeciderCount},
         pre_decider::{
             check_not_all_states_used, check_only_right_direction, check_only_zero_writes,
-            check_simple_start_cycle, count_hold_transitions, PreDeciderRun,
+            check_simple_start_cycle, count_halt_transitions, PreDeciderRun,
         },
     },
     machine_binary::{MachineBinary, MachineId},
@@ -425,7 +425,7 @@ impl EnumeratorBinary {
         let mut num_hold_a1;
         let range_3_to_n_states = 4..self.n_states * 2 + 2;
         let mut num_hold_other_lines =
-            count_hold_transitions(&self.machine.transitions[range_3_to_n_states.clone()]);
+            count_halt_transitions(&self.machine.transitions[range_3_to_n_states.clone()]);
         loop {
             // permutations state A
             // loop all transitions for first state and its two symbols
@@ -565,7 +565,7 @@ impl EnumeratorBinary {
                 break;
             }
             let tr3_used = &self.machine.transitions[range_3_to_n_states.clone()];
-            num_hold_other_lines = count_hold_transitions(tr3_used);
+            num_hold_other_lines = count_halt_transitions(tr3_used);
         }
 
         pre_decider_count_batch.num_not_enumerated =
@@ -591,7 +591,7 @@ impl EnumeratorBinary {
         let mut num_hold_e0;
         let range_count_hold = 3..self.n_states * 2;
         let mut num_hold_other_lines =
-            count_hold_transitions(&self.machine.transitions[range_count_hold.clone()]);
+            count_halt_transitions(&self.machine.transitions[range_count_hold.clone()]);
         loop {
             // Last state is assumed to be E for the comments, start remains at A0.
             // Also the reduced number of stated for A0 remains 0RB and 1RB
@@ -747,7 +747,7 @@ impl EnumeratorBinary {
                 break;
             }
             let tr3_used = &self.machine.transitions[range_count_hold.clone()];
-            num_hold_other_lines = count_hold_transitions(tr3_used);
+            num_hold_other_lines = count_halt_transitions(tr3_used);
         }
 
         pre_decider_count_batch.num_not_enumerated =

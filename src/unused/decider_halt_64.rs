@@ -6,7 +6,7 @@ use crate::{
     machine_binary::{MachineBinary, MachineId},
     status::{MachineStatus, UndecidedReason},
     tape::tape_utils::{U64Ext, MIDDLE_BIT_U64, POS_HALF_U64, TAPE_SIZE_BIT_U64},
-    transition_binary::{TransitionBinary, TRANSITION_BINARY_FIRST},
+    transition_binary::{TransitionBinary, TRANSITION_0RA_BINARY_FIRST},
 };
 
 /// This decider is the fastest as it runs on a 64-Bit number only. \
@@ -36,7 +36,7 @@ impl DeciderHalt64 {
             transition_table: MachineBinary::default(),
             status: MachineStatus::NoDecision,
             // Initialize transition with A0 as start
-            tr: TRANSITION_BINARY_FIRST,
+            tr: TRANSITION_0RA_BINARY_FIRST,
             step_limit: config
                 .step_limit_decider_halt()
                 .min(StepSmall::MAX as StepBig) as StepSmall,
@@ -67,7 +67,7 @@ impl DeciderHalt64 {
         self.low_bound = MIDDLE_BIT_U64 as StepSmall;
         self.high_bound = MIDDLE_BIT_U64 as StepSmall;
         self.num_steps = 0;
-        self.tr = TRANSITION_BINARY_FIRST;
+        self.tr = TRANSITION_0RA_BINARY_FIRST;
     }
 
     fn count_left(&self, symbol: usize) -> u32 {

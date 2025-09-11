@@ -636,7 +636,7 @@ impl DeciderResultStats {
             String::new()
         };
         format!(
-            "{}{names}\n{name} time elapsed for {} machines:\n Get machines {:?} ms, decider {}, total time {}.",
+            "{}{names}\n{name} time elapsed for {} machines:\n Get machines {:?}, decider {}, total time {}.",
             self,
             self.num_evaluated.to_formatted_string(&user_locale()),
             // duration_as_ms_rounded(self.duration.duration_data_provider),

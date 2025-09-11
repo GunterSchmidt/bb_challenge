@@ -136,6 +136,7 @@ use crate::{
 const MAX_INIT_CAPACITY: usize = 10_000;
 
 // TODO Use long tape, or tape_shifted left & right bound could be introduced.
+// TODO 1RB---_1LC0RB_0LC1RB runs full 200000 steps. Can this be limited by a different rule?
 #[derive(Debug)]
 pub struct DeciderBouncer128 {
     data: DeciderData128,

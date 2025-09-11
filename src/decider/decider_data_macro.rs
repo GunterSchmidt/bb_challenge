@@ -5,7 +5,7 @@ use crate::{
     machine_binary::MachineBinary,
     status::{MachineStatus, UndecidedReason},
     tape::{tape_macro::TapeCompact, tape_utils::TAPE_SIZE_BIT_U128, Tape},
-    transition_binary::{TransitionBinary, TRANSITION_BINARY_FIRST},
+    transition_binary::{TransitionBinary, TRANSITION_0RA_BINARY_FIRST},
 };
 
 /// This contains the functionality for a hold decider and can be used to create more elaborate deciders. \
@@ -48,7 +48,7 @@ impl DeciderDataMacro {
             step_no: 0,
             transition_table: MachineBinary::default(),
             // Initialize transition with A0 as start
-            tr: TRANSITION_BINARY_FIRST,
+            tr: TRANSITION_0RA_BINARY_FIRST,
             tr_field: 2,
             // copy the transition table as this runs faster
             // machine_id: 0,
@@ -71,7 +71,7 @@ impl DeciderDataMacro {
         self.tape.clear();
 
         self.step_no = 0;
-        self.tr = TRANSITION_BINARY_FIRST;
+        self.tr = TRANSITION_0RA_BINARY_FIRST;
         self.tr_field = 2;
         self.status = MachineStatus::NoDecision;
         // self.html_writer.reset_write_html_line_count();

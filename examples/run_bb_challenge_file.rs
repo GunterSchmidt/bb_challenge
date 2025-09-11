@@ -9,7 +9,7 @@
 use bb_challenge::{
     config::{Config, CoreUsage},
     data_provider::bb_file_reader,
-    decider::DeciderConfig,
+    decider::{DeciderConfig, DeciderStandard},
     html,
 };
 
@@ -30,10 +30,10 @@ fn evaluate_bb_challenge_file() {
         // Turn this on, if you only want the undecided machines as HTML files, run with different deciders.
         .limit_machines_undecided(200)
         .build();
-    let (config_1, config_2) = DeciderConfig::standard_config_builder(&config);
+    let (config_1, config_2) = DeciderConfig::standard_config(&config);
     // println!("Config 1: {config_1}");
     // println!("Config 2: {config_2}");
-    let decider_configs = DeciderConfig::standard_decider(&config_1, &config_2);
+    let decider_configs = DeciderStandard::standard_decider_for_config(&config_1, &config_2);
 
     // do not use hold decider (just for runtime purposes in this example)
     let decider_last = 3;

@@ -63,6 +63,7 @@ const MAX_INIT_CAPACITY: usize = 10_000;
 /// Reduces number of checks. This relies on a cycle which always has one tape side 0.
 const SEARCH_ONLY_0_SIDE_FROM: usize = 50;
 
+// TODO 1RB---_1LC0RB_0LC1RB runs full 200000 steps. Can this be limited by a different rule?
 #[derive(Debug)]
 pub struct DeciderCycler {
     data: DeciderDataLong,

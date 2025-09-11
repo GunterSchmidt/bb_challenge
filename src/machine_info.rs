@@ -35,11 +35,11 @@ impl MachineInfo {
         }
     }
 
-    pub fn from_machine(machine: &MachineBinary, status: &MachineStatus) -> MachineInfo {
+    pub fn from_machine(machine: MachineBinary, status: MachineStatus) -> MachineInfo {
         Self {
             id: None,
-            machine: *machine,
-            status: *status,
+            machine: machine,
+            status: status,
         }
     }
 

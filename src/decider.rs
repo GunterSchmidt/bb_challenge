@@ -142,6 +142,21 @@ impl DeciderStandard {
             }
         }
     }
+
+    pub fn standard_decider_for_config<'a>(
+        config: &'a Config,
+        config_cycler_2: &'a Config,
+    ) -> Vec<DeciderConfig<'a>> {
+        // Decider
+        let dc_cycler_1 = DeciderStandard::Cycler.decider_config(config);
+        let dc_bouncer_1 = DeciderStandard::Bouncer128.decider_config(config);
+        let dc_cycler_2 = DeciderStandard::Cycler.decider_config(&config_cycler_2);
+        let dc_hold = DeciderStandard::Hold.decider_config(config);
+
+        let decider_config = vec![dc_cycler_1, dc_bouncer_1, dc_cycler_2, dc_hold];
+
+        decider_config
+    }
 }
 
 /// This struct defines the call to the decider function and its name.
@@ -238,7 +253,7 @@ impl<'a> DeciderConfig<'a> {
         self.decider_id
     }
 
-    pub fn standard_config_builder(config: &Config) -> (Config, Config) {
+    pub fn standard_config(config: &Config) -> (Config, Config) {
         let config_1 = Config::builder_from_config(config)
             // relying on Config defaults
             // 10_000_000_000 for BB4
@@ -260,21 +275,6 @@ impl<'a> DeciderConfig<'a> {
             .build();
 
         (config_1, config_2)
-    }
-
-    pub fn standard_decider(
-        config: &'a Config,
-        config_cycler_2: &'a Config,
-    ) -> Vec<DeciderConfig<'a>> {
-        // Decider
-        let dc_cycler_1 = DeciderStandard::Cycler.decider_config(config);
-        let dc_bouncer_1 = DeciderStandard::Bouncer128.decider_config(config);
-        let dc_cycler_2 = DeciderStandard::Cycler.decider_config(&config_cycler_2);
-        let dc_hold = DeciderStandard::Hold.decider_config(config);
-
-        let decider_config = vec![dc_cycler_1, dc_bouncer_1, dc_cycler_2, dc_hold];
-
-        decider_config
     }
 }
 
