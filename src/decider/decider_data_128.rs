@@ -109,7 +109,7 @@ impl DeciderData128 {
             // write last symbol
             self.tape.write_last_symbol(self.tr);
             // println!("{}", self.tl.tape_shifted.to_binary_split_string());
-            self.status = MachineStatus::DecidedHalt(self.step_no);
+            self.status = MachineStatus::DecidedHaltField(self.step_no, self.tr_field);
             // println!("Check Loop: ID {}: Steps till hold: {}", m_info.id, steps);
             #[cfg(feature = "enable_html_reports")]
             self.write_step_html();

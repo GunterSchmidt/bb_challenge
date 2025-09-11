@@ -17,7 +17,9 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # criterion2 = "1.1.1"
 
 [features]
-default = ["enable_html_reports"]
+default = ["enable_html_reports", "decider_timer_info"]
+# default = ["decider_timer_info"]
+# default = ["debug_enumerator"]
 # default = ["enable_html_reports", "enable_csv_for_tnf", "debug_enumerator"]
 # default = ["enable_html_reports", "debug_tape", "bb_debug"]
 # default = ["counter_stats"]
@@ -52,9 +54,17 @@ debug_enumerator = []
 debug_tape = []
 # additional stats for the result
 counter_stats = []
+# Identify long running timers in release mode, it will output long running machines and a total 
+# running time of that machine, but not stop the decider.
+# TODO Use decider_timer_info_ms in config_toml to set limit.
+decider_timer_info = []
+# TODO Use decider_timer_limit_ms in config_toml to set limit after the decider stops.
+decider_timer_limit = []
 # Allow optional output to html files but will have a 10%-30% performance hit even if write_html_file = false.
 enable_html_reports = []
 enable_csv_for_tnf = []
+# TODO
+enumerator_1RB_only = []
 # The normalized id, see documentation.
 normalized_id_reversed = []
 # Some deciders have a speed up when the transition is self-referencing, this turns the speed-up off.

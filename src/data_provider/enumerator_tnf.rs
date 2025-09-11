@@ -391,7 +391,7 @@ impl Enumerator for EnumeratorTNF {
                     // println!("Result Cycler {count_m}: {} {status}", self.machine);
                     permutations.push(MachineId::new_no_id(self.machine))
                 }
-                _ => todo!(),
+                _ => panic!("Status not allowed: {status}"),
             }
         }
 
@@ -551,8 +551,7 @@ pub fn test_enumerator_tnf_simple() {
     println!("Enumerator {tnf}");
 }
 
-pub fn test_enumerator_tnf() {
-    let n_states = 3;
+pub fn test_enumerator_tnf(n_states: usize) {
     let config_1 = Config::builder(n_states)
         // 10_000_000_000 for BB4
         .machine_limit(1000_000_000_000)

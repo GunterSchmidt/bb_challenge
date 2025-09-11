@@ -64,6 +64,7 @@ const MAX_INIT_CAPACITY: usize = 10_000;
 const SEARCH_ONLY_0_SIDE_FROM: usize = 50;
 
 // TODO 1RB---_1LC0RB_0LC1RB runs full 200000 steps. Can this be limited by a different rule?
+// TODO Timer in runtime as feature to fine too long running machines
 #[derive(Debug)]
 pub struct DeciderCycler {
     data: DeciderDataLong,
@@ -73,6 +74,11 @@ pub struct DeciderCycler {
     /// (basically e.g. all steps for e.g. field 'B0' steps: 1 if A0 points to B, as step 1 then has state B and head symbol 0.)
     // TODO performance: extra differentiation for 0/1 at head position? The idea is, that the field cannot be identical if head read is different
     maps_1d: [Vec<usize>; 2 * (MAX_STATES + 1)],
+
+    #[cfg(all(feature = "decider_timer_info", not(debug_assertions)))]
+    start_time: std::time::Instant,
+    #[cfg(all(feature = "decider_timer_info", not(debug_assertions)))]
+    duration_max_info: std::time::Duration,
 }
 
 impl DeciderCycler {
@@ -82,6 +88,13 @@ impl DeciderCycler {
             data: DeciderDataLong::new(config),
             steps: Vec::with_capacity(cap),
             maps_1d: core::array::from_fn(|_| Vec::with_capacity(cap / 4)),
+
+            #[cfg(all(feature = "decider_timer_info", not(debug_assertions)))]
+            start_time: std::time::Instant::now(),
+            #[cfg(all(feature = "decider_timer_info", not(debug_assertions)))]
+            duration_max_info: std::time::Duration::from_millis(
+                crate::config::CONFIG_TOML.decider_timer_info_ms(),
+            ),
         };
         decider.data.step_limit = config.step_limit_decider_cycler();
 
@@ -96,18 +109,9 @@ impl DeciderCycler {
             map.clear();
         }
     }
-}
 
-impl Decider for DeciderCycler {
-    fn decider_id() -> &'static decider::DeciderId {
-        &DECIDER_CYCLER_ID
-    }
-
-    fn decide_machine(&mut self, machine: &MachineId) -> MachineStatus {
-        #[cfg(feature = "enable_html_reports")]
-        self.data
-            .write_html_file_start(Self::decider_id(), &machine);
-
+    #[inline]
+    fn decide_machine_main(&mut self, machine: &MachineId) -> MachineStatus {
         // initialize decider
         self.clear();
 
@@ -141,6 +145,17 @@ impl Decider for DeciderCycler {
                     panic!("Logic error");
                 }
             }
+            // #[cfg(feature = "decider_timer_info")]
+            // if !timer_info_shown
+            //     && std::time::Instant::elapsed(&start_timer) > self.duration_max_info
+            // {
+            //     println!(
+            //         "Long Running {} ms: {}",
+            //         std::time::Instant::elapsed(&start_timer).as_millis(),
+            //         machine.to_standard_tm_text_format()
+            //     );
+            //     timer_info_shown = true;
+            // }
 
             #[cfg(feature = "enable_html_reports")]
             {
@@ -419,6 +434,42 @@ impl Decider for DeciderCycler {
                 }
             }
         }
+    }
+}
+
+impl Decider for DeciderCycler {
+    fn decider_id() -> &'static decider::DeciderId {
+        &DECIDER_CYCLER_ID
+    }
+
+    fn decide_machine(&mut self, machine: &MachineId) -> MachineStatus {
+        #[cfg(feature = "enable_html_reports")]
+        self.data.write_html_file_start(Self::decider_id(), machine);
+
+        #[cfg(all(feature = "decider_timer_info", not(debug_assertions)))]
+        {
+            self.start_time = std::time::Instant::now();
+        }
+
+        let status = self.decide_machine_main(machine);
+
+        #[cfg(all(feature = "decider_timer_info", not(debug_assertions)))]
+        if std::time::Instant::elapsed(&self.start_time) > self.duration_max_info {
+            let steps = match status {
+                MachineStatus::DecidedHalt(steps) => steps,
+                MachineStatus::DecidedHaltField(steps, _) => steps,
+                MachineStatus::Undecided(_, steps, _) => steps,
+                _ => 0,
+            };
+            println!(
+                "{}: Long Running {} ms: {}, steps: {steps}",
+                DeciderCycler::decider_id().name,
+                std::time::Instant::elapsed(&self.start_time).as_millis(),
+                machine.to_standard_tm_text_format()
+            );
+        }
+
+        status
     }
 
     // tape_long_bits in machine?

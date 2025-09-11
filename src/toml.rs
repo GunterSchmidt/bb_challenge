@@ -23,6 +23,10 @@ pub struct ConfigToml {
     /// shifted true: head is always in the middle.
     #[serde(default = "default_html_tape_shifts")]
     html_tape_shifts: bool,
+
+    /// Milliseconds after an info about the runtime is printed in console.
+    #[serde(default = "default_decider_timer_info_ms")]
+    decider_timer_info_ms: u64,
 }
 
 impl ConfigToml {
@@ -65,6 +69,10 @@ impl ConfigToml {
     pub fn html_tape_shifts(&self) -> bool {
         self.html_tape_shifts
     }
+
+    pub fn decider_timer_info_ms(&self) -> u64 {
+        self.decider_timer_info_ms
+    }
 }
 
 impl Default for ConfigToml {
@@ -74,6 +82,7 @@ impl Default for ConfigToml {
             bb_challenge_filename_path: default_bb_challenge_file(),
             html_out_path: default_html_out_path(),
             html_tape_shifts: default_html_tape_shifts(),
+            decider_timer_info_ms: default_decider_timer_info_ms(),
         }
     }
 }
@@ -92,6 +101,10 @@ fn default_html_out_path() -> String {
 
 fn default_html_tape_shifts() -> bool {
     true
+}
+
+fn default_decider_timer_info_ms() -> u64 {
+    100
 }
 
 pub fn test_toml() {

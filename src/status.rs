@@ -110,9 +110,9 @@ impl Display for MachineStatus {
                 )
                 .as_str(),
             ),
-            MachineStatus::DecidedHaltField(steps, field_index) => s.push_str(
+            MachineStatus::DecidedHaltField(steps, _field_index) => s.push_str(
                 format!(
-                    "Decided: Halts after {} steps at field index {field_index}",
+                    "Decided: Halts after {} steps",
                     steps.to_formatted_string(&locale)
                 )
                 .as_str(),
